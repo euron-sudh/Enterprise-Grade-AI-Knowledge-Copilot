@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:8010/health)",
+      "Bash(curl -s http://localhost:8010/)",
+      "Bash(curl -s http://localhost:8010/openapi.json)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k\\) for k in d[''''paths''''].keys\\(\\)]\")"
+    ]
+  }
+}

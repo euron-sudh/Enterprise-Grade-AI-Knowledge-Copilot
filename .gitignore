@@ -1,0 +1,62 @@
+# Node
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+*.log
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads / media
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Temp files
+~$*
+*.tmp
+*.temp
+
+# Logs
+*.log
+frontend/frontend.log
+frontend/frontend_err.log
+
+# Terraform state
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Docker
+.docker/
