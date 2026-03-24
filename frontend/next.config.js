@@ -59,7 +59,7 @@ const nextConfig = {
     return [
       {
         source: '/api/backend/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'}/:path*`,
+        destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001'}/:path*`,
       },
     ];
   },
