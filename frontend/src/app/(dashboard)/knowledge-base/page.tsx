@@ -46,12 +46,12 @@ interface Document {
 }
 
 const CONNECTORS: Connector[] = [
-  { id: '1', name: 'Google Drive', icon: '☁', color: 'bg-blue-600', docs: 8234, status: 'synced', lastSync: '5 min ago' },
-  { id: '2', name: 'Confluence', icon: '🔵', color: 'bg-blue-500', docs: 12480, status: 'synced', lastSync: '10 min ago' },
-  { id: '3', name: 'Slack', icon: '💬', color: 'bg-purple-600', docs: 18920, status: 'syncing', lastSync: 'Syncing...' },
-  { id: '4', name: 'GitHub', icon: '⚫', color: 'bg-gray-700', docs: 4102, status: 'synced', lastSync: '1 hr ago' },
-  { id: '5', name: 'Notion', icon: '📝', color: 'bg-gray-600', docs: 3456, status: 'synced', lastSync: '2 hr ago' },
-  { id: '6', name: 'Jira', icon: '🔷', color: 'bg-blue-700', docs: 1890, status: 'error', lastSync: 'Failed 3 hr ago' },
+  { id: '1', name: 'Google Drive', icon: '☁', color: 'bg-blue-600', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
+  { id: '2', name: 'Confluence', icon: '🔵', color: 'bg-blue-500', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
+  { id: '3', name: 'Slack', icon: '💬', color: 'bg-purple-600', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
+  { id: '4', name: 'GitHub', icon: '⚫', color: 'bg-surface-200 dark:bg-gray-700', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
+  { id: '5', name: 'Notion', icon: '📝', color: 'bg-surface-300 dark:bg-gray-600', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
+  { id: '6', name: 'Jira', icon: '🔷', color: 'bg-blue-700', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
   { id: '7', name: 'Salesforce', icon: '☁', color: 'bg-sky-600', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
   { id: '8', name: 'Gmail', icon: '✉', color: 'bg-red-600', docs: 0, status: 'disconnected', lastSync: 'Not connected' },
 ];
@@ -81,10 +81,10 @@ const FILE_COLORS: Record<Document['type'], string> = {
   pdf: 'text-red-400',
   docx: 'text-blue-400',
   xlsx: 'text-green-400',
-  md: 'text-gray-400',
+  md: 'text-surface-500 dark:text-gray-400',
   code: 'text-purple-400',
   image: 'text-orange-400',
-  other: 'text-gray-500',
+  other: 'text-surface-400 dark:text-gray-500',
 };
 
 const STATUS_CONFIG = {
@@ -97,7 +97,7 @@ const CONNECTOR_STATUS = {
   synced: { dot: 'bg-emerald-500', label: 'Synced' },
   syncing: { dot: 'bg-amber-500 animate-pulse', label: 'Syncing' },
   error: { dot: 'bg-red-500', label: 'Error' },
-  disconnected: { dot: 'bg-gray-600', label: 'Connect' },
+  disconnected: { dot: 'bg-surface-300 dark:bg-gray-600', label: 'Connect' },
 };
 
 export default function KnowledgeBasePage() {
@@ -125,8 +125,8 @@ export default function KnowledgeBasePage() {
           setRealDocs(data.items.map((d: any) => ({
             id: d.id,
             name: d.name,
-            type: d.fileType ?? 'other',
-            size: d.fileSize ? `${Math.round(d.fileSize / 1024)} KB` : '—',
+            type: d.type ?? 'other',
+            size: d.size ? `${Math.round(d.size / 1024)} KB` : '—',
             uploadedAt: d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—',
             status: d.status ?? 'indexed',
             source: 'Upload',
@@ -148,8 +148,8 @@ export default function KnowledgeBasePage() {
     await Promise.all(files.map(async (file) => {
       try {
         const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/backend/knowledge/documents', {
+        formData.append('files', file);
+        const res = await fetch('/api/backend/knowledge/documents/upload', {
           method: 'POST',
           headers: authHeader,
           body: formData,
@@ -157,16 +157,19 @@ export default function KnowledgeBasePage() {
         statusMap[file.name] = res.ok ? 'done' : 'error';
         setUploadStatus({ ...statusMap });
         if (res.ok) {
-          const doc = await res.json();
-          setRealDocs(prev => [{
-            id: doc.id,
-            name: doc.name,
-            type: doc.fileType ?? 'other',
-            size: doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB` : '—',
-            uploadedAt: new Date().toLocaleDateString(),
-            status: 'processing',
-            source: 'Upload',
-          }, ...prev]);
+          const docs = await res.json();
+          const doc = Array.isArray(docs) ? docs[0] : docs;
+          if (doc) {
+            setRealDocs(prev => [{
+              id: doc.id,
+              name: doc.name,
+              type: doc.type ?? 'other',
+              size: doc.size ? `${Math.round(doc.size / 1024)} KB` : '—',
+              uploadedAt: new Date().toLocaleDateString(),
+              status: 'processing',
+              source: 'Upload',
+            }, ...prev]);
+          }
         }
       } catch {
         statusMap[file.name] = 'error';
@@ -190,23 +193,23 @@ export default function KnowledgeBasePage() {
   };
 
   return (
-    <div className="min-h-full bg-gray-950 p-6 space-y-6">
+    <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Knowledge Base</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Knowledge Base</h1>
+          <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">
             Manage your organization's indexed documents and connected data sources
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors">
+          <button className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
             <FolderOpen className="h-4 w-4" />
             Collections
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-surface-900 dark:text-white hover:bg-indigo-700 transition-colors"
           >
             <Upload className="h-4 w-4" />
             Upload Document
@@ -229,14 +232,14 @@ export default function KnowledgeBasePage() {
           { label: 'Last Synced', value: '5 min ago', icon: Clock, color: 'text-amber-400', bg: 'bg-amber-900/30' },
           { label: 'Active Connectors', value: `${activeConnectors} / ${CONNECTORS.length}`, icon: Zap, color: 'text-violet-400', bg: 'bg-violet-900/30' },
         ].map(stat => (
-          <div key={stat.label} className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+          <div key={stat.label} className="rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5">
             <div className="flex items-center gap-3">
               <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${stat.bg}`}>
                 <stat.icon className={`h-4.5 w-4.5 ${stat.color}`} />
               </div>
               <div>
-                <p className="text-xs text-gray-500">{stat.label}</p>
-                <p className="text-lg font-bold text-white">{stat.value}</p>
+                <p className="text-xs text-surface-400 dark:text-gray-500">{stat.label}</p>
+                <p className="text-lg font-bold text-surface-900 dark:text-white">{stat.value}</p>
               </div>
             </div>
           </div>
@@ -252,14 +255,14 @@ export default function KnowledgeBasePage() {
         className={`rounded-2xl border-2 border-dashed p-8 text-center cursor-pointer transition-all ${
           isDragging
             ? 'border-indigo-500 bg-indigo-950/30'
-            : 'border-gray-700 bg-gray-900/50 hover:border-gray-600 hover:bg-gray-900'
+            : 'border-surface-300 dark:border-gray-700 bg-white dark:bg-gray-900/50 hover:border-surface-300 dark:hover:border-gray-600 hover:bg-white dark:hover:bg-gray-900'
         }`}
       >
         <div className="flex flex-col items-center gap-3">
           <div className={`flex h-12 w-12 items-center justify-center rounded-2xl transition-colors ${
-            isDragging ? 'bg-indigo-600' : 'bg-gray-800'
+            isDragging ? 'bg-indigo-600' : 'bg-surface-100 dark:bg-gray-800'
           }`}>
-            <Upload className={`h-6 w-6 ${isDragging ? 'text-white' : 'text-gray-400'}`} />
+            <Upload className={`h-6 w-6 ${isDragging ? 'text-surface-900 dark:text-white' : 'text-surface-500 dark:text-gray-400'}`} />
           </div>
           {uploadingFiles.length > 0 ? (
             <div>
@@ -267,14 +270,14 @@ export default function KnowledgeBasePage() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Uploading {uploadingFiles.length} file(s)...
               </p>
-              <p className="text-xs text-gray-500 mt-1">{uploadingFiles[0]}{uploadingFiles.length > 1 ? ` and ${uploadingFiles.length - 1} more` : ''}</p>
+              <p className="text-xs text-surface-400 dark:text-gray-500 mt-1">{uploadingFiles[0]}{uploadingFiles.length > 1 ? ` and ${uploadingFiles.length - 1} more` : ''}</p>
             </div>
           ) : (
             <>
-              <p className="text-sm font-semibold text-white">
+              <p className="text-sm font-semibold text-surface-900 dark:text-white">
                 {isDragging ? 'Drop files here' : 'Drag & drop files here'}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-surface-400 dark:text-gray-500">
                 Supports PDF, DOCX, XLSX, PPTX, Markdown, CSV, images and more · Up to 50 files at once
               </p>
             </>
@@ -285,8 +288,8 @@ export default function KnowledgeBasePage() {
       {/* Connected sources */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <Cloud className="h-4.5 w-4.5 text-gray-400" />
+          <h2 className="text-base font-semibold text-surface-900 dark:text-white flex items-center gap-2">
+            <Cloud className="h-4.5 w-4.5 text-surface-500 dark:text-gray-400" />
             Connected Sources
           </h2>
           <button className="flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
@@ -298,10 +301,10 @@ export default function KnowledgeBasePage() {
           {CONNECTORS.map(connector => (
             <div
               key={connector.id}
-              className={`rounded-2xl border bg-gray-900 p-4 transition-all ${
+              className={`rounded-2xl border bg-white dark:bg-gray-900 p-4 transition-all ${
                 connector.status === 'disconnected'
-                  ? 'border-gray-800 opacity-60 hover:opacity-80 cursor-pointer'
-                  : 'border-gray-800 hover:border-gray-700'
+                  ? 'border-surface-200 dark:border-gray-800 opacity-60 hover:opacity-80 cursor-pointer'
+                  : 'border-surface-200 dark:border-gray-800 hover:border-surface-300 dark:hover:border-gray-700'
               }`}
             >
               <div className="flex items-center justify-between mb-3">
@@ -310,19 +313,19 @@ export default function KnowledgeBasePage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className={`h-2 w-2 rounded-full ${CONNECTOR_STATUS[connector.status].dot}`} />
-                  <span className="text-[10px] text-gray-500">{CONNECTOR_STATUS[connector.status].label}</span>
+                  <span className="text-[10px] text-surface-400 dark:text-gray-500">{CONNECTOR_STATUS[connector.status].label}</span>
                 </div>
               </div>
-              <p className="text-sm font-semibold text-white">{connector.name}</p>
+              <p className="text-sm font-semibold text-surface-900 dark:text-white">{connector.name}</p>
               {connector.status !== 'disconnected' ? (
-                <p className="text-[11px] text-gray-500 mt-0.5">{connector.docs.toLocaleString()} docs</p>
+                <p className="text-[11px] text-surface-400 dark:text-gray-500 mt-0.5">{connector.docs.toLocaleString()} docs</p>
               ) : (
                 <p className="text-[11px] text-indigo-400 mt-0.5 flex items-center gap-1">
                   <Link2 className="h-3 w-3" />
                   Click to connect
                 </p>
               )}
-              <p className="text-[10px] text-gray-700 mt-1">{connector.lastSync}</p>
+              <p className="text-[10px] text-surface-600 dark:text-gray-700 mt-1">{connector.lastSync}</p>
             </div>
           ))}
         </div>
@@ -331,61 +334,78 @@ export default function KnowledgeBasePage() {
       {/* Recent documents */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <Layers className="h-4.5 w-4.5 text-gray-400" />
+          <h2 className="text-base font-semibold text-surface-900 dark:text-white flex items-center gap-2">
+            <Layers className="h-4.5 w-4.5 text-surface-500 dark:text-gray-400" />
             Recent Documents
           </h2>
           <button className="flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
             View all <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+        <div className="rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Size</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Source</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Uploaded</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+              <tr className="border-b border-surface-200 dark:border-gray-800">
+                <th className="text-left px-5 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider">Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider hidden sm:table-cell">Size</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider hidden md:table-cell">Source</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider hidden lg:table-cell">Uploaded</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800">
-              {DOCUMENTS.map(doc => {
-                const Icon = FILE_ICONS[doc.type];
-                const statusCfg = STATUS_CONFIG[doc.status];
-                const StatusIcon = statusCfg.icon;
-                return (
-                  <tr key={doc.id} className="hover:bg-gray-800/50 transition-colors group">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <Icon className={`h-4 w-4 flex-shrink-0 ${FILE_COLORS[doc.type]}`} />
-                        <span className="text-gray-200 font-medium truncate max-w-[200px]">{doc.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-gray-500 text-xs hidden sm:table-cell">{doc.size}</td>
-                    <td className="px-4 py-3.5 text-gray-500 text-xs hidden md:table-cell">{doc.source}</td>
-                    <td className="px-4 py-3.5 text-gray-500 text-xs hidden lg:table-cell">{doc.uploadedAt}</td>
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${statusCfg.color}`}>
-                        <StatusIcon className={`h-3 w-3 ${doc.status === 'processing' ? 'animate-spin' : ''}`} />
-                        {statusCfg.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="rounded p-1 text-gray-500 hover:text-gray-300 hover:bg-gray-700 transition-colors">
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        </button>
-                        <button className="rounded p-1 text-gray-500 hover:text-red-400 hover:bg-gray-700 transition-colors">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+            <tbody className="divide-y divide-surface-200 dark:divide-gray-800">
+              {loadingDocs ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-8 text-center text-surface-400 dark:text-gray-500 text-sm">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2 text-indigo-400" />
+                    Loading documents...
+                  </td>
+                </tr>
+              ) : realDocs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-surface-400 dark:text-gray-500 text-sm">
+                    No documents yet. Upload a file above to get started.
+                  </td>
+                </tr>
+              ) : (
+                realDocs.map(doc => {
+                  const docType = (doc.type in FILE_ICONS ? doc.type : 'other') as Document['type'];
+                  const docStatus = (doc.status in STATUS_CONFIG ? doc.status : 'indexed') as Document['status'];
+                  const Icon = FILE_ICONS[docType];
+                  const statusCfg = STATUS_CONFIG[docStatus];
+                  const StatusIcon = statusCfg.icon;
+                  return (
+                    <tr key={doc.id} className="hover:bg-surface-100 dark:hover:bg-gray-800/50 transition-colors group">
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <Icon className={`h-4 w-4 flex-shrink-0 ${FILE_COLORS[docType]}`} />
+                          <span className="text-surface-700 dark:text-gray-200 font-medium truncate max-w-[200px]">{doc.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 text-surface-400 dark:text-gray-500 text-xs hidden sm:table-cell">{doc.size}</td>
+                      <td className="px-4 py-3.5 text-surface-400 dark:text-gray-500 text-xs hidden md:table-cell">{doc.source}</td>
+                      <td className="px-4 py-3.5 text-surface-400 dark:text-gray-500 text-xs hidden lg:table-cell">{doc.uploadedAt}</td>
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${statusCfg.color}`}>
+                          <StatusIcon className={`h-3 w-3 ${docStatus === 'processing' ? 'animate-spin' : ''}`} />
+                          {statusCfg.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button className="rounded p-1 text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </button>
+                          <button className="rounded p-1 text-surface-400 dark:text-gray-500 hover:text-red-400 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

@@ -49,7 +49,7 @@ const STATUS_STYLES: Record<string, string> = {
   active: 'text-emerald-400 bg-emerald-900/30',
   paused: 'text-amber-400 bg-amber-900/30',
   error: 'text-red-400 bg-red-900/30',
-  draft: 'text-gray-400 bg-gray-800',
+  draft: 'text-surface-500 dark:text-gray-400 bg-surface-100 dark:bg-gray-800',
 };
 
 const TEMPLATES = [
@@ -155,33 +155,33 @@ export default function WorkflowsPage() {
   };
 
   return (
-    <div className="min-h-full bg-gray-950 p-6">
+    <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Workflow Automations</h1>
-          <p className="mt-1 text-sm text-gray-400">Automate tasks triggered by events, schedules, or webhooks</p>
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Workflow Automations</h1>
+          <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">Automate tasks triggered by events, schedules, or webhooks</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchWorkflows} className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700">
+          <button onClick={fetchWorkflows} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button onClick={() => setShowCreate(!showCreate)}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-surface-900 dark:text-white hover:bg-indigo-700">
             <Plus className="h-4 w-4" /> New Workflow
           </button>
         </div>
       </div>
 
       {showCreate && (
-        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900 p-4">
-          <h3 className="text-sm font-semibold text-white mb-3">Create Workflow</h3>
+        <div className="mb-6 rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+          <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3">Create Workflow</h3>
           <div className="grid grid-cols-3 gap-3 mb-3">
             <input value={newName} onChange={e => setNewName(e.target.value)}
-              placeholder="Workflow name" className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
+              placeholder="Workflow name" className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white placeholder-surface-400 dark:placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
             <input value={newDesc} onChange={e => setNewDesc(e.target.value)}
-              placeholder="Description (optional)" className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
+              placeholder="Description (optional)" className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white placeholder-surface-400 dark:placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
             <select value={newTrigger} onChange={e => setNewTrigger(e.target.value)}
-              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+              className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white focus:outline-none focus:border-indigo-500">
               <option value="manual">Manual</option>
               <option value="schedule">Schedule</option>
               <option value="event">Event</option>
@@ -190,10 +190,10 @@ export default function WorkflowsPage() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => createWorkflow()} disabled={creating || !newName.trim()}
-              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50">
+              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-surface-900 dark:text-white hover:bg-indigo-700 disabled:opacity-50">
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create
             </button>
-            <button onClick={() => setShowCreate(false)} className="rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-gray-300">Cancel</button>
+            <button onClick={() => setShowCreate(false)} className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm text-surface-600 dark:text-gray-300">Cancel</button>
           </div>
         </div>
       )}
@@ -202,21 +202,21 @@ export default function WorkflowsPage() {
 
       {/* Active workflows */}
       <div className="mb-8">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Your Workflows</h2>
+        <h2 className="text-sm font-semibold text-surface-500 dark:text-gray-400 uppercase tracking-wider mb-3">Your Workflows</h2>
         {loading ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-indigo-400" /></div>
         ) : workflows.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-700 p-8 text-center">
-            <Zap className="h-8 w-8 text-gray-600 mx-auto mb-2" />
-            <p className="text-gray-400 text-sm mb-1">No workflows yet</p>
-            <p className="text-gray-600 text-xs">Create one above or use a template below</p>
+          <div className="rounded-xl border border-dashed border-surface-300 dark:border-gray-700 p-8 text-center">
+            <Zap className="h-8 w-8 text-surface-400 dark:text-gray-600 mx-auto mb-2" />
+            <p className="text-surface-500 dark:text-gray-400 text-sm mb-1">No workflows yet</p>
+            <p className="text-surface-400 dark:text-gray-600 text-xs">Create one above or use a template below</p>
           </div>
         ) : (
           <div className="space-y-3">
             {workflows.map(wf => {
               const TriggerIcon = TRIGGER_ICONS[wf.triggerType] || Zap;
               return (
-                <div key={wf.id} className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+                <div key={wf.id} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-900/50 border border-indigo-800">
@@ -224,11 +224,11 @@ export default function WorkflowsPage() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-white text-sm">{wf.name}</span>
+                          <span className="font-medium text-surface-900 dark:text-white text-sm">{wf.name}</span>
                           <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[wf.status] || STATUS_STYLES.draft}`}>{wf.status}</span>
                         </div>
-                        {wf.description && <p className="text-xs text-gray-400 mt-0.5">{wf.description}</p>}
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                        {wf.description && <p className="text-xs text-surface-500 dark:text-gray-400 mt-0.5">{wf.description}</p>}
+                        <div className="flex items-center gap-3 mt-1 text-xs text-surface-400 dark:text-gray-500">
                           <span className="flex items-center gap-1"><Activity className="h-3 w-3" />{wf.runCount} runs</span>
                           {wf.lastRunAt && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(wf.lastRunAt).toLocaleDateString()}</span>}
                           <span className="capitalize">{wf.triggerType} trigger</span>
@@ -237,12 +237,12 @@ export default function WorkflowsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => runWorkflow(wf.id)} disabled={running === wf.id}
-                        className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50">
+                        className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 disabled:opacity-50">
                         {running === wf.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                         Run
                       </button>
                       <button onClick={() => toggleWorkflow(wf)}
-                        className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700">
+                        className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
                         {wf.status === 'active' ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                         {wf.status === 'active' ? 'Pause' : 'Resume'}
                       </button>
@@ -261,17 +261,17 @@ export default function WorkflowsPage() {
 
       {/* Templates */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Templates</h2>
+        <h2 className="text-sm font-semibold text-surface-500 dark:text-gray-400 uppercase tracking-wider mb-3">Templates</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {TEMPLATES.map(t => {
             const Icon = t.icon;
             return (
-              <div key={t.name} className="rounded-xl border border-gray-800 bg-gray-900 p-4 hover:border-gray-700 transition-colors">
+              <div key={t.name} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 hover:border-surface-300 dark:hover:border-gray-700 transition-colors">
                 <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${t.color} mb-3`}>
-                  <Icon className="h-4 w-4 text-white" />
+                  <Icon className="h-4 w-4 text-surface-900 dark:text-white" />
                 </div>
-                <h3 className="text-sm font-medium text-white mb-1">{t.name}</h3>
-                <p className="text-xs text-gray-400 mb-3">{t.description}</p>
+                <h3 className="text-sm font-medium text-surface-900 dark:text-white mb-1">{t.name}</h3>
+                <p className="text-xs text-surface-500 dark:text-gray-400 mb-3">{t.description}</p>
                 <button onClick={() => createWorkflow(t.name, t.description, t.trigger)}
                   className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
                   Use template →

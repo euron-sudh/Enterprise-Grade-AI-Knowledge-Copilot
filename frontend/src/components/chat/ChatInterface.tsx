@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, PanelRight, PanelRightClose } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { useMessages, useStreamingMessage } from '@/hooks/useChat';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { cn } from '@/lib/utils';

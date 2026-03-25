@@ -12,7 +12,7 @@ import { Camera, CreditCard, ExternalLink, Key, Shield, Users } from 'lucide-rea
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Tabs, TabPanel } from '@/components/ui/Tabs';

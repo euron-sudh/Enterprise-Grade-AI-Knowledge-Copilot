@@ -7,7 +7,7 @@ import { Bell, Command, LogOut, Menu, Moon, Settings, Sun, User } from 'lucide-r
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/uiStore';

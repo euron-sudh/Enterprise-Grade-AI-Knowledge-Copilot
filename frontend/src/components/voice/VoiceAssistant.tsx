@@ -6,7 +6,7 @@ import { AlertCircle, Mic, MicOff, Volume2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import { useAudioRecorder, useMediaDevices } from '@/hooks/useVoice';
 import * as voiceApi from '@/lib/api/voice';

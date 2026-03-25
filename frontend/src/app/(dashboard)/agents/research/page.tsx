@@ -8,7 +8,7 @@ import { ArrowLeft, BookOpen, ChevronRight, FileSearch, Loader2, Search, Sparkle
 import ReactMarkdown from 'react-markdown';
 
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import { getToken } from '@/lib/api/client';
 
@@ -116,7 +116,7 @@ export default function ResearchAgentPage() {
             </Button>
           </Link>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-surface-900 dark:text-white">
               <Search className="h-5 w-5" />
             </div>
             <div>

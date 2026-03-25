@@ -9,7 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const loginSchema = z.object({
@@ -65,6 +65,7 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') ?? '/home';
   const errorParam = searchParams.get('error');
+  const registeredParam = searchParams.get('registered');
 
   const [showPassword, setShowPassword] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
@@ -139,6 +140,14 @@ export default function LoginPage() {
                 ? 'Invalid credentials. Please check your email and password.'
                 : 'An error occurred during sign in. Please try again.'}
           </span>
+        </div>
+      )}
+
+      {/* Registration success banner */}
+      {registeredParam === '1' && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/50 p-3 text-sm text-green-700 dark:text-green-400">
+          <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <span>Account created successfully! Please sign in.</span>
         </div>
       )}
 

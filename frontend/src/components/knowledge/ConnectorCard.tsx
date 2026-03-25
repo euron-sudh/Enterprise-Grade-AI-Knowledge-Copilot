@@ -5,7 +5,7 @@ import { AlertCircle, CheckCircle, Clock, RefreshCw, Trash2, XCircle } from 'luc
 import { toast } from 'react-hot-toast';
 
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { useKnowledgeStore } from '@/stores/knowledgeStore';

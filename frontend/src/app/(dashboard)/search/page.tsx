@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import {
   Search,
   FileText,
@@ -136,15 +137,15 @@ const SUGGESTED_SEARCHES = [
 
 const SOURCE_ICONS: Record<string, string> = {
   C: 'bg-blue-600',
-  N: 'bg-gray-700',
+  N: 'bg-surface-200 dark:bg-gray-700',
   M: 'bg-green-700',
-  G: 'bg-gray-800',
+  G: 'bg-surface-100 dark:bg-gray-800',
   V: 'bg-red-700',
   P: 'bg-violet-700',
 };
 
 function RelevanceBadge({ score }: { score: number }) {
-  const color = score >= 90 ? 'text-emerald-400 bg-emerald-900/40' : score >= 75 ? 'text-amber-400 bg-amber-900/40' : 'text-gray-400 bg-gray-800';
+  const color = score >= 90 ? 'text-emerald-400 bg-emerald-900/40' : score >= 75 ? 'text-amber-400 bg-amber-900/40' : 'text-surface-500 dark:text-gray-400 bg-surface-100 dark:bg-gray-800';
   return (
     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${color}`}>
       {score}% match
@@ -153,6 +154,7 @@ function RelevanceBadge({ score }: { score: number }) {
 }
 
 export default function SearchPage() {
+  const { data: session } = useSession();
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('All');
@@ -176,9 +178,10 @@ export default function SearchPage() {
     setIsSearching(true);
     setHasResults(false);
     try {
+      const token = (session as any)?.accessToken ?? '';
       const res = await fetch('/api/backend/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ query: q, limit: 20 }),
       });
       if (res.ok) {
@@ -213,16 +216,16 @@ export default function SearchPage() {
   }, []);
 
   return (
-    <div className="min-h-full bg-gray-950 p-6">
+    <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Enterprise Search</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Enterprise Search</h1>
+          <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">
             Search across all documents, meetings, code, and people
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 text-xs text-surface-400 dark:text-gray-500">
           <Zap className="h-3.5 w-3.5 text-indigo-400" />
           <span>248,392 indexed items</span>
         </div>
@@ -230,11 +233,11 @@ export default function SearchPage() {
 
       {/* Search bar */}
       <div className="relative mb-4">
-        <div className="flex items-center gap-3 rounded-2xl border border-gray-700 bg-gray-900 px-5 py-4 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+        <div className="flex items-center gap-3 rounded-2xl border border-surface-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-5 py-4 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
           {isSearching ? (
             <Loader2 className="h-5 w-5 text-indigo-400 animate-spin flex-shrink-0" />
           ) : (
-            <Search className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            <Search className="h-5 w-5 text-surface-400 dark:text-gray-500 flex-shrink-0" />
           )}
           <input
             ref={inputRef}
@@ -243,12 +246,12 @@ export default function SearchPage() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search your entire knowledge base..."
-            className="flex-1 bg-transparent text-base text-white placeholder-gray-600 focus:outline-none"
+            className="flex-1 bg-transparent text-base text-surface-900 dark:text-white placeholder-surface-400 dark:placeholder-gray-600 focus:outline-none"
           />
           {query && (
             <button
               onClick={() => { setQuery(''); setHasResults(false); setSubmittedQuery(''); }}
-              className="text-gray-500 hover:text-gray-300 transition-colors"
+              className="text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300 transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
@@ -256,7 +259,7 @@ export default function SearchPage() {
           <button
             onClick={() => void handleSearch()}
             disabled={!query.trim() || isSearching}
-            className="flex-shrink-0 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-shrink-0 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-surface-900 dark:text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Search
           </button>
@@ -269,11 +272,11 @@ export default function SearchPage() {
         <div className="relative">
           <button
             onClick={() => setSourceFilter(sourceFilter === 'All sources' ? 'Confluence' : 'All sources')}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
           >
             <Filter className="h-3.5 w-3.5" />
             {sourceFilter}
-            <ChevronDown className="h-3 w-3 text-gray-500" />
+            <ChevronDown className="h-3 w-3 text-surface-400 dark:text-gray-500" />
           </button>
         </div>
 
@@ -281,20 +284,20 @@ export default function SearchPage() {
         <div className="relative">
           <button
             onClick={() => setShowDateDropdown(!showDateDropdown)}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
           >
             <Calendar className="h-3.5 w-3.5" />
             {dateFilter}
-            <ChevronDown className="h-3 w-3 text-gray-500" />
+            <ChevronDown className="h-3 w-3 text-surface-400 dark:text-gray-500" />
           </button>
           {showDateDropdown && (
-            <div className="absolute top-full mt-1 left-0 z-10 w-40 rounded-xl border border-gray-700 bg-gray-900 shadow-xl py-1">
+            <div className="absolute top-full mt-1 left-0 z-10 w-40 rounded-xl border border-surface-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1">
               {['Any time', 'Today', 'This week', 'This month', 'This year'].map(d => (
                 <button
                   key={d}
                   onClick={() => { setDateFilter(d); setShowDateDropdown(false); }}
                   className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                    dateFilter === d ? 'text-indigo-400 bg-indigo-950/50' : 'text-gray-300 hover:bg-gray-800'
+                    dateFilter === d ? 'text-indigo-400 bg-indigo-950/50' : 'text-surface-600 dark:text-gray-300 hover:bg-surface-100 dark:hover:bg-gray-800'
                   }`}
                 >
                   {d}
@@ -313,15 +316,15 @@ export default function SearchPage() {
             onClick={() => setActiveTab(tab.label)}
             className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               activeTab === tab.label
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                ? 'bg-indigo-600 text-surface-900 dark:text-white'
+                : 'bg-surface-100 dark:bg-gray-800 text-surface-500 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-gray-700 hover:text-surface-700 dark:hover:text-gray-200'
             }`}
           >
             <tab.icon className="h-3.5 w-3.5" />
             {tab.label}
             {hasResults && (
               <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-semibold ${
-                activeTab === tab.label ? 'bg-white/20' : 'bg-gray-700 text-gray-400'
+                activeTab === tab.label ? 'bg-white/20' : 'bg-surface-200 dark:bg-gray-700 text-surface-500 dark:text-gray-400'
               }`}>
                 {tab.count}
               </span>
@@ -333,55 +336,55 @@ export default function SearchPage() {
       {/* Results / Empty state */}
       {hasResults ? (
         <div className="space-y-3">
-          <p className="text-xs text-gray-500 mb-4">
-            {filteredResults.length} results for <span className="text-gray-300 font-medium">"{submittedQuery}"</span> · {dateFilter}
+          <p className="text-xs text-surface-400 dark:text-gray-500 mb-4">
+            {filteredResults.length} results for <span className="text-surface-600 dark:text-gray-300 font-medium">"{submittedQuery}"</span> · {dateFilter}
           </p>
           {filteredResults.map(result => (
             <div
               key={result.id}
-              className="group rounded-2xl border border-gray-800 bg-gray-900 p-5 hover:border-gray-700 hover:bg-gray-900/80 transition-all"
+              className="group rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:border-surface-300 dark:hover:border-gray-700 hover:bg-white dark:hover:bg-gray-900/80 transition-all"
             >
               <div className="flex items-start gap-4">
                 {/* Source icon */}
-                <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white ${SOURCE_ICONS[result.sourceIcon] ?? 'bg-gray-700'}`}>
+                <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold text-surface-900 dark:text-white ${SOURCE_ICONS[result.sourceIcon] ?? 'bg-surface-200 dark:bg-gray-700'}`}>
                   {result.sourceIcon}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-3 mb-1">
-                    <h3 className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors line-clamp-1">
+                    <h3 className="text-sm font-semibold text-surface-900 dark:text-white group-hover:text-indigo-300 transition-colors line-clamp-1">
                       {result.title}
                     </h3>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <RelevanceBadge score={result.relevance} />
-                      <a href={result.url} className="text-gray-600 hover:text-gray-400 transition-colors">
+                      <a href={result.url} className="text-surface-400 dark:text-gray-600 hover:text-surface-500 dark:hover:text-gray-400 transition-colors">
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                     </div>
                   </div>
 
                   <p
-                    className="text-xs text-gray-400 leading-relaxed mb-2 line-clamp-2"
+                    className="text-xs text-surface-500 dark:text-gray-400 leading-relaxed mb-2 line-clamp-2"
                     dangerouslySetInnerHTML={{ __html: result.excerpt }}
                   />
 
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="flex items-center gap-1 text-[11px] text-gray-600">
+                    <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
                       <BookOpen className="h-3 w-3" />
                       {result.source}
                     </span>
                     {result.author && (
-                      <span className="flex items-center gap-1 text-[11px] text-gray-600">
+                      <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
                         <Users className="h-3 w-3" />
                         {result.author}
                       </span>
                     )}
-                    <span className="flex items-center gap-1 text-[11px] text-gray-600">
+                    <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
                       <Clock className="h-3 w-3" />
                       {result.date}
                     </span>
                     {result.tags?.map(tag => (
-                      <span key={tag} className="text-[10px] text-gray-600 bg-gray-800 rounded-full px-2 py-0.5">
+                      <span key={tag} className="text-[10px] text-surface-400 dark:text-gray-600 bg-surface-100 dark:bg-gray-800 rounded-full px-2 py-0.5">
                         #{tag}
                       </span>
                     ))}
@@ -394,20 +397,20 @@ export default function SearchPage() {
       ) : isSearching ? (
         <div className="flex flex-col items-center justify-center py-24">
           <Loader2 className="h-8 w-8 text-indigo-400 animate-spin mb-4" />
-          <p className="text-sm text-gray-400">Searching across all sources...</p>
+          <p className="text-sm text-surface-500 dark:text-gray-400">Searching across all sources...</p>
         </div>
       ) : (
         /* Empty state with suggestions */
         <div className="flex flex-col items-center py-16">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-800 border border-gray-700 mb-5">
-            <Search className="h-7 w-7 text-gray-500" />
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-100 dark:bg-gray-800 border border-surface-300 dark:border-gray-700 mb-5">
+            <Search className="h-7 w-7 text-surface-400 dark:text-gray-500" />
           </div>
-          <h2 className="text-lg font-semibold text-white mb-2">Search your knowledge base</h2>
-          <p className="text-sm text-gray-500 text-center max-w-md mb-8">
+          <h2 className="text-lg font-semibold text-surface-900 dark:text-white mb-2">Search your knowledge base</h2>
+          <p className="text-sm text-surface-400 dark:text-gray-500 text-center max-w-md mb-8">
             Search across documents, videos, meetings, code repositories, and more using natural language or keywords.
           </p>
           <div className="w-full max-w-2xl">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <p className="text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
               <Star className="h-3.5 w-3.5" />
               Suggested searches
             </p>
@@ -416,7 +419,7 @@ export default function SearchPage() {
                 <button
                   key={s}
                   onClick={() => { setQuery(s); void handleSearch(s); }}
-                  className="rounded-xl border border-gray-800 bg-gray-900 px-4 py-3 text-sm text-gray-400 text-left hover:border-gray-700 hover:text-gray-200 hover:bg-gray-800 transition-all"
+                  className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 text-sm text-surface-500 dark:text-gray-400 text-left hover:border-surface-300 dark:hover:border-gray-700 hover:text-surface-700 dark:hover:text-gray-200 hover:bg-surface-100 dark:hover:bg-gray-800 transition-all"
                 >
                   {s}
                 </button>

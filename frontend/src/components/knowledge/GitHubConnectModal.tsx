@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { ExternalLink, Loader2, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { useKnowledgeStore } from '@/stores/knowledgeStore';
 

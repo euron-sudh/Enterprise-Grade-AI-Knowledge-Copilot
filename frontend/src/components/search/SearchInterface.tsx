@@ -3,7 +3,7 @@
 import { ExternalLink, FileText, Search, X } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { useSearch } from '@/hooks/useSearch';

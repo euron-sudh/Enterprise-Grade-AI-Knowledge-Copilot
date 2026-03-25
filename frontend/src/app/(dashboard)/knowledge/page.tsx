@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BookOpen, FileText, HardDrive, Link2, Plus } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import * as knowledgeApi from '@/lib/api/knowledge';

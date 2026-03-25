@@ -17,7 +17,7 @@ import {
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { Tabs, TabPanel } from '@/components/ui/Tabs';
@@ -115,7 +115,7 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
                   size="xl"
                 />
                 <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/50 px-2 py-1">
-                  <span className="text-xs font-medium text-white">{participant.name}</span>
+                  <span className="text-xs font-medium text-surface-900 dark:text-white">{participant.name}</span>
                   {participant.isMuted && <MicOff className="h-3 w-3 text-red-400" />}
                 </div>
                 {participant.isSpeaking && (
@@ -131,8 +131,8 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
               <button
                 className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
                   isMuted
-                    ? 'bg-red-500 text-white'
-                    : 'bg-surface-700 text-white hover:bg-surface-600'
+                    ? 'bg-red-500 text-surface-900 dark:text-white'
+                    : 'bg-surface-700 text-surface-900 dark:text-white hover:bg-surface-600'
                 }`}
                 onClick={() => setIsMuted((v) => !v)}
               >
@@ -141,14 +141,14 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
               <button
                 className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
                   isVideoOff
-                    ? 'bg-red-500 text-white'
-                    : 'bg-surface-700 text-white hover:bg-surface-600'
+                    ? 'bg-red-500 text-surface-900 dark:text-white'
+                    : 'bg-surface-700 text-surface-900 dark:text-white hover:bg-surface-600'
                 }`}
                 onClick={() => setIsVideoOff((v) => !v)}
               >
                 {isVideoOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
               </button>
-              <button className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600">
+              <button className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500 text-surface-900 dark:text-white hover:bg-red-600">
                 <PhoneOff className="h-5 w-5" />
               </button>
             </div>

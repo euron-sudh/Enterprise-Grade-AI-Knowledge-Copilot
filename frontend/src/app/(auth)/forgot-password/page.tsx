@@ -10,7 +10,7 @@ import { toast } from 'react-hot-toast';
 import { z } from 'zod';
 import { ArrowLeft, CheckCircle } from 'lucide-react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import * as authApi from '@/lib/api/auth';
 
 const schema = z.object({

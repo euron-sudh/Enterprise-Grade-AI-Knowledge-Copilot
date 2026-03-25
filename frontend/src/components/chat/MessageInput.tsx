@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
 

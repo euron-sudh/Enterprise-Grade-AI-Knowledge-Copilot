@@ -113,6 +113,25 @@ export const apiClient = createApiClient();
 export default apiClient;
 
 /**
+ * Call this once when the NextAuth session loads (e.g. in a top-level
+ * component or layout) so that apiClient has a valid Authorization header
+ * even though we're using NextAuth JWT sessions (not localStorage tokens).
+ */
+export function setApiToken(token: string | null | undefined) {
+  if (token) {
+    apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accessToken', token);
+    }
+  } else {
+    delete apiClient.defaults.headers.common['Authorization'];
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken');
+    }
+  }
+}
+
+/**
  * Returns a valid access token, refreshing it automatically if it has
  * expired or is about to expire. Use this in raw fetch() / SSE calls that
  * bypass the axios interceptors.

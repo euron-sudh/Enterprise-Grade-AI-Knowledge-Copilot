@@ -14,7 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/Spinner';
 import {
   useConversations,

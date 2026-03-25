@@ -29,12 +29,11 @@ interface ActionItem {
 interface Meeting {
   id: string;
   title: string;
-  scheduledAt: string;
-  duration: number | null;
+  scheduledAt: string | null;
   status: string;
-  participantCount: number;
-  hasRecap: boolean;
-  hasTranscript: boolean;
+  participants: unknown[];
+  recordingUrl: string | null;
+  transcriptUrl: string | null;
 }
 
 interface MeetingRecap {
@@ -93,7 +92,10 @@ export default function MeetingsPage() {
     }
   };
 
-  useEffect(() => { fetchMeetings(); }, [tab]);
+  useEffect(() => {
+    if (session?.accessToken) fetchMeetings();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, session]);
 
   const loadRecap = async (meetingId: string) => {
     if (selectedMeeting === meetingId) { setSelectedMeeting(null); setRecap(null); return; }
@@ -120,7 +122,7 @@ export default function MeetingsPage() {
       const res = await fetch('/api/backend/meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({ title: newTitle, scheduled_at: new Date(newDate).toISOString() }),
+        body: JSON.stringify({ title: newTitle, scheduledAt: new Date(newDate).toISOString() }),
       });
       if (!res.ok) throw new Error('Create failed');
       setShowCreate(false);
@@ -135,20 +137,20 @@ export default function MeetingsPage() {
   };
 
   return (
-    <div className="min-h-full bg-gray-950 p-6">
+    <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Meetings</h1>
-          <p className="mt-1 text-sm text-gray-400">AI-powered meeting intelligence and recaps</p>
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Meetings</h1>
+          <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">AI-powered meeting intelligence and recaps</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchMeetings} className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700">
+          <button onClick={fetchMeetings} className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button
             onClick={() => setShowCreate(!showCreate)}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-surface-900 dark:text-white hover:bg-indigo-700"
           >
             <Plus className="h-4 w-4" />
             Schedule Meeting
@@ -158,29 +160,29 @@ export default function MeetingsPage() {
 
       {/* Create form */}
       {showCreate && (
-        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900 p-4">
-          <h3 className="text-sm font-semibold text-white mb-3">Schedule New Meeting</h3>
+        <div className="mb-6 rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+          <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3">Schedule New Meeting</h3>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <input
               value={newTitle}
               onChange={e => setNewTitle(e.target.value)}
               placeholder="Meeting title"
-              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+              className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white placeholder-surface-400 dark:placeholder-gray-500 focus:outline-none focus:border-indigo-500"
             />
             <input
               type="datetime-local"
               value={newDate}
               onChange={e => setNewDate(e.target.value)}
-              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+              className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white focus:outline-none focus:border-indigo-500"
             />
           </div>
           <div className="flex gap-2">
             <button onClick={createMeeting} disabled={creating || !newTitle.trim() || !newDate}
-              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50">
+              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-surface-900 dark:text-white hover:bg-indigo-700 disabled:opacity-50">
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Create
             </button>
-            <button onClick={() => setShowCreate(false)} className="rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700">Cancel</button>
+            <button onClick={() => setShowCreate(false)} className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">Cancel</button>
           </div>
         </div>
       )}
@@ -190,10 +192,10 @@ export default function MeetingsPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 rounded-lg border border-gray-800 bg-gray-900 p-1 w-fit">
+      <div className="flex gap-1 mb-6 rounded-lg border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-1 w-fit">
         {(['upcoming', 'past'] as MeetingTab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-md text-sm font-medium capitalize transition-colors ${tab === t ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>
+            className={`px-4 py-2 rounded-md text-sm font-medium capitalize transition-colors ${tab === t ? 'bg-surface-200 dark:bg-gray-700 text-surface-900 dark:text-white' : 'text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white'}`}>
             {t}
           </button>
         ))}
@@ -205,9 +207,9 @@ export default function MeetingsPage() {
           <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
         </div>
       ) : meetings.length === 0 ? (
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-12 text-center">
-          <Video className="h-10 w-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-gray-400 text-sm">No {tab} meetings</p>
+        <div className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-12 text-center">
+          <Video className="h-10 w-10 text-surface-400 dark:text-gray-600 mx-auto mb-3" />
+          <p className="text-surface-500 dark:text-gray-400 text-sm">No {tab} meetings</p>
           {tab === 'upcoming' && (
             <button onClick={() => setShowCreate(true)} className="mt-3 text-indigo-400 hover:text-indigo-300 text-sm">
               Schedule your first meeting →
@@ -217,18 +219,17 @@ export default function MeetingsPage() {
       ) : (
         <div className="space-y-3">
           {meetings.map(m => (
-            <div key={m.id} className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+            <div key={m.id} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
               <div className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`flex h-10 w-10 items-center justify-center rounded-full ${PARTICIPANT_COLORS[0]}`}>
-                    <Video className="h-5 w-5 text-white" />
+                    <Video className="h-5 w-5 text-surface-900 dark:text-white" />
                   </div>
                   <div>
-                    <h3 className="font-medium text-white">{m.title}</h3>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                      <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(m.scheduledAt)}</span>
-                      {m.duration && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{m.duration} min</span>}
-                      <span className="flex items-center gap-1"><Users className="h-3 w-3" />{m.participantCount} participants</span>
+                    <h3 className="font-medium text-surface-900 dark:text-white">{m.title}</h3>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-surface-500 dark:text-gray-400">
+                      {m.scheduledAt && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(m.scheduledAt)}</span>}
+                      <span className="flex items-center gap-1"><Users className="h-3 w-3" />{m.participants.length} participants</span>
                     </div>
                   </div>
                 </div>
@@ -236,17 +237,17 @@ export default function MeetingsPage() {
                   <span className={`rounded-full px-2 py-1 text-xs font-medium ${
                     m.status === 'scheduled' ? 'bg-blue-900/50 text-blue-300' :
                     m.status === 'live' ? 'bg-red-900/50 text-red-300' :
-                    'bg-gray-800 text-gray-400'}`}>
+                    'bg-surface-100 dark:bg-gray-800 text-surface-500 dark:text-gray-400'}`}>
                     {m.status}
                   </span>
                   {m.status === 'scheduled' && (
-                    <button className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700">
+                    <button className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-surface-900 dark:text-white hover:bg-indigo-700">
                       <Play className="h-3 w-3" /> Join
                     </button>
                   )}
                   {tab === 'past' && (
                     <button onClick={() => loadRecap(m.id)}
-                      className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">
+                      className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
                       <Zap className="h-3 w-3" /> {selectedMeeting === m.id ? 'Hide Recap' : 'AI Recap'}
                     </button>
                   )}
@@ -255,20 +256,20 @@ export default function MeetingsPage() {
 
               {/* Recap panel */}
               {selectedMeeting === m.id && (
-                <div className="border-t border-gray-800 bg-gray-950 p-4">
+                <div className="border-t border-surface-200 dark:border-gray-800 bg-surface-50 dark:bg-gray-950 p-4">
                   {recapLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <div className="flex items-center gap-2 text-sm text-surface-500 dark:text-gray-400">
                       <Loader2 className="h-4 w-4 animate-spin" /> Loading recap...
                     </div>
                   ) : recap ? (
                     <div className="space-y-4">
                       <div>
-                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Summary</h4>
-                        <p className="text-sm text-gray-300">{recap.summary}</p>
+                        <h4 className="text-xs font-semibold text-surface-500 dark:text-gray-400 uppercase mb-2">Summary</h4>
+                        <p className="text-sm text-surface-600 dark:text-gray-300">{recap.summary}</p>
                       </div>
                       {recap.keyTopics?.length > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Key Topics</h4>
+                          <h4 className="text-xs font-semibold text-surface-500 dark:text-gray-400 uppercase mb-2">Key Topics</h4>
                           <div className="flex flex-wrap gap-1">
                             {recap.keyTopics.map((t, i) => (
                               <span key={i} className="rounded-full bg-indigo-900/50 px-2 py-0.5 text-xs text-indigo-300">{t}</span>
@@ -278,14 +279,14 @@ export default function MeetingsPage() {
                       )}
                       {recap.actionItems?.length > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                          <h4 className="text-xs font-semibold text-surface-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-1">
                             <CheckSquare className="h-3 w-3" /> Action Items
                           </h4>
                           <div className="space-y-1">
                             {recap.actionItems.map(ai => (
-                              <div key={ai.id} className="flex items-start gap-2 text-sm text-gray-300">
-                                <span className="mt-0.5 h-4 w-4 rounded border border-gray-600 flex-shrink-0" />
-                                <span>{ai.description} {ai.assignee && <span className="text-gray-500">— {ai.assignee}</span>}</span>
+                              <div key={ai.id} className="flex items-start gap-2 text-sm text-surface-600 dark:text-gray-300">
+                                <span className="mt-0.5 h-4 w-4 rounded border border-surface-300 dark:border-gray-600 flex-shrink-0" />
+                                <span>{ai.description} {ai.assignee && <span className="text-surface-400 dark:text-gray-500">— {ai.assignee}</span>}</span>
                               </div>
                             ))}
                           </div>
@@ -293,12 +294,12 @@ export default function MeetingsPage() {
                       )}
                       {recap.decisions?.length > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                          <h4 className="text-xs font-semibold text-surface-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-1">
                             <FileText className="h-3 w-3" /> Decisions
                           </h4>
                           <ul className="space-y-1">
                             {recap.decisions.map((d, i) => (
-                              <li key={i} className="text-sm text-gray-300 flex items-start gap-2">
+                              <li key={i} className="text-sm text-surface-600 dark:text-gray-300 flex items-start gap-2">
                                 <span className="text-indigo-400 flex-shrink-0">•</span> {d}
                               </li>
                             ))}
@@ -307,7 +308,7 @@ export default function MeetingsPage() {
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500">No recap available for this meeting.</p>
+                    <p className="text-sm text-surface-400 dark:text-gray-500">No recap available for this meeting.</p>
                   )}
                 </div>
               )}

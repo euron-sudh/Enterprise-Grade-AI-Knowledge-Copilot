@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, RefreshCw } from 'lucide-react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/Spinner';
 import { ConnectorCard } from '@/components/knowledge/ConnectorCard';
 import { FigmaConnectModal } from '@/components/knowledge/FigmaConnectModal';

@@ -27,7 +27,7 @@ const STATE_LABELS: Record<VoiceState, string> = {
 };
 
 const STATE_COLORS: Record<VoiceState, string> = {
-  idle: 'bg-gray-800 hover:bg-gray-700 border-gray-700',
+  idle: 'bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:hover:bg-gray-700 border-surface-300 dark:border-gray-700',
   listening: 'bg-red-600 hover:bg-red-700 border-red-500 shadow-lg shadow-red-500/30',
   processing: 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-500/30',
   speaking: 'bg-violet-600 border-violet-500 shadow-lg shadow-violet-500/30',
@@ -131,6 +131,7 @@ export default function VoicePage() {
         : selectedLanguage.includes('Japanese') ? 'ja-JP'
         : 'en-US';
 
+      let finalTranscript = '';
       recognition.onstart = () => setVoiceState('listening');
       recognition.onresult = (e: SpeechRecognitionEvent) => {
         let interim = '';
@@ -139,10 +140,12 @@ export default function VoicePage() {
           if (e.results[i].isFinal) final += e.results[i][0].transcript;
           else interim += e.results[i][0].transcript;
         }
-        setTranscript(final || interim);
+        if (final) finalTranscript += final;
+        setTranscript(finalTranscript || interim);
       };
       recognition.onend = () => {
-        if (transcript.trim()) askBackend(transcript.trim());
+        const text = finalTranscript.trim();
+        if (text) askBackend(text);
         else setVoiceState('idle');
       };
       recognition.onerror = () => {
@@ -219,17 +222,17 @@ export default function VoicePage() {
   }, []);
 
   return (
-    <div className="min-h-full bg-gray-950 p-6">
+    <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6">
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">Voice Assistant</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Voice Assistant</h1>
+          <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">
             Speak naturally to search and interact with your knowledge base
           </p>
         </div>
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
+          className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
         >
           <Settings className="h-4 w-4" />
           Settings
@@ -237,23 +240,23 @@ export default function VoicePage() {
       </div>
 
       {showSettings && (
-        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900 p-4 grid grid-cols-2 gap-4">
+        <div className="mb-6 rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Language</label>
+            <label className="block text-xs font-medium text-surface-500 dark:text-gray-400 mb-1">Language</label>
             <select
               value={selectedLanguage}
               onChange={e => setSelectedLanguage(e.target.value)}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white"
             >
               {LANGUAGES.map(l => <option key={l}>{l}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Voice Persona</label>
+            <label className="block text-xs font-medium text-surface-500 dark:text-gray-400 mb-1">Voice Persona</label>
             <select
               value={selectedPersona}
               onChange={e => setSelectedPersona(e.target.value)}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white"
             >
               {PERSONAS.map(p => <option key={p}>{p}</option>)}
             </select>
@@ -270,11 +273,11 @@ export default function VoicePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main voice panel */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
+          <div className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-8 text-center">
             <div className="mb-6">
               <WaveformBars
                 active={voiceState === 'listening' || voiceState === 'speaking'}
-                color={voiceState === 'listening' ? 'bg-red-500' : voiceState === 'speaking' ? 'bg-violet-500' : 'bg-gray-700'}
+                color={voiceState === 'listening' ? 'bg-red-500' : voiceState === 'speaking' ? 'bg-violet-500' : 'bg-surface-200 dark:bg-gray-700'}
               />
             </div>
 
@@ -283,39 +286,39 @@ export default function VoicePage() {
               className={`relative mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-2 transition-all ${STATE_COLORS[voiceState]}`}
             >
               {voiceState === 'processing' ? (
-                <Loader2 className="h-10 w-10 text-white animate-spin" />
+                <Loader2 className="h-10 w-10 text-surface-900 dark:text-white animate-spin" />
               ) : isActive ? (
-                <MicOff className="h-10 w-10 text-white" />
+                <MicOff className="h-10 w-10 text-surface-900 dark:text-white" />
               ) : (
-                <Mic className="h-10 w-10 text-white" />
+                <Mic className="h-10 w-10 text-surface-900 dark:text-white" />
               )}
             </button>
 
-            <p className="text-sm font-medium text-gray-300 mb-1">{STATE_LABELS[voiceState]}</p>
+            <p className="text-sm font-medium text-surface-600 dark:text-gray-300 mb-1">{STATE_LABELS[voiceState]}</p>
 
             {transcript && (
-              <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800 p-4 text-left">
-                <p className="text-xs font-medium text-gray-400 mb-1">You said:</p>
-                <p className="text-sm text-white">{transcript}</p>
+              <div className="mt-4 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 p-4 text-left">
+                <p className="text-xs font-medium text-surface-500 dark:text-gray-400 mb-1">You said:</p>
+                <p className="text-sm text-surface-900 dark:text-white">{transcript}</p>
               </div>
             )}
 
             {aiResponse && voiceState !== 'processing' && (
               <div className="mt-3 rounded-lg border border-indigo-800 bg-indigo-900/20 p-4 text-left">
                 <p className="text-xs font-medium text-indigo-400 mb-1">AI Response:</p>
-                <p className="text-sm text-gray-200">{aiResponse}</p>
+                <p className="text-sm text-surface-700 dark:text-gray-200">{aiResponse}</p>
               </div>
             )}
 
             <div className="mt-4 flex justify-center gap-3">
               <button
                 onClick={() => setIsMuted(!isMuted)}
-                className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-400 hover:bg-gray-700"
+                className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-xs text-surface-500 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-gray-700"
               >
                 {isMuted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
                 {isMuted ? 'Unmute' : 'Mute'}
               </button>
-              <div className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-400">
+              <div className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-xs text-surface-500 dark:text-gray-400">
                 <Globe className="h-3 w-3" />
                 {selectedLanguage}
               </div>
@@ -323,8 +326,8 @@ export default function VoicePage() {
           </div>
 
           {/* Quick prompts */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">Quick Questions</h3>
+          <div className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+            <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3">Quick Questions</h3>
             <div className="space-y-2">
               {[
                 'What are the key action items from last week?',
@@ -336,10 +339,10 @@ export default function VoicePage() {
                   key={q}
                   onClick={() => { setTranscript(q); askBackend(q); }}
                   disabled={isActive}
-                  className="flex items-center justify-between w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-left text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  className="flex items-center justify-between w-full rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-3 text-left text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
                 >
                   <span>{q}</span>
-                  <ChevronRight className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                  <ChevronRight className="h-4 w-4 text-surface-400 dark:text-gray-500 flex-shrink-0" />
                 </button>
               ))}
             </div>
@@ -348,20 +351,20 @@ export default function VoicePage() {
 
         {/* History panel */}
         <div className="space-y-4">
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">Recent Queries</h3>
+          <div className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+            <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3">Recent Queries</h3>
             {history.length === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">No queries yet. Start speaking!</p>
+              <p className="text-xs text-surface-400 dark:text-gray-500 text-center py-4">No queries yet. Start speaking!</p>
             ) : (
               <div className="space-y-3">
                 {history.map(item => (
-                  <div key={item.id} className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+                  <div key={item.id} className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 p-3">
                     <div className="flex items-start gap-2 mb-1">
-                      <Clock className="h-3 w-3 text-gray-500 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-gray-400">{item.time}</p>
+                      <Clock className="h-3 w-3 text-surface-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-surface-500 dark:text-gray-400">{item.time}</p>
                     </div>
-                    <p className="text-xs font-medium text-white mb-1">{item.question}</p>
-                    <p className="text-xs text-gray-400 line-clamp-2">{item.answer}</p>
+                    <p className="text-xs font-medium text-surface-900 dark:text-white mb-1">{item.question}</p>
+                    <p className="text-xs text-surface-500 dark:text-gray-400 line-clamp-2">{item.answer}</p>
                   </div>
                 ))}
               </div>

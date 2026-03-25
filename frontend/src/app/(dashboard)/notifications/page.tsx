@@ -30,30 +30,30 @@ export default function NotificationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white flex items-center gap-2">
             Notifications
             {unreadCount > 0 && (
-              <span className="px-2 py-0.5 text-xs font-medium bg-indigo-500 text-white rounded-full">{unreadCount}</span>
+              <span className="px-2 py-0.5 text-xs font-medium bg-indigo-500 text-surface-900 dark:text-white rounded-full">{unreadCount}</span>
             )}
           </h1>
-          <p className="text-gray-400 text-sm mt-1">Stay updated on your knowledge base activity</p>
+          <p className="text-surface-500 dark:text-gray-400 text-sm mt-1">Stay updated on your knowledge base activity</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={markAllRead} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-white border border-gray-700 rounded-lg hover:border-gray-600 transition-colors">
+          <button onClick={markAllRead} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white border border-surface-300 dark:border-gray-700 rounded-lg hover:border-surface-300 dark:hover:border-gray-600 transition-colors">
             <CheckCheck className="w-4 h-4" />
             Mark all read
           </button>
-          <button className="p-2 text-gray-400 hover:text-white border border-gray-700 rounded-lg hover:border-gray-600 transition-colors">
+          <button className="p-2 text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white border border-surface-300 dark:border-gray-700 rounded-lg hover:border-surface-300 dark:hover:border-gray-600 transition-colors">
             <Settings className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 p-1 bg-gray-900 rounded-lg mb-6 w-fit">
+      <div className="flex gap-1 p-1 bg-white dark:bg-gray-900 rounded-lg mb-6 w-fit">
         {(['all', 'unread'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${filter === f ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${filter === f ? 'bg-surface-200 dark:bg-gray-700 text-surface-900 dark:text-white' : 'text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white'}`}>
             {f} {f === 'unread' && unreadCount > 0 ? `(${unreadCount})` : ''}
           </button>
         ))}
@@ -62,26 +62,26 @@ export default function NotificationsPage() {
       {/* Notification list */}
       {displayed.length === 0 ? (
         <div className="text-center py-20">
-          <Bell className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-          <p className="text-gray-400">No {filter === 'unread' ? 'unread ' : ''}notifications</p>
+          <Bell className="w-12 h-12 text-surface-400 dark:text-gray-600 mx-auto mb-3" />
+          <p className="text-surface-500 dark:text-gray-400">No {filter === 'unread' ? 'unread ' : ''}notifications</p>
         </div>
       ) : (
         <div className="space-y-2">
           {displayed.map(n => (
             <div key={n.id} onClick={() => markRead(n.id)}
-              className={`group flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer ${n.read ? 'bg-gray-900 border-gray-800 hover:border-gray-700' : 'bg-gray-900 border-indigo-500/30 hover:border-indigo-500/50'}`}>
+              className={`group flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer ${n.read ? 'bg-white dark:bg-gray-900 border-surface-200 dark:border-gray-800 hover:border-surface-300 dark:hover:border-gray-700' : 'bg-white dark:bg-gray-900 border-indigo-500/30 hover:border-indigo-500/50'}`}>
               {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500 mt-2 shrink-0" />}
               {n.read && <div className="w-2 h-2 mt-2 shrink-0" />}
               <div className={`w-9 h-9 rounded-lg ${n.bg} flex items-center justify-center shrink-0`}>
                 <n.icon className={`w-4 h-4 ${n.color}`} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium ${n.read ? 'text-gray-300' : 'text-white'}`}>{n.title}</p>
-                <p className="text-sm text-gray-500 mt-0.5 line-clamp-1">{n.body}</p>
-                <p className="text-xs text-gray-600 mt-1">{n.time}</p>
+                <p className={`text-sm font-medium ${n.read ? 'text-surface-600 dark:text-gray-300' : 'text-surface-900 dark:text-white'}`}>{n.title}</p>
+                <p className="text-sm text-surface-400 dark:text-gray-500 mt-0.5 line-clamp-1">{n.body}</p>
+                <p className="text-xs text-surface-400 dark:text-gray-600 mt-1">{n.time}</p>
               </div>
               <button onClick={e => { e.stopPropagation(); remove(n.id); }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-600 hover:text-red-400 transition-all">
+                className="opacity-0 group-hover:opacity-100 p-1.5 text-surface-400 dark:text-gray-600 hover:text-red-400 transition-all">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>

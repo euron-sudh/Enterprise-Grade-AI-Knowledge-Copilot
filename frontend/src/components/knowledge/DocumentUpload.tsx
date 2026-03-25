@@ -6,7 +6,7 @@ import { useDropzone } from 'react-dropzone';
 import { CheckCircle, FileText, Upload, X, XCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { cn, formatBytes } from '@/lib/utils';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import type { UploadProgress } from '@/types';

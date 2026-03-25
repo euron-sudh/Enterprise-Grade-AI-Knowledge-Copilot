@@ -20,9 +20,9 @@ import {
 } from 'lucide-react';
 
 interface ResearchChunk {
-  type: 'status' | 'sources' | 'delta' | 'done' | 'error';
+  event: 'status' | 'sources' | 'delta' | 'done' | 'error';
   message?: string;
-  sources?: Array<{ fileName: string; chunkText: string }>;
+  sources?: Array<{ documentName: string; chunkText: string }>;
   text?: string;
   error?: string;
 }
@@ -88,7 +88,7 @@ interface AgentSession {
   agentId: string;
   query: string;
   status: string;
-  sources: Array<{ fileName: string; chunkText: string }>;
+  sources: Array<{ documentName: string; chunkText: string }>;
   report: string;
   done: boolean;
   error: string;
@@ -146,11 +146,11 @@ export default function AgentsPage() {
             const chunk: ResearchChunk = JSON.parse(line.slice(6));
             setAgentSession(prev => {
               if (!prev) return prev;
-              if (chunk.type === 'status') return { ...prev, status: chunk.message || '' };
-              if (chunk.type === 'sources') return { ...prev, sources: chunk.sources || [], status: 'Generating report...' };
-              if (chunk.type === 'delta') return { ...prev, report: prev.report + (chunk.text || '') };
-              if (chunk.type === 'done') return { ...prev, done: true, status: 'Complete' };
-              if (chunk.type === 'error') return { ...prev, error: chunk.error || 'Error', done: true };
+              if (chunk.event === 'status') return { ...prev, status: chunk.message || '' };
+              if (chunk.event === 'sources') return { ...prev, sources: chunk.sources || [], status: 'Generating report...' };
+              if (chunk.event === 'delta') return { ...prev, report: prev.report + (chunk.text || '') };
+              if (chunk.event === 'done') return { ...prev, done: true, status: 'Complete' };
+              if (chunk.event === 'error') return { ...prev, error: chunk.error || 'Error', done: true };
               return prev;
             });
           } catch { /* skip malformed */ }
@@ -170,16 +170,16 @@ export default function AgentsPage() {
   }, [agentSession?.report]);
 
   return (
-    <div className="min-h-full bg-gray-950 p-6">
+    <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">AI Agents</h1>
-        <p className="mt-1 text-sm text-gray-400">Autonomous AI agents powered by your knowledge base</p>
+        <h1 className="text-2xl font-bold text-surface-900 dark:text-white">AI Agents</h1>
+        <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">Autonomous AI agents powered by your knowledge base</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Agent grid */}
         <div className="lg:col-span-1">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Available Agents</h2>
+          <h2 className="text-xs font-semibold text-surface-500 dark:text-gray-400 uppercase tracking-wider mb-3">Available Agents</h2>
           <div className="space-y-2">
             {PREBUILT_AGENTS.map(agent => (
               <button
@@ -188,16 +188,16 @@ export default function AgentsPage() {
                 className={`w-full text-left rounded-xl border p-4 transition-all ${
                   activeAgent?.id === agent.id
                     ? 'border-indigo-600 bg-indigo-900/20'
-                    : 'border-gray-800 bg-gray-900 hover:border-gray-700'
+                    : 'border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-surface-300 dark:hover:border-gray-700'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${agent.color} text-white text-xs font-bold flex-shrink-0`}>
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${agent.color} text-surface-900 dark:text-white text-xs font-bold flex-shrink-0`}>
                     {agent.initials}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{agent.name}</p>
-                    <p className="text-xs text-gray-400 truncate">{agent.description.split('.')[0]}</p>
+                    <p className="text-sm font-medium text-surface-900 dark:text-white truncate">{agent.name}</p>
+                    <p className="text-xs text-surface-500 dark:text-gray-400 truncate">{agent.description.split('.')[0]}</p>
                   </div>
                 </div>
               </button>
@@ -208,30 +208,30 @@ export default function AgentsPage() {
         {/* Agent workspace */}
         <div className="lg:col-span-2">
           {!activeAgent ? (
-            <div className="flex flex-col items-center justify-center h-80 rounded-xl border border-dashed border-gray-700 bg-gray-900/50">
-              <Bot className="h-12 w-12 text-gray-600 mb-3" />
-              <p className="text-gray-400 font-medium">Select an agent to get started</p>
-              <p className="text-gray-600 text-sm mt-1">Choose from the agents on the left</p>
+            <div className="flex flex-col items-center justify-center h-80 rounded-xl border border-dashed border-surface-300 dark:border-gray-700 bg-white dark:bg-gray-900/50">
+              <Bot className="h-12 w-12 text-surface-400 dark:text-gray-600 mb-3" />
+              <p className="text-surface-500 dark:text-gray-400 font-medium">Select an agent to get started</p>
+              <p className="text-surface-400 dark:text-gray-600 text-sm mt-1">Choose from the agents on the left</p>
             </div>
           ) : (
-            <div className="rounded-xl border border-gray-800 bg-gray-900 flex flex-col h-full min-h-[500px]">
+            <div className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col h-full min-h-[500px]">
               {/* Agent header */}
-              <div className="flex items-center justify-between border-b border-gray-800 p-4">
+              <div className="flex items-center justify-between border-b border-surface-200 dark:border-gray-800 p-4">
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${activeAgent.color} text-white text-xs font-bold`}>
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${activeAgent.color} text-surface-900 dark:text-white text-xs font-bold`}>
                     {activeAgent.initials}
                   </div>
                   <div>
-                    <p className="font-medium text-white text-sm">{activeAgent.name}</p>
+                    <p className="font-medium text-surface-900 dark:text-white text-sm">{activeAgent.name}</p>
                     <div className="flex gap-1 mt-0.5">
                       {activeAgent.tools.map(t => (
-                        <span key={t} className="rounded-full bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">{t}</span>
+                        <span key={t} className="rounded-full bg-surface-100 dark:bg-gray-800 px-1.5 py-0.5 text-xs text-surface-500 dark:text-gray-400">{t}</span>
                       ))}
                     </div>
                   </div>
                 </div>
                 <button onClick={() => { setActiveAgent(null); setAgentSession(null); }}
-                  className="text-gray-500 hover:text-gray-300">
+                  className="text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -240,16 +240,16 @@ export default function AgentsPage() {
               <div ref={reportRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                 {!agentSession && (
                   <div className="text-center py-8">
-                    <p className="text-gray-400 text-sm">{activeAgent.description}</p>
-                    <p className="text-gray-600 text-xs mt-2">Enter your query below to start</p>
+                    <p className="text-surface-500 dark:text-gray-400 text-sm">{activeAgent.description}</p>
+                    <p className="text-surface-400 dark:text-gray-600 text-xs mt-2">Enter your query below to start</p>
                   </div>
                 )}
 
                 {agentSession && (
                   <>
-                    <div className="rounded-lg bg-gray-800 p-3">
-                      <p className="text-xs text-gray-400 mb-1">Your query:</p>
-                      <p className="text-sm text-white">{agentSession.query}</p>
+                    <div className="rounded-lg bg-surface-100 dark:bg-gray-800 p-3">
+                      <p className="text-xs text-surface-500 dark:text-gray-400 mb-1">Your query:</p>
+                      <p className="text-sm text-surface-900 dark:text-white">{agentSession.query}</p>
                     </div>
 
                     {agentSession.status && !agentSession.done && (
@@ -261,11 +261,11 @@ export default function AgentsPage() {
 
                     {agentSession.sources.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-gray-400 mb-2">Sources found ({agentSession.sources.length}):</p>
+                        <p className="text-xs font-medium text-surface-500 dark:text-gray-400 mb-2">Sources found ({agentSession.sources.length}):</p>
                         <div className="flex flex-wrap gap-1">
                           {agentSession.sources.map((s, i) => (
                             <span key={i} className="rounded-full bg-indigo-900/40 border border-indigo-800 px-2 py-0.5 text-xs text-indigo-300 truncate max-w-[200px]">
-                              {s.fileName}
+                              {s.documentName}
                             </span>
                           ))}
                         </div>
@@ -273,9 +273,9 @@ export default function AgentsPage() {
                     )}
 
                     {agentSession.report && (
-                      <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
-                        <p className="text-xs font-medium text-gray-400 mb-2">Report:</p>
-                        <div className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+                      <div className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800/50 p-4">
+                        <p className="text-xs font-medium text-surface-500 dark:text-gray-400 mb-2">Report:</p>
+                        <div className="text-sm text-surface-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
                           {agentSession.report}
                           {!agentSession.done && <span className="inline-block w-1 h-4 bg-indigo-400 animate-pulse ml-0.5 align-middle" />}
                         </div>
@@ -292,7 +292,7 @@ export default function AgentsPage() {
               </div>
 
               {/* Query input */}
-              <div className="border-t border-gray-800 p-4">
+              <div className="border-t border-surface-200 dark:border-gray-800 p-4">
                 <div className="flex gap-2">
                   <input
                     value={query}
@@ -300,12 +300,12 @@ export default function AgentsPage() {
                     onKeyDown={e => e.key === 'Enter' && !e.shiftKey && runAgent()}
                     placeholder={`Ask ${activeAgent.name} anything...`}
                     disabled={running}
-                    className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                    className="flex-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-900 dark:text-white placeholder-surface-400 dark:placeholder-gray-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                   />
                   <button
                     onClick={runAgent}
                     disabled={running || !query.trim()}
-                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-surface-900 dark:text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
                     {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     Run

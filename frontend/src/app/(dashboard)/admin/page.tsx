@@ -33,7 +33,7 @@ import { toast } from 'react-hot-toast';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import * as adminApi from '@/lib/api/admin';
 import type { AdminUser, InviteLink, Role } from '@/lib/api/admin';
@@ -143,7 +143,7 @@ function InviteLinkModal({
                 />
                 <button
                   onClick={handleCopy}
-                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors"
+                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-surface-900 dark:text-white hover:bg-brand-700 transition-colors"
                 >
                   {copied ? <ClipboardCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   {copied ? 'Copied' : 'Copy'}
@@ -848,7 +848,7 @@ export default function AdminPage() {
         {/* ── BILLING TAB ── */}
         {tab === 'Billing' && (
           <div className="space-y-4">
-            <Card variant="bordered" className="bg-gradient-to-br from-indigo-600 to-violet-600 border-0 text-white">
+            <Card variant="bordered" className="bg-gradient-to-br from-indigo-600 to-violet-600 border-0 text-surface-900 dark:text-white">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium text-indigo-100">Current Plan</p>

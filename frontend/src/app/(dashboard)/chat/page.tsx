@@ -310,7 +310,7 @@ export default function ChatPage() {
         }
 
         // 2. Stream the message
-        const res = await fetch(`/api/backend/conversations/${convId}/messages`, {
+        const res = await fetch(`/api/backend/conversations/${convId}/messages/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(session as any)?.accessToken ?? ''}` },
           body: JSON.stringify({ content: content.trim(), model: 'claude-sonnet-4-6' }),
