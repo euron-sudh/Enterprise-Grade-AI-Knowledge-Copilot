@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare,
   Mic,
@@ -10,6 +10,7 @@ import {
   Search,
   Bot,
   ChevronRight,
+  ChevronLeft,
   Check,
   Star,
   ArrowRight,
@@ -20,7 +21,434 @@ import {
   Play,
   Menu,
   X,
+  FileText,
+  BookOpen,
+  Loader2,
 } from 'lucide-react';
+
+// ─── Demo Modal ────────────────────────────────────────────────────────────────
+
+const DEMO_SLIDES = [
+  {
+    id: 'chat',
+    label: 'AI Chat',
+    icon: MessageSquare,
+    title: 'Ask anything. Get cited answers instantly.',
+    description: 'RAG-powered chat searches your entire knowledge base and returns answers with source citations.',
+    color: 'from-indigo-600 to-violet-600',
+    content: <ChatDemo />,
+  },
+  {
+    id: 'knowledge',
+    label: 'Knowledge Base',
+    icon: BookOpen,
+    title: 'Upload once. Query forever.',
+    description: 'Drop PDFs, docs, spreadsheets, or connect Slack, Notion, Google Drive — all indexed in seconds.',
+    color: 'from-emerald-600 to-teal-600',
+    content: <KnowledgeDemo />,
+  },
+  {
+    id: 'search',
+    label: 'Semantic Search',
+    icon: Search,
+    title: 'Find anything across all your sources.',
+    description: 'Hybrid semantic + full-text search across every document, meeting, and conversation.',
+    color: 'from-amber-600 to-orange-600',
+    content: <SearchDemo />,
+  },
+  {
+    id: 'voice',
+    label: 'Voice Assistant',
+    icon: Mic,
+    title: 'Speak naturally. Get spoken answers.',
+    description: 'Real-time speech-to-text with streaming AI responses and text-to-speech playback.',
+    color: 'from-rose-600 to-pink-600',
+    content: <VoiceDemo />,
+  },
+  {
+    id: 'agents',
+    label: 'AI Agents',
+    icon: Bot,
+    title: 'Autonomous agents for deep work.',
+    description: 'Research Agent synthesizes multi-source reports. Writing Agent drafts in your brand voice.',
+    color: 'from-cyan-600 to-blue-600',
+    content: <AgentsDemo />,
+  },
+];
+
+function ChatDemo() {
+  const [step, setStep] = useState(0);
+  const [typed, setTyped] = useState('');
+  const messages = [
+    { role: 'user', text: "What's our Q4 revenue target and which products are driving growth?" },
+    { role: 'ai', text: "Based on the **Q4 Financial Plan** and **Product Roadmap v3**, your Q4 revenue target is **$4.2M** — a 34% increase over Q3.\n\n**Top growth drivers:**\n• Enterprise tier upsells (+$1.1M projected)\n• KnowledgeForge Pro seats (+$890K)\n• API usage revenue (+$340K)\n\nThe Sales team deck notes that **APAC expansion** is the single largest upside opportunity this quarter.", citations: ['Q4 Financial Plan.pdf', 'Product Roadmap v3.docx', 'Sales Team Q4 Deck.pptx'] },
+  ];
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setStep(1), 800);
+    const t2 = setTimeout(() => setStep(2), 1800);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  const aiMsg = messages[1]!;
+
+  useEffect(() => {
+    if (step === 2) {
+      const full = aiMsg.text;
+      let i = 0;
+      const iv = setInterval(() => {
+        i += 3;
+        setTyped(full.slice(0, i));
+        if (i >= full.length) clearInterval(iv);
+      }, 18);
+      return () => clearInterval(iv);
+    }
+  }, [step]);
+
+  return (
+    <div className="flex flex-col gap-3 h-full">
+      {step >= 1 && (
+        <div className="flex justify-end">
+          <div className="bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-sm max-w-[80%]">
+            {messages[0]!.text}
+          </div>
+        </div>
+      )}
+      {step >= 2 && (
+        <div className="flex flex-col gap-2">
+          <div className="bg-white/10 border border-white/10 rounded-2xl rounded-bl-sm px-4 py-3 text-sm text-gray-100 max-w-[92%] whitespace-pre-wrap leading-relaxed">
+            {typed.split('**').map((part, i) =>
+              i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : part
+            )}
+            {typed.length < aiMsg.text.length && (
+              <span className="inline-block w-0.5 h-4 bg-indigo-400 animate-pulse ml-0.5 align-middle" />
+            )}
+          </div>
+          {typed.length >= aiMsg.text.length && (
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {(aiMsg.citations ?? []).map((c) => (
+                <span key={c} className="flex items-center gap-1 text-xs bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full">
+                  <FileText className="w-3 h-3" />{c}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {step < 2 && (
+        <div className="flex items-center gap-2 text-gray-500 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" />Searching knowledge base...
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KnowledgeDemo() {
+  const files = [
+    { name: 'Q4 Financial Plan.pdf', size: '2.4 MB', status: 'indexed', type: 'PDF' },
+    { name: 'Product Roadmap v3.docx', size: '890 KB', status: 'indexed', type: 'DOCX' },
+    { name: 'Engineering Specs.pdf', size: '5.1 MB', status: 'indexing', type: 'PDF' },
+    { name: 'Customer Research.xlsx', size: '1.2 MB', status: 'queued', type: 'XLSX' },
+  ];
+  const [progress, setProgress] = useState(42);
+  useEffect(() => {
+    const iv = setInterval(() => setProgress(p => p >= 94 ? 94 : p + 2), 120);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <div className="flex flex-col gap-2 h-full">
+      <div className="border-2 border-dashed border-white/20 rounded-xl p-4 flex items-center justify-center gap-3 text-gray-400 text-sm mb-1">
+        <Database className="w-5 h-5 text-indigo-400" />
+        Drop files or connect Google Drive, Notion, Slack...
+      </div>
+      {files.map((f) => (
+        <div key={f.name} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2">
+          <span className="text-xs font-bold bg-white/10 text-gray-300 px-1.5 py-0.5 rounded">{f.type}</span>
+          <span className="text-sm text-gray-200 flex-1 truncate">{f.name}</span>
+          <span className="text-xs text-gray-500">{f.size}</span>
+          {f.status === 'indexed' && <span className="text-xs text-emerald-400 font-medium">✓ Indexed</span>}
+          {f.status === 'indexing' && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-500 rounded-full transition-all duration-200" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="text-xs text-indigo-400">{progress}%</span>
+            </div>
+          )}
+          {f.status === 'queued' && <span className="text-xs text-gray-500">Queued</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SearchDemo() {
+  const query = 'enterprise security compliance';
+  const [typed, setTyped] = useState('');
+  const results = [
+    { title: 'SOC 2 Type II Compliance Report', source: 'Confluence', snippet: '...our infrastructure meets all SOC 2 Type II requirements. Last audit completed March 2025 with zero critical findings...', score: 97 },
+    { title: 'Security Architecture Overview', source: 'Google Drive', snippet: '...AES-256 encryption at rest, TLS 1.3 in transit. All data isolated per tenant with separate encryption keys...', score: 94 },
+    { title: 'Enterprise Onboarding Checklist', source: 'Notion', snippet: '...security review required before provisioning enterprise accounts. Contact security@knowledgeforge.ai for compliance docs...', score: 88 },
+  ];
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let i = 0;
+    const iv = setInterval(() => {
+      i += 1;
+      setTyped(query.slice(0, i));
+      if (i >= query.length) { clearInterval(iv); setTimeout(() => setShow(true), 400); }
+    }, 60);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <div className="flex flex-col gap-2 h-full">
+      <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2.5">
+        <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
+        <span className="text-sm text-white flex-1">{typed}<span className="animate-pulse">|</span></span>
+      </div>
+      {show && results.map((r, i) => (
+        <div key={i} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 hover:bg-white/10 transition-colors cursor-pointer">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <span className="text-sm font-medium text-white">{r.title}</span>
+            <span className="text-xs text-emerald-400 font-semibold flex-shrink-0">{r.score}%</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className="text-xs bg-white/10 text-gray-400 px-1.5 py-0.5 rounded">{r.source}</span>
+          </div>
+          <p className="text-xs text-gray-400 line-clamp-2">{r.snippet}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VoiceDemo() {
+  const [phase, setPhase] = useState<'idle'|'listening'|'processing'|'speaking'>('idle');
+  const [bars] = useState(() => Array.from({ length: 20 }, () => Math.random()));
+  const [animBars, setAnimBars] = useState(bars);
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase('listening'), 600);
+    const t2 = setTimeout(() => setPhase('processing'), 2800);
+    const t3 = setTimeout(() => setPhase('speaking'), 4000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'listening') return;
+    const iv = setInterval(() => {
+      setAnimBars(Array.from({ length: 20 }, () => 0.2 + Math.random() * 0.8));
+    }, 80);
+    return () => clearInterval(iv);
+  }, [phase]);
+
+  const phaseLabel = { idle: 'Click to speak', listening: 'Listening...', processing: 'Thinking...', speaking: 'Speaking answer' };
+  const phaseColor = { idle: 'bg-white/10', listening: 'bg-rose-600', processing: 'bg-indigo-600', speaking: 'bg-emerald-600' };
+
+  return (
+    <div className="flex flex-col items-center gap-5 h-full pt-2">
+      <div className={`w-20 h-20 rounded-full ${phaseColor[phase]} flex items-center justify-center transition-all duration-300 shadow-lg ${phase === 'listening' ? 'ring-4 ring-rose-500/40 animate-pulse' : ''} ${phase === 'speaking' ? 'ring-4 ring-emerald-500/40' : ''}`}>
+        <Mic className="w-9 h-9 text-white" />
+      </div>
+      <p className="text-sm text-gray-300">{phaseLabel[phase]}</p>
+      <div className="flex items-end gap-0.5 h-10">
+        {animBars.map((h, i) => (
+          <div key={i} className={`w-1.5 rounded-full transition-all duration-75 ${phase === 'listening' ? 'bg-rose-400' : phase === 'speaking' ? 'bg-emerald-400' : 'bg-white/20'}`}
+            style={{ height: phase === 'listening' || phase === 'speaking' ? `${h * 40}px` : '4px' }} />
+        ))}
+      </div>
+      {phase === 'listening' && (
+        <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-200 italic max-w-xs text-center">
+          "Summarize last quarter's engineering highlights"
+        </div>
+      )}
+      {(phase === 'processing' || phase === 'speaking') && (
+        <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-gray-100 max-w-xs leading-relaxed">
+          Q3 engineering shipped <strong className="text-white">14 features</strong>, reduced API latency by <strong className="text-white">38%</strong>, and completed the SOC 2 audit — all ahead of schedule.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentsDemo() {
+  const [step, setStep] = useState(0);
+  const steps = [
+    { icon: Search, label: 'Searching knowledge base...', color: 'text-indigo-400' },
+    { icon: FileText, label: 'Reading 8 relevant documents...', color: 'text-violet-400' },
+    { icon: Bot, label: 'Synthesizing research report...', color: 'text-emerald-400' },
+  ];
+  const report = `# Competitive Analysis: AI Knowledge Tools
+
+## Executive Summary
+KnowledgeForge leads on **RAG accuracy** and **multi-modal ingestion** vs. Notion AI, Guru, and Confluence.
+
+## Key Differentiators
+- **Citation accuracy**: 94% vs industry avg 71%
+- **Ingestion speed**: 100-page PDF in <60s
+- **Voice + Video**: only platform with native support`;
+
+  const [typed, setTyped] = useState('');
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setStep(1), 700);
+    const t2 = setTimeout(() => setStep(2), 1600);
+    const t3 = setTimeout(() => setStep(3), 2500);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
+
+  useEffect(() => {
+    if (step < 3) return;
+    let i = 0;
+    const iv = setInterval(() => {
+      i += 4;
+      setTyped(report.slice(0, i));
+      if (i >= report.length) clearInterval(iv);
+    }, 20);
+    return () => clearInterval(iv);
+  }, [step]);
+
+  return (
+    <div className="flex flex-col gap-2.5 h-full">
+      <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300 flex items-center gap-2">
+        <Bot className="w-4 h-4 text-indigo-400" />
+        <span className="text-white font-medium">Research Agent</span>
+        <span className="text-gray-500">•</span>
+        "Competitive analysis for AI knowledge tools"
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {steps.slice(0, step).map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <div key={i} className="flex items-center gap-2 text-xs text-gray-400">
+              <Icon className={`w-3.5 h-3.5 ${s.color}`} />
+              {s.label}
+              <Check className="w-3 h-3 text-emerald-400 ml-auto" />
+            </div>
+          );
+        })}
+        {step < 3 && step > 0 && <div className="flex items-center gap-2 text-xs text-gray-500"><Loader2 className="w-3.5 h-3.5 animate-spin" />{steps[step - 1]?.label}</div>}
+      </div>
+      {step >= 3 && typed && (
+        <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-300 font-mono leading-relaxed overflow-hidden flex-1">
+          {typed.split('**').map((part, i) =>
+            i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : part
+          )}
+          {typed.length < report.length && <span className="animate-pulse">▌</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DemoModal({ onClose }: { onClose: () => void }) {
+  const [slide, setSlide] = useState(0);
+  const [key, setKey] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goTo = (i: number) => {
+    setSlide(i);
+    setKey(k => k + 1);
+  };
+
+  const prev = () => goTo((slide - 1 + DEMO_SLIDES.length) % DEMO_SLIDES.length);
+  const next = () => goTo((slide + 1) % DEMO_SLIDES.length);
+
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      setSlide(s => {
+        const n = (s + 1) % DEMO_SLIDES.length;
+        setKey(k => k + 1);
+        return n;
+      });
+    }, 7000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') next();
+      if (e.key === 'ArrowLeft') prev();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [slide]);
+
+  const current = DEMO_SLIDES[slide] ?? DEMO_SLIDES[0]!;
+  const Icon = current.icon;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+      <div
+        className="relative w-full max-w-4xl bg-gray-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${current.color} flex items-center justify-center`}>
+              <Icon className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <p className="text-white font-semibold text-sm">{current.title}</p>
+              <p className="text-gray-400 text-xs">{current.description}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors p-1">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Slide tabs */}
+        <div className="flex border-b border-white/10 overflow-x-auto">
+          {DEMO_SLIDES.map((s, i) => {
+            const TabIcon = s.icon;
+            return (
+              <button
+                key={s.id}
+                onClick={() => { if (timerRef.current) clearInterval(timerRef.current); goTo(i); }}
+                className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                  i === slide
+                    ? `border-indigo-500 text-white`
+                    : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <TabIcon className="w-3.5 h-3.5" />
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Demo content */}
+        <div className="p-6 h-72 overflow-hidden" key={key}>
+          {current.content}
+        </div>
+
+        {/* Footer nav */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-white/10">
+          <button onClick={() => { if (timerRef.current) clearInterval(timerRef.current); prev(); }}
+            className="flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors">
+            <ChevronLeft className="w-4 h-4" /> Previous
+          </button>
+          <div className="flex gap-1.5">
+            {DEMO_SLIDES.map((_, i) => (
+              <button key={i} onClick={() => { if (timerRef.current) clearInterval(timerRef.current); goTo(i); }}
+                className={`w-2 h-2 rounded-full transition-all ${i === slide ? 'bg-indigo-500 w-6' : 'bg-white/20'}`} />
+            ))}
+          </div>
+          <button onClick={() => { if (timerRef.current) clearInterval(timerRef.current); next(); }}
+            className="flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors">
+            Next <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Navbar ────────────────────────────────────────────────────────────────────
 
@@ -126,8 +554,10 @@ function Navbar() {
 // ─── Hero ──────────────────────────────────────────────────────────────────────
 
 function Hero() {
+  const [showDemo, setShowDemo] = useState(false);
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-gray-950 pt-16">
+      {showDemo && <DemoModal onClose={() => setShowDemo(false)} />}
       {/* Gradient Orbs */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl animate-pulse" />
       <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-violet-600/20 rounded-full blur-3xl animate-pulse delay-1000" />
@@ -176,7 +606,10 @@ function Hero() {
             Start for Free
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </Link>
-          <button className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all backdrop-blur-sm">
+          <button
+            onClick={() => setShowDemo(true)}
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all backdrop-blur-sm"
+          >
             <Play className="w-5 h-5 text-indigo-400" />
             Watch Demo
           </button>
