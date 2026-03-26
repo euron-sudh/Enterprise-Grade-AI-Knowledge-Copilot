@@ -57,7 +57,7 @@ function docToVideo(doc: any, idx: number): VideoItem {
     uploadedAt: doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—',
     views: 0,
     category: 'Other',
-    thumbnail: GRADIENT_THUMBNAILS[idx % GRADIENT_THUMBNAILS.length] ?? GRADIENT_THUMBNAILS[0],
+    thumbnail: GRADIENT_THUMBNAILS[idx % GRADIENT_THUMBNAILS.length] ?? 'from-blue-800 to-indigo-900',
     hasTranscript: doc.status === 'indexed',
     hasChapters: false,
     description: '',
@@ -99,11 +99,19 @@ export default function VideoPage() {
   };
 
   useEffect(() => {
-    if (status === 'authenticated' && session?.accessToken) {
-      fetchVideos(session.accessToken);
+    if (status === 'authenticated') {
+      if ((session as any)?.error) {
+        // Token refresh failed — ask user to sign in again
+        setError('Your session has expired. Please sign in again.');
+        setLoading(false);
+        return;
+      }
+      if (session?.accessToken) {
+        fetchVideos(session.accessToken);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, session?.accessToken]);
+  }, [status, session?.accessToken, (session as any)?.error]);
 
   const uploadVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
