@@ -484,13 +484,18 @@ function Navbar() {
 
           {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-8">
-            {['Features', 'Pricing', 'Enterprise', 'Docs'].map((item) => (
+            {[
+              { label: 'Features', href: '#features' },
+              { label: 'Pricing', href: '#pricing' },
+              { label: 'Enterprise', href: '#pricing' },
+              { label: 'Docs', href: '/docs' },
+            ].map((item) => (
               <a
-                key={item}
-                href={`#${item.toLowerCase()}`}
+                key={item.label}
+                href={item.href}
                 className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
               >
-                {item}
+                {item.label}
               </a>
             ))}
           </nav>
@@ -524,14 +529,19 @@ function Navbar() {
       {/* Mobile Nav */}
       {mobileOpen && (
         <div className="md:hidden bg-gray-950/95 backdrop-blur-xl border-b border-white/10 px-4 pb-6 pt-2 space-y-4">
-          {['Features', 'Pricing', 'Enterprise', 'Docs'].map((item) => (
+          {[
+            { label: 'Features', href: '#features' },
+            { label: 'Pricing', href: '#pricing' },
+            { label: 'Enterprise', href: '#pricing' },
+            { label: 'Docs', href: '/docs' },
+          ].map((item) => (
             <a
-              key={item}
-              href={`#${item.toLowerCase()}`}
+              key={item.label}
+              href={item.href}
               className="block text-gray-300 hover:text-white text-sm font-medium py-1"
               onClick={() => setMobileOpen(false)}
             >
-              {item}
+              {item.label}
             </a>
           ))}
           <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
@@ -1195,20 +1205,55 @@ function Footer() {
   const columns = [
     {
       title: 'Product',
-      links: ['Features', 'Pricing', 'Changelog', 'Roadmap', 'Security', 'Status'],
+      links: [
+        { label: 'Features', href: '#features' },
+        { label: 'Pricing', href: '#pricing' },
+        { label: 'Changelog', href: '/changelog' },
+        { label: 'Roadmap', href: '/roadmap' },
+        { label: 'Security', href: '/security' },
+        { label: 'Status', href: '/status' },
+      ],
     },
     {
       title: 'Company',
-      links: ['About', 'Blog', 'Careers', 'Press', 'Partners', 'Contact'],
+      links: [
+        { label: 'About', href: '/about' },
+        { label: 'Blog', href: '/blog' },
+        { label: 'Careers', href: '/careers' },
+        { label: 'Press', href: '/contact' },
+        { label: 'Partners', href: '/contact' },
+        { label: 'Contact', href: '/contact' },
+      ],
     },
     {
       title: 'Resources',
-      links: ['Documentation', 'API Reference', 'Tutorials', 'Community', 'Webinars', 'Case Studies'],
+      links: [
+        { label: 'Documentation', href: '/docs' },
+        { label: 'API Reference', href: 'http://localhost:8010/docs', external: true },
+        { label: 'Tutorials', href: '/docs#tutorials' },
+        { label: 'Community', href: 'https://github.com', external: true },
+        { label: 'Webinars', href: '/contact' },
+        { label: 'Case Studies', href: '/blog' },
+      ],
     },
     {
       title: 'Legal',
-      links: ['Privacy Policy', 'Terms of Service', 'Cookie Policy', 'GDPR', 'HIPAA', 'SOC 2'],
+      links: [
+        { label: 'Privacy Policy', href: '/privacy' },
+        { label: 'Terms of Service', href: '/terms' },
+        { label: 'Cookie Policy', href: '/privacy#cookies' },
+        { label: 'GDPR', href: '/privacy#gdpr' },
+        { label: 'HIPAA', href: '/security#hipaa' },
+        { label: 'SOC 2', href: '/security#soc2' },
+      ],
     },
+  ];
+
+  const socials = [
+    { label: 'Twitter', href: 'https://twitter.com' },
+    { label: 'LinkedIn', href: 'https://linkedin.com' },
+    { label: 'GitHub', href: 'https://github.com' },
+    { label: 'Discord', href: 'https://discord.com' },
   ];
 
   return (
@@ -1235,13 +1280,15 @@ function Footer() {
               <h4 className="text-white font-semibold text-sm mb-4">{col.title}</h4>
               <ul className="space-y-2.5">
                 {col.links.map((link) => (
-                  <li key={link}>
-                    <a
-                      href="#"
+                  <li key={link.label}>
+                    <Link
+                      href={link.href}
+                      target={(link as any).external ? '_blank' : undefined}
+                      rel={(link as any).external ? 'noopener noreferrer' : undefined}
                       className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
                     >
-                      {link}
-                    </a>
+                      {link.label}
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -1255,13 +1302,15 @@ function Footer() {
             © {new Date().getFullYear()} KnowledgeForge, Inc. All rights reserved.
           </p>
           <div className="flex items-center gap-6">
-            {['Twitter', 'LinkedIn', 'GitHub', 'Discord'].map((s) => (
+            {socials.map((s) => (
               <a
-                key={s}
-                href="#"
+                key={s.label}
+                href={s.href}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-gray-600 hover:text-gray-400 text-sm transition-colors"
               >
-                {s}
+                {s.label}
               </a>
             ))}
           </div>
