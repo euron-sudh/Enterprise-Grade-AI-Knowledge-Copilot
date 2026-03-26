@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Zap,
   Shield,
+  Key,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -76,6 +77,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Notifications', href: '/notifications', icon: Bell },
       { label: 'Teams', href: '/teams', icon: Users },
+      { label: 'API Keys', href: '/api-keys', icon: Key },
       { label: 'Profile', href: '/profile', icon: Settings },
     ],
   },
