@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
 
     # File uploads
     UPLOAD_DIR: str = "uploads"
@@ -61,6 +62,10 @@ class Settings(BaseSettings):
     @property
     def has_tavily_key(self) -> bool:
         return bool(self.TAVILY_API_KEY and self.TAVILY_API_KEY.strip())
+
+    @property
+    def has_google_key(self) -> bool:
+        return bool(self.GOOGLE_API_KEY and self.GOOGLE_API_KEY.strip())
 
     @property
     def max_upload_size_bytes(self) -> int:

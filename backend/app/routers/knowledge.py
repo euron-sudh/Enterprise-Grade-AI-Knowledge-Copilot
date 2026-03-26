@@ -30,6 +30,32 @@ logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mpeg", ".mpga"}
 WHISPER_SIZE_LIMIT = 25 * 1024 * 1024   # 25 MB — OpenAI Whisper hard limit
 MAX_VIDEO_UPLOAD   = 100 * 1024 * 1024  # 100 MB — user-facing limit
+GEMINI_VIDEO_MODEL = "gemini-2.0-flash"
+
+# MIME types accepted by the Gemini Files API
+GEMINI_VIDEO_MIME = {
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".webm": "video/webm",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+    ".mpeg": "video/mpeg",
+    ".mpga": "audio/mpeg",
+}
+
+GEMINI_VIDEO_PROMPT = (
+    "Analyze this video/audio comprehensively and return a structured response with:\n"
+    "1. TRANSCRIPT: Full verbatim transcript with approximate timestamps (e.g. [0:00], [1:30]).\n"
+    "2. VISUAL SUMMARY: Describe key visual elements, slides, diagrams, or on-screen text.\n"
+    "3. KEY TOPICS: Bullet list of main topics and concepts discussed.\n"
+    "4. SUMMARY: A concise 3-5 sentence executive summary.\n"
+    "Be thorough — this will be used for enterprise knowledge retrieval."
+)
 
 router = APIRouter()
 
@@ -161,12 +187,19 @@ async def upload_video(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a video/audio file, transcribe with OpenAI Whisper, and index for RAG chat."""
+    """
+    Upload a video/audio file and index it for RAG chat.
+
+    Processing priority:
+    1. Gemini 2.0 Flash (multimodal) — full video understanding: transcript +
+       visual descriptions + key topics + summary.
+    2. OpenAI Whisper fallback — audio-only transcription when no Google key.
+    """
     suffix = Path(file.filename or "video.mp4").suffix.lower()
     if suffix not in VIDEO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported format. Supported: mp4, mov, avi, mkv, webm, mp3, wav, m4a, ogg",
+            detail="Unsupported format. Supported: mp4, mov, avi, mkv, webm, mp3, wav, m4a, ogg",
         )
 
     content = await file.read()
@@ -181,22 +214,25 @@ async def upload_video(
             ),
         )
 
-    if not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip()):
+    if not settings.has_google_key and not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip()):
         raise HTTPException(
             status_code=400,
-            detail="OpenAI API key not configured. Video transcription requires OpenAI Whisper.",
+            detail=(
+                "No AI key configured for video processing. "
+                "Set GOOGLE_API_KEY (Gemini 2.0) or OPENAI_API_KEY (Whisper)."
+            ),
         )
 
     original_name = file.filename or f"video{suffix}"
 
-    # Save file to disk
+    # ── Save file to disk ──────────────────────────────────────────────────────
     upload_dir = Path(settings.UPLOAD_DIR) / str(current_user.id)
     upload_dir.mkdir(parents=True, exist_ok=True)
     file_path = upload_dir / f"{uuid.uuid4()}{suffix}"
     with open(file_path, "wb") as f:
         f.write(content)
 
-    # Create document record (status=processing so the UI shows a spinner)
+    # ── Create document record (status=processing) ─────────────────────────────
     doc = Document(
         user_id=current_user.id,
         name=original_name,
@@ -209,56 +245,57 @@ async def upload_video(
     db.add(doc)
     await db.flush()
 
-    # Transcribe with OpenAI Whisper
-    # For files > 25 MB (Whisper hard limit) we extract a compressed audio track
-    # with ffmpeg first, then send that smaller file to Whisper.
     audio_tmp_path: Optional[Path] = None
     try:
-        import subprocess
-        from openai import OpenAI as SyncOpenAI
-        client = SyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-        whisper_input = file_path
-        if file_size > WHISPER_SIZE_LIMIT:
-            # Extract audio as mp3 (typically 1-5 MB for a 100 MB video)
-            audio_tmp_path = upload_dir / f"{file_path.stem}_audio.mp3"
-            ffmpeg_cmd = [
-                "ffmpeg", "-y",
-                "-i", str(file_path),
-                "-vn",           # no video
-                "-q:a", "4",     # ~128 kbps VBR
-                "-map", "a",
-                str(audio_tmp_path),
-            ]
-            proc = subprocess.run(ffmpeg_cmd, capture_output=True, timeout=300)
-            if proc.returncode != 0 or not audio_tmp_path.exists():
-                raise RuntimeError(
-                    f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
-                )
-            whisper_input = audio_tmp_path
-            logger.info(
-                "Large video '%s' (%d MB): extracted audio to %s (%d KB)",
-                original_name,
-                file_size // 1024 // 1024,
-                audio_tmp_path.name,
-                audio_tmp_path.stat().st_size // 1024,
-            )
-
-        with open(whisper_input, "rb") as audio_file:
-            result = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text",
-            )
-
-        transcript_text = str(result).strip()
-        if not transcript_text:
-            transcript_text = f"[No speech detected in '{original_name}']"
-
-        # Chunk transcript and index as DocumentChunks (reuses existing RAG pipeline)
         from app.services.document_service import _chunk_text
-        raw_chunks = _chunk_text(transcript_text)
 
+        # ── PRIMARY: Gemini 2.0 Flash multimodal embedding ────────────────────
+        if settings.has_google_key:
+            transcript_text = await _gemini_video_analyze(
+                file_path=file_path,
+                suffix=suffix,
+                original_name=original_name,
+            )
+            engine = f"Gemini {GEMINI_VIDEO_MODEL}"
+        else:
+            # ── FALLBACK: OpenAI Whisper (audio-only) ─────────────────────────
+            import subprocess
+            from openai import OpenAI as SyncOpenAI
+            client = SyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+            whisper_input = file_path
+            if file_size > WHISPER_SIZE_LIMIT:
+                audio_tmp_path = upload_dir / f"{file_path.stem}_audio.mp3"
+                proc = subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-i", str(file_path),
+                        "-vn", "-q:a", "4", "-map", "a", str(audio_tmp_path),
+                    ],
+                    capture_output=True,
+                    timeout=300,
+                )
+                if proc.returncode != 0 or not audio_tmp_path.exists():
+                    raise RuntimeError(
+                        f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
+                    )
+                whisper_input = audio_tmp_path
+                logger.info(
+                    "Large video '%s': extracted audio → %s (%d KB)",
+                    original_name, audio_tmp_path.name,
+                    audio_tmp_path.stat().st_size // 1024,
+                )
+
+            with open(whisper_input, "rb") as af:
+                result = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=af,
+                    response_format="text",
+                )
+            transcript_text = str(result).strip() or f"[No speech detected in '{original_name}']"
+            engine = "OpenAI Whisper"
+
+        # ── Chunk and index ────────────────────────────────────────────────────
+        raw_chunks = _chunk_text(transcript_text)
         for idx, chunk_text in raw_chunks:
             db.add(DocumentChunk(
                 document_id=doc.id,
@@ -272,22 +309,22 @@ async def upload_video(
         await db.flush()
 
         logger.info(
-            "Video '%s' transcribed: %d chars, %d chunks", original_name, len(transcript_text), len(raw_chunks)
+            "Video '%s' indexed via %s: %d chars, %d chunks",
+            original_name, engine, len(transcript_text), len(raw_chunks),
         )
 
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Video transcription failed for '%s': %s", original_name, exc)
+        logger.error("Video processing failed for '%s': %s", original_name, exc)
         doc.status = "failed"
         await db.flush()
         try:
             os.remove(str(file_path))
         except Exception:
             pass
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Video processing failed: {exc}")
     finally:
-        # Clean up temp audio file if one was created
         if audio_tmp_path and audio_tmp_path.exists():
             try:
                 os.remove(str(audio_tmp_path))
@@ -295,6 +332,68 @@ async def upload_video(
                 pass
 
     return DocumentOut.from_orm(doc)
+
+
+async def _gemini_video_analyze(file_path: Path, suffix: str, original_name: str) -> str:
+    """
+    Upload the video/audio to the Gemini Files API and use Gemini 2.0 Flash
+    to produce a rich multimodal analysis: transcript + visual descriptions +
+    key topics + executive summary.
+
+    Returns the combined analysis text ready for chunking and RAG indexing.
+    """
+    import asyncio
+    import time
+
+    def _run_sync() -> str:
+        import google.generativeai as genai  # type: ignore
+
+        genai.configure(api_key=settings.GOOGLE_API_KEY)
+
+        mime = GEMINI_VIDEO_MIME.get(suffix, "video/mp4")
+        logger.info("Uploading '%s' to Gemini Files API (mime=%s)…", original_name, mime)
+
+        uploaded = genai.upload_file(path=str(file_path), mime_type=mime)
+
+        # Poll until processing is complete (Gemini processes server-side)
+        deadline = time.time() + 600  # 10-minute timeout
+        while uploaded.state.name == "PROCESSING":
+            if time.time() > deadline:
+                raise TimeoutError("Gemini file processing timed out after 10 minutes")
+            time.sleep(5)
+            uploaded = genai.get_file(uploaded.name)
+
+        if uploaded.state.name == "FAILED":
+            raise RuntimeError(f"Gemini file processing failed for '{original_name}'")
+
+        logger.info("Gemini file ready: %s — running %s analysis…", uploaded.name, GEMINI_VIDEO_MODEL)
+
+        model = genai.GenerativeModel(GEMINI_VIDEO_MODEL)
+        response = model.generate_content(
+            [uploaded, GEMINI_VIDEO_PROMPT],
+            generation_config=genai.GenerationConfig(
+                temperature=0.2,
+                max_output_tokens=8192,
+            ),
+        )
+
+        # Clean up remote file to avoid storage accumulation
+        try:
+            genai.delete_file(uploaded.name)
+        except Exception:
+            pass
+
+        analysis = response.text.strip()
+        if not analysis:
+            analysis = f"[No content extracted from '{original_name}' via Gemini 2.0]"
+
+        logger.info(
+            "Gemini 2.0 analysis for '%s': %d chars", original_name, len(analysis)
+        )
+        return analysis
+
+    # Run the blocking SDK calls in a thread pool so we don't block the event loop
+    return await asyncio.get_event_loop().run_in_executor(None, _run_sync)
 
 
 # ── Collections ───────────────────────────────────────────────────────────────
