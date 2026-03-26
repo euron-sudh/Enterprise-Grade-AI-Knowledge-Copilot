@@ -6,16 +6,11 @@ import {
   Video,
   Upload,
   Play,
-  Clock,
-  Eye,
   Plus,
   Search,
   Captions,
-  BookOpen,
   Calendar,
-  Zap,
   Loader2,
-  X,
   FileVideo,
   RefreshCw,
 } from 'lucide-react';
@@ -62,7 +57,7 @@ function docToVideo(doc: any, idx: number): VideoItem {
     uploadedAt: doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—',
     views: 0,
     category: 'Other',
-    thumbnail: GRADIENT_THUMBNAILS[idx % GRADIENT_THUMBNAILS.length],
+    thumbnail: GRADIENT_THUMBNAILS[idx % GRADIENT_THUMBNAILS.length] ?? GRADIENT_THUMBNAILS[0],
     hasTranscript: doc.status === 'indexed',
     hasChapters: false,
     description: '',
@@ -71,67 +66,74 @@ function docToVideo(doc: any, idx: number): VideoItem {
 }
 
 export default function VideoPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [category, setCategory] = useState<VideoCategory>('All');
   const [search, setSearch] = useState('');
   const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const authHeader = session?.accessToken
-    ? { Authorization: `Bearer ${session.accessToken}` }
-    : {};
-
-  const fetchVideos = async () => {
+  const fetchVideos = async (token: string) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/backend/knowledge/documents?documentType=video&pageSize=50', { headers: authHeader });
-      if (!res.ok) throw new Error('Failed');
+      const res = await fetch('/api/backend/knowledge/documents?documentType=video&pageSize=50', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({}));
+        throw new Error((msg as any).detail || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       const docs: any[] = data.items || [];
       setVideos(docs.map(docToVideo));
-    } catch {
-      setError('Failed to load videos.');
+    } catch (e: any) {
+      setError(`Failed to load videos: ${e?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (session?.accessToken) fetchVideos();
+    if (status === 'authenticated' && session?.accessToken) {
+      fetchVideos(session.accessToken);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [status, session?.accessToken]);
 
   const uploadVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const videoFile = files?.[0];
+    if (!videoFile) return;
+    if (!session?.accessToken) { setError('Not authenticated.'); return; }
     setUploading(true);
     setUploadProgress(0);
     setError('');
     try {
       const form = new FormData();
-      form.append('file', files[0]);
-      // Simulate progress
+      form.append('file', videoFile);
       const progressInterval = setInterval(() => {
         setUploadProgress(p => Math.min(p + 10, 90));
       }, 300);
       const res = await fetch('/api/backend/knowledge/videos/upload', {
         method: 'POST',
-        headers: authHeader,
+        headers: { Authorization: `Bearer ${session.accessToken}` },
         body: form,
       });
       clearInterval(progressInterval);
       setUploadProgress(100);
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({}));
+        throw new Error((msg as any).detail || 'Upload failed');
+      }
       setShowUpload(false);
-      setTimeout(() => { fetchVideos(); setUploadProgress(0); }, 800);
-    } catch {
-      setError('Upload failed. Please try again.');
+      setTimeout(() => { fetchVideos(session.accessToken!); setUploadProgress(0); }, 800);
+    } catch (e: any) {
+      setError(`Upload failed: ${e?.message || 'Please try again.'}`);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -153,7 +155,7 @@ export default function VideoPage() {
           <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">Upload and search video content with AI-powered transcription</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchVideos} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
+          <button onClick={() => session?.accessToken && fetchVideos(session.accessToken)} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button onClick={() => setShowUpload(!showUpload)}
