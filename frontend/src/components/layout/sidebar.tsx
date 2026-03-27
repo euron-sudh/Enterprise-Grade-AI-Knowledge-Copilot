@@ -21,6 +21,17 @@ import {
   Zap,
   Shield,
   Key,
+  Upload,
+  FolderOpen,
+  Globe,
+  Calendar,
+  FileText,
+  TrendingUp,
+  Lightbulb,
+  AlertCircle,
+  ClipboardList,
+  Beaker,
+  PlayCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -41,14 +52,19 @@ const NAV_GROUPS: NavGroup[] = [
   {
     items: [
       { label: 'Dashboard', href: '/home', icon: LayoutDashboard },
-      { label: 'Chat', href: '/chat', icon: MessageSquare, badge: '' },
+      { label: 'Chat', href: '/chat', icon: MessageSquare },
       { label: 'Voice', href: '/voice', icon: Mic, badgeVariant: 'beta', badge: 'Beta' },
+      { label: 'Playground', href: '/playground', icon: Beaker },
     ],
   },
   {
     label: 'Knowledge',
     items: [
       { label: 'Knowledge Base', href: '/knowledge-base', icon: BookOpen },
+      { label: 'Documents', href: '/knowledge/documents', icon: FileText },
+      { label: 'Collections', href: '/knowledge/collections', icon: FolderOpen },
+      { label: 'Upload', href: '/knowledge/upload', icon: Upload },
+      { label: 'Crawlers', href: '/knowledge/crawlers', icon: Globe },
       { label: 'Search', href: '/search', icon: Search },
       { label: 'Video Library', href: '/video', icon: Video },
     ],
@@ -56,7 +72,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Meetings',
     items: [
-      { label: 'Meetings', href: '/meetings', icon: Video },
+      { label: 'Meetings', href: '/meetings', icon: Calendar },
+      { label: 'Recordings', href: '/meetings/recordings', icon: PlayCircle },
     ],
   },
   {
@@ -70,6 +87,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Insights',
     items: [
       { label: 'Analytics', href: '/analytics', icon: BarChart3 },
+      { label: 'Usage', href: '/analytics/usage', icon: TrendingUp },
+      { label: 'AI Insights', href: '/analytics/insights', icon: Lightbulb },
+      { label: 'Knowledge Gaps', href: '/analytics/knowledge-gaps', icon: AlertCircle },
+      { label: 'Reports', href: '/analytics/reports', icon: ClipboardList },
     ],
   },
   {
