@@ -69,7 +69,13 @@ export function Topbar() {
       <button
         className="flex flex-1 max-w-sm items-center gap-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 px-3 py-1.5 text-sm text-surface-400 dark:text-surface-500 hover:border-brand-400 dark:hover:border-brand-600 transition-colors"
         onClick={() => {
-          // TODO: open command palette
+          // Open command palette
+          if (typeof window !== 'undefined') {
+            // Dynamically import to avoid SSR issues
+            import('@/hooks/useCommandPalette').then(({ useCommandPalette }) => {
+              useCommandPalette().open();
+            });
+          }
         }}
       >
         <Search className="h-3.5 w-3.5 flex-shrink-0" />

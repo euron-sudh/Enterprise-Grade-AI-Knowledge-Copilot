@@ -27,6 +27,12 @@ export default async function DashboardLayout({
         {/* Topbar */}
         <Topbar />
 
+        {/* Command Palette (global) */}
+        {typeof window !== 'undefined' && (
+          // Dynamically import to avoid SSR issues
+          require('@/components/ui/CommandPalette').CommandPalette()
+        )}
+
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">
           <div className="h-full">{children}</div>

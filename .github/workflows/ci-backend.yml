@@ -1,0 +1,65 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci-backend.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci-backend.yml'
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U testuser" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgresql+asyncpg://testuser:testpass@localhost:5432/testdb
+      REDIS_URL: redis://localhost:6379/0
+      PYTHONUNBUFFERED: 1
+      APP_ENV: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: |
+          pip install poetry
+      - name: Install dependencies
+        run: |
+          cd backend
+          poetry install --no-interaction
+      - name: Run Alembic migrations
+        run: |
+          cd backend
+          poetry run alembic upgrade head
+      - name: Run tests
+        run: |
+          cd backend
+          poetry run pytest --maxfail=2 --disable-warnings --tb=short
+      - name: Lint
+        run: |
+          cd backend
+          poetry run flake8 app
+      - name: Type check
+        run: |
+          cd backend
+          poetry run mypy app

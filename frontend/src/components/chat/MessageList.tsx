@@ -84,9 +84,27 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
   );
 }
 
+import { submitFeedback } from '@/lib/api/chat';
+import { useState } from 'react';
+
 function MessageBubble({ message }: { message: Message }) {
   const { data: session } = useSession();
   const isUser = message.role === 'user';
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(message.feedback?.rating ?? null);
+  const [loading, setLoading] = useState(false);
+
+  const handleFeedback = async (type: 'up' | 'down') => {
+    if (feedback || loading) return;
+    setLoading(true);
+    try {
+      await submitFeedback(message.id, { rating: type });
+      setFeedback(type);
+    } catch (e) {
+      // Optionally show error notification
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div
@@ -192,10 +210,32 @@ function MessageBubble({ message }: { message: Message }) {
         {/* Feedback */}
         {!isUser && !message.isStreaming && (
           <div className="mt-1 flex items-center gap-1">
-            <button className="rounded-md p-1 text-surface-300 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950 transition-colors">
+            <button
+              className={cn(
+                'rounded-md p-1',
+                feedback === 'up'
+                  ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950'
+                  : 'text-surface-300 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950',
+                loading && 'opacity-50 pointer-events-none'
+              )}
+              onClick={() => handleFeedback('up')}
+              disabled={!!feedback || loading}
+              aria-label="Thumbs up"
+            >
               <ThumbsUp className="h-3.5 w-3.5" />
             </button>
-            <button className="rounded-md p-1 text-surface-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
+            <button
+              className={cn(
+                'rounded-md p-1',
+                feedback === 'down'
+                  ? 'text-red-500 bg-red-50 dark:bg-red-950'
+                  : 'text-surface-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950',
+                loading && 'opacity-50 pointer-events-none'
+              )}
+              onClick={() => handleFeedback('down')}
+              disabled={!!feedback || loading}
+              aria-label="Thumbs down"
+            >
               <ThumbsDown className="h-3.5 w-3.5" />
             </button>
             {message.processingTimeMs && (
