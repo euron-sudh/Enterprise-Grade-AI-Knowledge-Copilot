@@ -308,14 +308,7 @@ async def upload_video(
             ),
         )
 
-    if not settings.has_google_key and not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip()):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No AI key configured for video processing. "
-                "Set GOOGLE_API_KEY (Gemini 2.0) or OPENAI_API_KEY (Whisper)."
-            ),
-        )
+    no_ai_key = not settings.has_google_key and not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip())
 
     original_name = file.filename or f"video{suffix}"
 
@@ -343,8 +336,13 @@ async def upload_video(
     try:
         from app.services.document_service import _chunk_text
 
+        # ── NO AI KEY: store video with placeholder transcript ─────────────────
+        if no_ai_key:
+            transcript_text = f"[Video file '{original_name}' stored. No AI key configured for transcription.]"
+            engine = "none"
+
         # ── PRIMARY: Gemini 2.0 Flash multimodal embedding ────────────────────
-        if settings.has_google_key:
+        elif settings.has_google_key:
             transcript_text = await _gemini_video_analyze(
                 file_path=file_path,
                 suffix=suffix,
@@ -374,17 +372,17 @@ async def upload_video(
                             f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
                         )
                     whisper_input = audio_tmp_path
-                except FileNotFoundError:
-                    # ffmpeg not installed — send original file to Whisper directly
-                    logger.warning(
-                        "ffmpeg not found; sending original file to Whisper (may fail if > 25 MB)"
+                    logger.info(
+                        "Large video '%s': extracted audio → %s (%d KB)",
+                        original_name, audio_tmp_path.name,
+                        audio_tmp_path.stat().st_size // 1024,
                     )
-                    audio_tmp_path = None  # don't try to clean up a non-existent file
-                logger.info(
-                    "Large video '%s': extracted audio → %s (%d KB)",
-                    original_name, audio_tmp_path.name,
-                    audio_tmp_path.stat().st_size // 1024,
-                )
+                except (FileNotFoundError, OSError):
+                    # ffmpeg not installed or not in PATH — send original to Whisper
+                    logger.warning(
+                        "ffmpeg not available on this system; sending original file to Whisper directly"
+                    )
+                    audio_tmp_path = None
 
             with open(whisper_input, "rb") as af:
                 result = client.audio.transcriptions.create(
