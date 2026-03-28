@@ -979,93 +979,228 @@ async def _sync_web_crawler(connector: "Connector", user_id: uuid.UUID, db: Asyn
     """
     Crawl a website starting from the configured URL, extract text from each page,
     and store it as DocumentChunks so it becomes searchable via RAG.
+
+    Strategy:
+    1. Try trafilatura (best-in-class main-content extractor, strips nav/ads/footer).
+    2. Fall back to BeautifulSoup targeting semantic content tags.
+    3. If a page looks JS-only (<500 chars extracted), retry with a Googlebot UA
+       — many Next.js/React sites SSR their content for crawlers.
+    4. Discover extra URLs from sitemap.xml in addition to link-following.
+
     Returns the number of pages indexed.
     """
     import httpx
     import re
     from urllib.parse import urljoin, urlparse
 
+    try:
+        import trafilatura
+        HAS_TRAFILATURA = True
+    except ImportError:
+        HAS_TRAFILATURA = False
+
+    try:
+        from bs4 import BeautifulSoup
+        HAS_BS4 = True
+    except ImportError:
+        HAS_BS4 = False
+
     cfg: Dict[str, Any] = connector.config or {}
     start_url: str = cfg.get("url", "")
-    max_depth: int = min(int(cfg.get("depth", 2)), 3)  # cap at 3 to avoid runaway crawls
-    max_pages: int = 30  # safety limit
+    max_depth: int = min(int(cfg.get("depth", 2)), 4)
+    max_pages: int = 50
 
     if not start_url:
         raise ValueError("Web crawler URL missing in connector config")
 
     base_domain = urlparse(start_url).netloc
 
-    def _extract_text_from_html(html: str) -> str:
-        """Strip tags and return readable text."""
-        # Remove script/style blocks
-        html = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-        # Remove all tags
-        text = re.sub(r'<[^>]+>', ' ', html)
-        # Collapse whitespace
-        text = re.sub(r'[ \t]+', ' ', text)
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        # Remove null bytes
-        text = text.replace('\x00', '').replace('\x0b', ' ').replace('\x0c', ' ')
-        return text.strip()
+    _UA_BOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+    _UA_BROWSER = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+
+    def _bs4_extract(html: str) -> str:
+        """BeautifulSoup content extraction targeting semantic tags."""
+        if not HAS_BS4:
+            return ""
+        soup = BeautifulSoup(html, "lxml")
+        # Remove noise tags
+        for tag in soup(["script", "style", "nav", "header", "footer",
+                          "aside", "noscript", "svg", "form", "iframe"]):
+            tag.decompose()
+        # Try semantic content containers first
+        for selector in ["main", "article", '[role="main"]',
+                          ".content", "#content", ".main", "#main",
+                          ".post-body", ".entry-content", ".page-content"]:
+            el = soup.select_one(selector)
+            if el:
+                text = el.get_text(separator="\n", strip=True)
+                if len(text) > 200:
+                    return text
+        # Fall back to body
+        body = soup.find("body")
+        return body.get_text(separator="\n", strip=True) if body else ""
+
+    def _extract_text(html: str) -> str:
+        """Try trafilatura first, then BS4, then regex fallback."""
+        # trafilatura: specifically designed to extract main article/page text
+        if HAS_TRAFILATURA:
+            extracted = trafilatura.extract(
+                html,
+                include_tables=True,
+                include_links=False,
+                no_fallback=False,
+                favor_precision=False,
+            )
+            if extracted and len(extracted.strip()) > 150:
+                return extracted.strip()
+
+        # BS4: targets semantic content selectors
+        bs_text = _bs4_extract(html)
+        if len(bs_text) > 150:
+            return bs_text
+
+        # Last resort: regex strip
+        clean = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+        clean = re.sub(r'<[^>]+>', ' ', clean)
+        clean = re.sub(r'[ \t]+', ' ', clean)
+        return re.sub(r'\n{3,}', '\n\n', clean).strip()
+
+    def _extract_title(html: str, url: str) -> str:
+        if HAS_BS4:
+            soup = BeautifulSoup(html, "lxml")
+            og = soup.find("meta", property="og:title")
+            if og and og.get("content"):
+                return og["content"].strip()
+            if soup.title and soup.title.string:
+                return soup.title.string.strip()
+        m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+        return re.sub(r'<[^>]+>', '', m.group(1)).strip() if m else url
 
     def _extract_links(html: str, current_url: str) -> List[str]:
-        """Extract same-domain links from a page."""
-        hrefs = re.findall(r'<a[^>]+href=["\']([^"\'#?][^"\']*)["\']', html, re.IGNORECASE)
         links = []
-        for href in hrefs:
-            full = urljoin(current_url, href)
-            parsed = urlparse(full)
-            if parsed.netloc == base_domain and parsed.scheme in ('http', 'https'):
-                # Normalise: drop fragments and query strings for dedup
-                clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip('/')
-                links.append(clean)
+        if HAS_BS4:
+            soup = BeautifulSoup(html, "lxml")
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if not href or href.startswith(("mailto:", "tel:", "javascript:")):
+                    continue
+                full = urljoin(current_url, href)
+                parsed = urlparse(full)
+                if parsed.netloc == base_domain and parsed.scheme in ("http", "https"):
+                    clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+                    links.append(clean)
+        else:
+            hrefs = re.findall(r'<a[^>]+href=["\']([^"\'#?][^"\']*)["\']', html, re.IGNORECASE)
+            for href in hrefs:
+                full = urljoin(current_url, href)
+                parsed = urlparse(full)
+                if parsed.netloc == base_domain and parsed.scheme in ("http", "https"):
+                    links.append(f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/"))
         return links
+
+    async def _fetch_sitemap_urls(client: httpx.AsyncClient) -> List[str]:
+        """Try to discover pages from sitemap.xml / sitemap_index.xml."""
+        urls: List[str] = []
+        for sitemap_path in ["/sitemap.xml", "/sitemap_index.xml", "/sitemap/sitemap.xml"]:
+            sitemap_url = f"https://{base_domain}{sitemap_path}"
+            try:
+                r = await client.get(sitemap_url, timeout=8.0)
+                if r.status_code == 200 and "xml" in r.headers.get("content-type", ""):
+                    found = re.findall(r'<loc>\s*(https?://[^<]+)\s*</loc>', r.text)
+                    same_domain = [
+                        u.strip() for u in found
+                        if urlparse(u.strip()).netloc == base_domain
+                    ]
+                    urls.extend(same_domain[:40])
+                    if urls:
+                        break
+            except Exception:
+                pass
+        return urls
+
+    async def _fetch_page(client: httpx.AsyncClient, url: str, ua: str) -> str | None:
+        """Fetch a URL with a given User-Agent, return HTML or None."""
+        try:
+            resp = await client.get(
+                url,
+                headers={"User-Agent": ua,
+                         "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+                         "Accept-Language": "en-US,en;q=0.9"},
+                timeout=20.0,
+                follow_redirects=True,
+            )
+            if resp.status_code != 200:
+                return None
+            ct = resp.headers.get("content-type", "")
+            if "text/html" not in ct:
+                return None
+            return resp.text
+        except Exception as exc:
+            logger.warning("Crawler fetch failed %s: %s", url, exc)
+            return None
 
     # BFS crawl
     visited: set = set()
-    queue: List[tuple] = [(start_url.rstrip('/'), 0)]  # (url, depth)
-    pages: List[Dict[str, str]] = []  # [{url, title, text}]
+    queue: List[tuple] = [(start_url.rstrip("/"), 0)]
+    pages: List[Dict[str, str]] = []
 
-    async with httpx.AsyncClient(
-        timeout=10.0,
-        follow_redirects=True,
-        headers={"User-Agent": "KnowledgeForge-Crawler/1.0"},
-    ) as client:
+    async with httpx.AsyncClient() as client:
+        # Pre-seed queue from sitemap
+        sitemap_urls = await _fetch_sitemap_urls(client)
+        for su in sitemap_urls:
+            clean = su.rstrip("/")
+            if clean not in visited:
+                queue.append((clean, 1))
+
         while queue and len(pages) < max_pages:
             url, depth = queue.pop(0)
             if url in visited:
                 continue
             visited.add(url)
 
-            try:
-                resp = await client.get(url)
-                if resp.status_code != 200:
-                    continue
-                content_type = resp.headers.get("content-type", "")
-                if "text/html" not in content_type:
-                    continue
-                html = resp.text
-
-                # Extract title
-                title_m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
-                title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip() if title_m else url
-
-                text = _extract_text_from_html(html)
-                if len(text) > 100:  # skip near-empty pages
-                    pages.append({"url": url, "title": title, "text": text})
-
-                # Enqueue links for next depth level
-                if depth < max_depth:
-                    for link in _extract_links(html, url):
-                        if link not in visited:
-                            queue.append((link, depth + 1))
-
-            except Exception as exc:
-                logger.warning("Crawler skipped %s: %s", url, exc)
+            # First try browser-like UA
+            html = await _fetch_page(client, url, _UA_BROWSER)
+            if not html:
                 continue
 
+            text = _extract_text(html)
+
+            # If JS-rendered (very little text extracted), retry with Googlebot UA
+            # — many Next.js/React sites SSR content for Googlebot
+            if len(text) < 300:
+                html_bot = await _fetch_page(client, url, _UA_BOT)
+                if html_bot:
+                    text_bot = _extract_text(html_bot)
+                    if len(text_bot) > len(text):
+                        html = html_bot
+                        text = text_bot
+
+            # Clean up text
+            text = re.sub(r'\n{4,}', '\n\n', text).strip()
+
+            if len(text) > 80:
+                title = _extract_title(html, url)
+                pages.append({"url": url, "title": title, "text": text})
+
+            if depth < max_depth:
+                for link in _extract_links(html, url):
+                    if link not in visited:
+                        queue.append((link, depth + 1))
+
     if not pages:
-        pages = [{"url": start_url, "title": connector.name, "text": f"Crawled {start_url} but found no readable content."}]
+        pages = [{
+            "url": start_url,
+            "title": connector.name,
+            "text": (
+                f"The website {start_url} was crawled but no readable text content could be "
+                "extracted. The site may require JavaScript execution to render its content. "
+                "Consider uploading specific pages or documents manually instead."
+            ),
+        }]
 
     # Remove previous documents from this connector
     doc_name_prefix = f"[Crawler] {connector.name}"
