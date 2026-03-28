@@ -372,7 +372,9 @@ async def stream_chat_response(
 
     try:
         if settings.has_anthropic_key:
-            ai_gen = _claude_stream(messages_payload, model, effective_system)
+            # Normalize to a valid Claude model if the user picked an OpenAI model
+            claude_model = model if model.startswith("claude") else "claude-sonnet-4-6"
+            ai_gen = _claude_stream(messages_payload, claude_model, effective_system)
         elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
             ai_gen = _openai_stream(messages_payload, model, effective_system)
         else:

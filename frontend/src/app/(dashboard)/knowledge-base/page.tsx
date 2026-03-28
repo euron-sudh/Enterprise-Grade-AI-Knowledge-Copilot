@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { authFetch } from '@/lib/api/token';
 import {
   Upload, FileText, Database, Link2, Plus, CheckCircle2, AlertCircle,
   Loader2, RefreshCw, Trash2, ChevronRight, FileCode2,
@@ -698,14 +699,14 @@ export default function KnowledgeBasePage() {
   const [showConnectorsPanel, setShowConnectorsPanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const authHeader = { Authorization: `Bearer ${(session as any)?.accessToken ?? ''}` };
   const activeConnectors = connectors.filter(c => c.status !== 'disconnected').length;
   const totalDocs = connectors.reduce((a, c) => a + c.docs, 0) + realDocs.length;
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
   useEffect(() => {
-    if (!(session as any)?.accessToken) return;
+    if (status !== 'authenticated') return;
     setLoadingDocs(true);
-    fetch('/api/backend/knowledge/documents?pageSize=20', { headers: authHeader })
+    authFetch('/api/backend/knowledge/documents?pageSize=20', {}, (session as any)?.accessToken, getUser())
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.items) {
@@ -721,7 +722,7 @@ export default function KnowledgeBasePage() {
       })
       .catch(() => {})
       .finally(() => setLoadingDocs(false));
-  }, [session]);
+  }, [status, session?.user?.email]);
 
   // Real-time sync simulation: syncing connectors poll every 8s
   useEffect(() => {
@@ -757,9 +758,10 @@ export default function KnowledgeBasePage() {
       try {
         const formData = new FormData();
         formData.append('files', file);
-        const res = await fetch('/api/backend/knowledge/documents/upload', {
-          method: 'POST', headers: authHeader, body: formData,
-        });
+        const res = await authFetch('/api/backend/knowledge/documents/upload',
+          { method: 'POST', body: formData },
+          (session as any)?.accessToken, getUser(),
+        );
         statusMap[file.name] = res.ok ? 'done' : 'error';
         setUploadStatus({ ...statusMap });
         if (res.ok) {

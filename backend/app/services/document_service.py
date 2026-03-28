@@ -127,14 +127,21 @@ def _extract_text_plain(file_path: str) -> Tuple[str, int]:
         return "", 0
 
 
+def _sanitize_text(text: str) -> str:
+    """Remove characters PostgreSQL UTF8 can't store (null bytes, etc.)."""
+    # Remove null bytes — PostgreSQL VARCHAR rejects \x00
+    return text.replace('\x00', '').replace('\x0b', ' ').replace('\x0c', ' ')
+
+
 def extract_text(file_path: str, file_ext: str) -> Tuple[str, int]:
     """Dispatch extraction based on file extension."""
     if file_ext == ".pdf":
-        return _extract_text_pdf(file_path)
+        text, pages = _extract_text_pdf(file_path)
     elif file_ext in (".docx", ".doc"):
-        return _extract_text_docx(file_path)
+        text, pages = _extract_text_docx(file_path)
     else:
-        return _extract_text_plain(file_path)
+        text, pages = _extract_text_plain(file_path)
+    return _sanitize_text(text), pages
 
 
 async def save_uploaded_file(

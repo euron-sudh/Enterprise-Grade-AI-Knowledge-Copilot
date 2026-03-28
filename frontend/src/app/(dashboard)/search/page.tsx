@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
+import { authFetch } from '@/lib/api/token';
 import {
   Search,
   FileText,
@@ -37,93 +39,13 @@ interface SearchResult {
   tags?: string[];
 }
 
-const FILTER_TABS: { label: FilterTab; icon: React.ElementType; count: number }[] = [
-  { label: 'All', icon: Search, count: 248 },
-  { label: 'Documents', icon: FileText, count: 142 },
-  { label: 'Videos', icon: Video, count: 31 },
-  { label: 'Meetings', icon: MessageSquare, count: 54 },
-  { label: 'Code', icon: Code2, count: 18 },
-  { label: 'People', icon: Users, count: 3 },
-];
-
-const MOCK_RESULTS: SearchResult[] = [
-  {
-    id: '1',
-    title: 'Engineering Onboarding Guide — Complete Handbook',
-    excerpt: 'This guide covers everything a new <mark class="bg-yellow-300/20 text-yellow-200 rounded px-0.5">engineer</mark> needs to get started: dev environment setup, code review process, <mark class="bg-yellow-300/20 text-yellow-200 rounded px-0.5">onboarding</mark> checklist, and key contacts.',
-    source: 'Confluence',
-    sourceIcon: 'C',
-    type: 'Documents',
-    date: 'Mar 10, 2026',
-    relevance: 98,
-    url: '#',
-    author: 'Sarah Chen',
-    tags: ['engineering', 'onboarding', 'handbook'],
-  },
-  {
-    id: '2',
-    title: 'New Employee Onboarding — First 30 Days',
-    excerpt: 'A structured plan for new hires covering <mark class="bg-yellow-300/20 text-yellow-200 rounded px-0.5">onboarding</mark> activities, team introductions, tool access setup, and performance expectations during the first month.',
-    source: 'Notion',
-    sourceIcon: 'N',
-    type: 'Documents',
-    date: 'Feb 28, 2026',
-    relevance: 94,
-    url: '#',
-    author: 'HR Team',
-    tags: ['hr', 'onboarding', 'new-hire'],
-  },
-  {
-    id: '3',
-    title: 'All-Hands Meeting — March 2026 Recording',
-    excerpt: 'Full recording of the March all-hands. Topics include Q4 results, product roadmap, new hires <mark class="bg-yellow-300/20 text-yellow-200 rounded px-0.5">onboarding</mark> program updates, and engineering process changes.',
-    source: 'Meetings',
-    sourceIcon: 'M',
-    type: 'Meetings',
-    date: 'Mar 15, 2026',
-    relevance: 87,
-    url: '#',
-    author: 'Alex Johnson',
-    tags: ['all-hands', 'recording'],
-  },
-  {
-    id: '4',
-    title: 'Backend API Onboarding for New Developers',
-    excerpt: 'Code walkthrough and architecture overview for engineers new to the backend codebase. Covers FastAPI structure, database models, and key <mark class="bg-yellow-300/20 text-yellow-200 rounded px-0.5">engineering</mark> patterns.',
-    source: 'GitHub',
-    sourceIcon: 'G',
-    type: 'Code',
-    date: 'Mar 5, 2026',
-    relevance: 82,
-    url: '#',
-    author: 'Dev Team',
-    tags: ['backend', 'api', 'guide'],
-  },
-  {
-    id: '5',
-    title: 'Engineering Onboarding Process — Video Walkthrough',
-    excerpt: '45-minute video tutorial walking through the complete <mark class="bg-yellow-300/20 text-yellow-200 rounded px-0.5">engineering onboarding</mark> process including local dev setup, CI/CD pipeline, and deployment workflow.',
-    source: 'Video Library',
-    sourceIcon: 'V',
-    type: 'Videos',
-    date: 'Jan 20, 2026',
-    relevance: 79,
-    url: '#',
-    author: 'Tech Leads',
-    tags: ['video', 'tutorial', 'engineering'],
-  },
-  {
-    id: '6',
-    title: 'Sarah Chen — Senior Engineering Manager',
-    excerpt: 'Owner of the <mark class="bg-yellow-300/20 text-yellow-200 rounded px-0.5">engineering onboarding</mark> program. Contact for new hire questions, team assignments, and mentorship pairing.',
-    source: 'People Directory',
-    sourceIcon: 'P',
-    type: 'People',
-    date: 'Active now',
-    relevance: 75,
-    url: '#',
-    tags: ['engineering', 'manager'],
-  },
+const FILTER_TABS: { label: FilterTab; icon: React.ElementType }[] = [
+  { label: 'All', icon: Search },
+  { label: 'Documents', icon: FileText },
+  { label: 'Videos', icon: Video },
+  { label: 'Meetings', icon: MessageSquare },
+  { label: 'Code', icon: Code2 },
+  { label: 'People', icon: Users },
 ];
 
 const SUGGESTED_SEARCHES = [
@@ -135,14 +57,20 @@ const SUGGESTED_SEARCHES = [
   'Security incident response',
 ];
 
-const SOURCE_ICONS: Record<string, string> = {
-  C: 'bg-blue-600',
-  N: 'bg-surface-200 dark:bg-gray-700',
-  M: 'bg-green-700',
-  G: 'bg-surface-100 dark:bg-gray-800',
-  V: 'bg-red-700',
-  P: 'bg-violet-700',
-};
+function getSourceColor(sourceIcon: string): string {
+  const colors: Record<string, string> = {
+    C: 'bg-blue-600',
+    N: 'bg-surface-200 dark:bg-gray-700',
+    M: 'bg-green-700',
+    G: 'bg-surface-100 dark:bg-gray-800',
+    V: 'bg-red-700',
+    P: 'bg-violet-700',
+    S: 'bg-amber-700',
+    J: 'bg-cyan-700',
+    K: 'bg-teal-700',
+  };
+  return colors[sourceIcon] ?? 'bg-indigo-700';
+}
 
 function RelevanceBadge({ score }: { score: number }) {
   const color = score >= 90 ? 'text-emerald-400 bg-emerald-900/40' : score >= 75 ? 'text-amber-400 bg-amber-900/40' : 'text-surface-500 dark:text-gray-400 bg-surface-100 dark:bg-gray-800';
@@ -154,21 +82,27 @@ function RelevanceBadge({ score }: { score: number }) {
 }
 
 export default function SearchPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('All');
   const [isSearching, setIsSearching] = useState(false);
-  const [hasResults, setHasResults] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [dateFilter, setDateFilter] = useState('Any time');
-  const [sourceFilter, setSourceFilter] = useState('All sources');
   const [showDateDropdown, setShowDateDropdown] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>(MOCK_RESULTS);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const didAutoSearch = useRef(false);
+
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
   const filteredResults = results.filter(r =>
     activeTab === 'All' || r.type === activeTab
   );
+
+  const tabCount = (tab: FilterTab) =>
+    tab === 'All' ? results.length : results.filter(r => r.type === tab).length;
 
   const handleSearch = async (searchQuery?: string) => {
     const q = searchQuery ?? query;
@@ -176,35 +110,46 @@ export default function SearchPage() {
     setSubmittedQuery(q);
     setQuery(q);
     setIsSearching(true);
-    setHasResults(false);
+    setHasSearched(false);
     try {
-      const token = (session as any)?.accessToken ?? '';
-      const res = await fetch('/api/backend/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ query: q, limit: 20 }),
-      });
+      const res = await authFetch(
+        '/api/backend/search',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q, limit: 20 }),
+        },
+        session?.accessToken,
+        getUser(),
+      );
       if (res.ok) {
         const data = await res.json();
-        const mapped: SearchResult[] = (data.results ?? []).map((r: any) => ({
-          id: r.id ?? String(Math.random()),
-          title: r.title ?? r.documentName ?? 'Untitled',
-          excerpt: r.excerpt ?? r.chunkText ?? '',
-          source: r.source ?? r.connectorType ?? 'Knowledge Base',
-          type: r.type ?? 'Documents',
-          date: r.date ?? r.updatedAt ?? '',
-          relevance: Math.round((r.relevanceScore ?? r.score ?? 0.8) * 100),
-          url: r.url,
-          author: r.author,
-          tags: r.tags,
-        }));
-        setResults(mapped.length > 0 ? mapped : MOCK_RESULTS);
+        const mapped: SearchResult[] = (data.results ?? []).map((r: any, i: number) => {
+          const source = r.source ?? r.connectorType ?? 'Knowledge Base';
+          const sourceIcon = source.charAt(0).toUpperCase();
+          return {
+            id: r.id ?? String(i),
+            title: r.title ?? r.documentName ?? 'Untitled',
+            excerpt: r.excerpt ?? r.chunkText ?? '',
+            source,
+            sourceIcon,
+            type: (r.type ?? 'Documents') as FilterTab,
+            date: r.date ?? (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''),
+            relevance: Math.round((r.relevanceScore ?? r.score ?? 0) * 100),
+            url: r.url ?? '#',
+            author: r.author,
+            tags: r.tags,
+          };
+        });
+        setResults(mapped);
+      } else {
+        setResults([]);
       }
     } catch {
-      setResults(MOCK_RESULTS);
+      setResults([]);
     }
     setIsSearching(false);
-    setHasResults(true);
+    setHasSearched(true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -214,6 +159,16 @@ export default function SearchPage() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Auto-search when navigated from command palette with ?q=...
+  useEffect(() => {
+    if (didAutoSearch.current) return;
+    const q = searchParams.get('q');
+    if (q && q.trim() && status !== 'loading') {
+      didAutoSearch.current = true;
+      void handleSearch(q.trim());
+    }
+  }, [searchParams, status]);
 
   return (
     <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6">
@@ -225,10 +180,12 @@ export default function SearchPage() {
             Search across all documents, meetings, code, and people
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-surface-400 dark:text-gray-500">
-          <Zap className="h-3.5 w-3.5 text-indigo-400" />
-          <span>248,392 indexed items</span>
-        </div>
+        {hasSearched && results.length > 0 && (
+          <div className="flex items-center gap-2 text-xs text-surface-400 dark:text-gray-500">
+            <Zap className="h-3.5 w-3.5 text-indigo-400" />
+            <span>{results.length} results found</span>
+          </div>
+        )}
       </div>
 
       {/* Search bar */}
@@ -250,7 +207,7 @@ export default function SearchPage() {
           />
           {query && (
             <button
-              onClick={() => { setQuery(''); setHasResults(false); setSubmittedQuery(''); }}
+              onClick={() => { setQuery(''); setHasSearched(false); setSubmittedQuery(''); setResults([]); }}
               className="text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300 transition-colors"
             >
               <X className="h-4 w-4" />
@@ -271,11 +228,10 @@ export default function SearchPage() {
         {/* Source filter */}
         <div className="relative">
           <button
-            onClick={() => setSourceFilter(sourceFilter === 'All sources' ? 'Confluence' : 'All sources')}
             className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
           >
             <Filter className="h-3.5 w-3.5" />
-            {sourceFilter}
+            All sources
             <ChevronDown className="h-3 w-3 text-surface-400 dark:text-gray-500" />
           </button>
         </div>
@@ -322,11 +278,11 @@ export default function SearchPage() {
           >
             <tab.icon className="h-3.5 w-3.5" />
             {tab.label}
-            {hasResults && (
+            {hasSearched && (
               <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-semibold ${
                 activeTab === tab.label ? 'bg-white/20' : 'bg-surface-200 dark:bg-gray-700 text-surface-500 dark:text-gray-400'
               }`}>
-                {tab.count}
+                {tabCount(tab.label)}
               </span>
             )}
           </button>
@@ -334,71 +290,83 @@ export default function SearchPage() {
       </div>
 
       {/* Results / Empty state */}
-      {hasResults ? (
-        <div className="space-y-3">
-          <p className="text-xs text-surface-400 dark:text-gray-500 mb-4">
-            {filteredResults.length} results for <span className="text-surface-600 dark:text-gray-300 font-medium">"{submittedQuery}"</span> · {dateFilter}
-          </p>
-          {filteredResults.map(result => (
-            <div
-              key={result.id}
-              className="group rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:border-surface-300 dark:hover:border-gray-700 hover:bg-white dark:hover:bg-gray-900/80 transition-all"
-            >
-              <div className="flex items-start gap-4">
-                {/* Source icon */}
-                <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold text-surface-900 dark:text-white ${SOURCE_ICONS[result.sourceIcon] ?? 'bg-surface-200 dark:bg-gray-700'}`}>
-                  {result.sourceIcon}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-3 mb-1">
-                    <h3 className="text-sm font-semibold text-surface-900 dark:text-white group-hover:text-indigo-300 transition-colors line-clamp-1">
-                      {result.title}
-                    </h3>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <RelevanceBadge score={result.relevance} />
-                      <a href={result.url} className="text-surface-400 dark:text-gray-600 hover:text-surface-500 dark:hover:text-gray-400 transition-colors">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    </div>
-                  </div>
-
-                  <p
-                    className="text-xs text-surface-500 dark:text-gray-400 leading-relaxed mb-2 line-clamp-2"
-                    dangerouslySetInnerHTML={{ __html: result.excerpt }}
-                  />
-
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
-                      <BookOpen className="h-3 w-3" />
-                      {result.source}
-                    </span>
-                    {result.author && (
-                      <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
-                        <Users className="h-3 w-3" />
-                        {result.author}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
-                      <Clock className="h-3 w-3" />
-                      {result.date}
-                    </span>
-                    {result.tags?.map(tag => (
-                      <span key={tag} className="text-[10px] text-surface-400 dark:text-gray-600 bg-surface-100 dark:bg-gray-800 rounded-full px-2 py-0.5">
-                        #{tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : isSearching ? (
+      {isSearching ? (
         <div className="flex flex-col items-center justify-center py-24">
           <Loader2 className="h-8 w-8 text-indigo-400 animate-spin mb-4" />
           <p className="text-sm text-surface-500 dark:text-gray-400">Searching across all sources...</p>
         </div>
+      ) : hasSearched ? (
+        filteredResults.length === 0 ? (
+          <div className="flex flex-col items-center py-20">
+            <Search className="h-10 w-10 text-surface-400 dark:text-gray-600 mb-3" />
+            <p className="text-surface-500 dark:text-gray-400 font-medium mb-1">No results found</p>
+            <p className="text-surface-400 dark:text-gray-600 text-sm">
+              No results for <span className="text-surface-600 dark:text-gray-300">"{submittedQuery}"</span> — try different keywords
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-surface-400 dark:text-gray-500 mb-4">
+              {filteredResults.length} results for <span className="text-surface-600 dark:text-gray-300 font-medium">"{submittedQuery}"</span> · {dateFilter}
+            </p>
+            {filteredResults.map(result => (
+              <div
+                key={result.id}
+                className="group rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:border-surface-300 dark:hover:border-gray-700 hover:bg-white dark:hover:bg-gray-900/80 transition-all"
+              >
+                <div className="flex items-start gap-4">
+                  {/* Source icon */}
+                  <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white ${getSourceColor(result.sourceIcon)}`}>
+                    {result.sourceIcon}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3 mb-1">
+                      <h3 className="text-sm font-semibold text-surface-900 dark:text-white group-hover:text-indigo-300 transition-colors line-clamp-1">
+                        {result.title}
+                      </h3>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {result.relevance > 0 && <RelevanceBadge score={result.relevance} />}
+                        <a href={result.url} className="text-surface-400 dark:text-gray-600 hover:text-surface-500 dark:hover:text-gray-400 transition-colors">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      </div>
+                    </div>
+
+                    <p
+                      className="text-xs text-surface-500 dark:text-gray-400 leading-relaxed mb-2 line-clamp-2"
+                      dangerouslySetInnerHTML={{ __html: result.excerpt }}
+                    />
+
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
+                        <BookOpen className="h-3 w-3" />
+                        {result.source}
+                      </span>
+                      {result.author && (
+                        <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
+                          <Users className="h-3 w-3" />
+                          {result.author}
+                        </span>
+                      )}
+                      {result.date && (
+                        <span className="flex items-center gap-1 text-[11px] text-surface-400 dark:text-gray-600">
+                          <Clock className="h-3 w-3" />
+                          {result.date}
+                        </span>
+                      )}
+                      {result.tags?.map(tag => (
+                        <span key={tag} className="text-[10px] text-surface-400 dark:text-gray-600 bg-surface-100 dark:bg-gray-800 rounded-full px-2 py-0.5">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         /* Empty state with suggestions */
         <div className="flex flex-col items-center py-16">

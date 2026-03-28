@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, RotateCcw, Copy, ChevronDown, Zap, Settings, Code2, BookOpen } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { authFetch } from '@/lib/api/token';
+import { Play, RotateCcw, Copy, Zap, Settings, Code2, Loader2 } from 'lucide-react';
 
 const SYSTEM_PROMPTS = [
   { label: 'Knowledge Assistant', value: 'You are a helpful AI assistant with access to the organization\'s knowledge base. Answer questions accurately and cite your sources.' },
@@ -13,6 +15,7 @@ const SYSTEM_PROMPTS = [
 const MODELS = ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5', 'gpt-4o', 'gpt-4o-mini'];
 
 export default function PlaygroundPage() {
+  const { data: session } = useSession();
   const [systemPrompt, setSystemPrompt] = useState(SYSTEM_PROMPTS[0].value);
   const [model, setModel] = useState(MODELS[0]);
   const [temperature, setTemperature] = useState(0.1);
@@ -22,13 +25,104 @@ export default function PlaygroundPage() {
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
+
   const run = async () => {
     if (!userInput.trim()) return;
     setLoading(true);
     setResponse('');
-    await new Promise(r => setTimeout(r, 1200));
-    setResponse(`**Sample Response from ${model}**\n\nThis is a demo response to your prompt: "${userInput}"\n\nIn production, this would call the KnowledgeForge API with:\n- Model: ${model}\n- Temperature: ${temperature}\n- Max tokens: ${maxTokens}\n- System prompt: applied\n\nThe response would include RAG-enhanced answers with citations from your knowledge base.`);
-    setLoading(false);
+
+    try {
+      // Create a temporary conversation with settings
+      const createRes = await authFetch(
+        '/api/backend/conversations',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Playground',
+            systemPrompt: systemPrompt || undefined,
+            model,
+          }),
+        },
+        session?.accessToken,
+        getUser(),
+      );
+
+      if (!createRes.ok) throw new Error(`Failed to create session (${createRes.status})`);
+      const conv = await createRes.json();
+      const convId = conv.id ?? conv.conversationId;
+      if (!convId) throw new Error('No conversation ID returned');
+
+      // Send message and stream response
+      const msgRes = await authFetch(
+        `/api/backend/conversations/${convId}/messages/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: userInput,
+            temperature,
+            maxTokens,
+            model,
+          }),
+        },
+        session?.accessToken,
+        getUser(),
+      );
+
+      if (!msgRes.ok) throw new Error(`Model request failed (${msgRes.status})`);
+      if (!msgRes.body) throw new Error('No response body from server');
+
+      const reader = msgRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') break;
+          try {
+            const chunk = JSON.parse(raw);
+            if (chunk.type === 'error') {
+              setResponse(`⚠ ${chunk.error || 'Model error'}`);
+              break;
+            }
+            if (chunk.type === 'done') break;
+            const delta =
+              chunk.delta ??
+              chunk.text ??
+              chunk.content ??
+              chunk.choices?.[0]?.delta?.content ??
+              '';
+            if (delta) {
+              fullText += delta;
+              setResponse(fullText);
+            }
+          } catch {
+            // Plain text delta
+            if (raw) {
+              fullText += raw;
+              setResponse(fullText);
+            }
+          }
+        }
+      }
+
+      if (!fullText) setResponse('The model returned an empty response.');
+    } catch (e: any) {
+      setResponse(`⚠ ${e?.message || 'Failed to connect to backend. Make sure the backend server is running.'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -102,34 +196,32 @@ export default function PlaygroundPage() {
               <textarea
                 value={userInput}
                 onChange={e => setUserInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void run(); }}
                 rows={6}
-                placeholder="Enter your prompt here..."
+                placeholder="Enter your prompt here... (Cmd+Enter to run)"
                 className="w-full bg-gray-900 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 resize-none font-mono"
               />
             </div>
+
+            {loading && (
+              <div className="bg-gray-900 border border-white/10 rounded-xl px-4 py-4 flex items-center gap-3">
+                <Loader2 className="w-4 h-4 text-indigo-400 animate-spin flex-shrink-0" />
+                <span className="text-gray-500 text-sm">Generating response...</span>
+              </div>
+            )}
 
             {response && (
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-medium text-gray-400">Response</label>
                   <button onClick={() => navigator.clipboard.writeText(response)} className="text-xs text-gray-500 hover:text-white flex items-center gap-1 transition-colors">
-                    <Copy className="w-3 h-3" /> Copy
+                    Copy
                   </button>
                 </div>
                 <div className="bg-gray-900 border border-white/10 rounded-xl px-4 py-4 text-sm text-gray-300 whitespace-pre-wrap font-mono leading-relaxed min-h-[120px]">
                   {response}
+                  {loading && <span className="inline-block w-1 h-4 bg-indigo-400 animate-pulse ml-0.5 align-middle" />}
                 </div>
-              </div>
-            )}
-
-            {loading && (
-              <div className="bg-gray-900 border border-white/10 rounded-xl px-4 py-4 flex items-center gap-3">
-                <div className="flex gap-1">
-                  {[0, 0.2, 0.4].map(d => (
-                    <div key={d} className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: `${d}s` }} />
-                  ))}
-                </div>
-                <span className="text-gray-500 text-sm">Generating response...</span>
               </div>
             )}
           </div>
@@ -148,7 +240,7 @@ export default function PlaygroundPage() {
               disabled={loading || !userInput.trim()}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors"
             >
-              <Play className="w-3.5 h-3.5" /> Run
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Run
             </button>
           </div>
         </div>

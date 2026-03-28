@@ -1,4 +1,5 @@
 import logging
+import secrets
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
+    OAuthLoginRequest,
     PasswordResetConfirmBody,
     PasswordResetRequestBody,
     RefreshRequest,
@@ -116,25 +118,100 @@ async def change_password(
     await db.flush()
 
 
+@router.post("/oauth-login", response_model=AuthResponse)
+async def oauth_login(body: OAuthLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Exchange an OAuth sign-in (Google/Microsoft) for a backend JWT.
+
+    Called by NextAuth after a successful OAuth flow so that the session
+    contains a backend access token usable by all API routes.
+    """
+    from datetime import datetime, timezone
+
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        # Auto-provision the OAuth user
+        user = User(
+            email=body.email,
+            name=body.name,
+            hashed_password=hash_password(secrets.token_hex(32)),  # unusable password
+            role=UserRole.member,
+            is_active=True,
+            avatar_url=body.avatarUrl,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.add(user)
+        await db.flush()
+    else:
+        # Keep avatar / name in sync with the provider
+        if body.avatarUrl and not user.avatar_url:
+            user.avatar_url = body.avatarUrl
+        if body.name and user.name != body.name:
+            user.name = body.name
+        user.updated_at = datetime.now(timezone.utc)
+        await db.flush()
+
+    return await auth_service.build_auth_response(user, db)
+
+
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
 async def password_reset_request(
     body: PasswordResetRequestBody, db: AsyncSession = Depends(get_db)
 ):
-    # In production, send an email. For now, just acknowledge.
-    logger.info(f"Password reset requested for: {body.email}")
+    """Generate a reset token, store it in Redis, and log the link (dev mode)."""
+    import redis.asyncio as aioredis
+    from app.config import settings
+
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
     # Always return 204 to avoid email enumeration
+    if user is None:
+        return
+
+    token = secrets.token_urlsafe(32)
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        await r.setex(f"pwd_reset:{token}", 1800, str(user.id))  # 30 min TTL
+    finally:
+        await r.aclose()
+
+    reset_url = f"http://localhost:3001/reset-password?token={token}"
+    logger.info("=== PASSWORD RESET LINK (dev) ===")
+    logger.info(reset_url)
+    logger.info("=================================")
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
 async def password_reset_confirm(
     body: PasswordResetConfirmBody, db: AsyncSession = Depends(get_db)
 ):
-    # In production, validate token from email link.
-    # For demo purposes, return a not-implemented note.
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Password reset via token is not yet implemented in demo mode. Use change-password instead.",
-    )
+    """Validate reset token, update password, invalidate token."""
+    import uuid
+    import redis.asyncio as aioredis
+    from datetime import datetime, timezone
+    from app.config import settings
+
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        user_id = await r.get(f"pwd_reset:{body.token}")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset link is invalid or has expired.",
+            )
+        result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+        user = result.scalar_one_or_none()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=400, detail="User not found.")
+
+        user.hashed_password = hash_password(body.newPassword)
+        user.updated_at = datetime.now(timezone.utc)
+        await db.flush()
+        await r.delete(f"pwd_reset:{body.token}")
+    finally:
+        await r.aclose()
 
 
 def _user_to_out(user: User) -> UserOut:

@@ -134,12 +134,22 @@ export function CommandPalette() {
   const filtered = useMemo(() => {
     if (!query.trim()) return allCommands;
     const q = query.toLowerCase();
-    return allCommands.filter(
+    const matched = allCommands.filter(
       (cmd) =>
         cmd.label.toLowerCase().includes(q) ||
         cmd.description?.toLowerCase().includes(q) ||
         cmd.keywords?.some((k) => k.includes(q))
     );
+    // Always prepend a "Search knowledge base for..." item when there's a query
+    const kbSearch: CommandItem = {
+      id: 'search-kb',
+      label: `Search knowledge base for "${query.trim()}"`,
+      icon: <Search className="h-4 w-4" />,
+      category: 'Search',
+      action: () => navigate(`/search?q=${encodeURIComponent(query.trim())}`),
+    };
+    return [kbSearch, ...matched];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, allCommands]);
 
   useEffect(() => {

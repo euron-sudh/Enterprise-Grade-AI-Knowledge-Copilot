@@ -20,6 +20,7 @@ import {
   RefreshCw,
   MoreHorizontal,
 } from 'lucide-react';
+import { authFetch } from '@/lib/api/token';
 
 interface WorkflowRun {
   id: string;
@@ -71,15 +72,13 @@ export default function WorkflowsPage() {
   const [creating, setCreating] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
 
-  const authHeader = session?.accessToken
-    ? { Authorization: `Bearer ${session.accessToken}` }
-    : {};
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
   const fetchWorkflows = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/backend/workflows', { headers: authHeader });
+      const res = await authFetch('/api/backend/workflows', {}, session?.accessToken, getUser());
       if (!res.ok) throw new Error('Failed');
       const data = await res.json();
       setWorkflows(Array.isArray(data) ? data : []);
@@ -99,11 +98,11 @@ export default function WorkflowsPage() {
     if (!n) return;
     setCreating(true);
     try {
-      const res = await fetch('/api/backend/workflows', {
+      const res = await authFetch('/api/backend/workflows', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: n, description: d, trigger_type: t, steps: [] }),
-      });
+      }, session?.accessToken, getUser());
       if (!res.ok) throw new Error('Create failed');
       setShowCreate(false);
       setNewName('');
@@ -119,10 +118,7 @@ export default function WorkflowsPage() {
   const toggleWorkflow = async (wf: Workflow) => {
     const endpoint = wf.status === 'active' ? 'pause' : 'resume';
     try {
-      await fetch(`/api/backend/workflows/${wf.id}/${endpoint}`, {
-        method: 'POST',
-        headers: authHeader,
-      });
+      await authFetch(`/api/backend/workflows/${wf.id}/${endpoint}`, { method: 'POST' }, session?.accessToken, getUser());
       fetchWorkflows();
     } catch {
       setError('Failed to update workflow.');
@@ -132,10 +128,7 @@ export default function WorkflowsPage() {
   const runWorkflow = async (id: string) => {
     setRunning(id);
     try {
-      await fetch(`/api/backend/workflows/${id}/run`, {
-        method: 'POST',
-        headers: authHeader,
-      });
+      await authFetch(`/api/backend/workflows/${id}/run`, { method: 'POST' }, session?.accessToken, getUser());
       fetchWorkflows();
     } catch {
       setError('Failed to run workflow.');
@@ -147,7 +140,7 @@ export default function WorkflowsPage() {
   const deleteWorkflow = async (id: string) => {
     if (!confirm('Delete this workflow?')) return;
     try {
-      await fetch(`/api/backend/workflows/${id}`, { method: 'DELETE', headers: authHeader });
+      await authFetch(`/api/backend/workflows/${id}`, { method: 'DELETE' }, session?.accessToken, getUser());
       fetchWorkflows();
     } catch {
       setError('Failed to delete.');

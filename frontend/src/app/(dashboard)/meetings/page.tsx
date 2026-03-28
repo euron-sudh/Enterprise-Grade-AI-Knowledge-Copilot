@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import {
   Video,
   Calendar,
@@ -59,6 +60,7 @@ function formatDate(iso: string) {
 
 export default function MeetingsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [tab, setTab] = useState<MeetingTab>('upcoming');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,7 +243,9 @@ export default function MeetingsPage() {
                     {m.status}
                   </span>
                   {m.status === 'scheduled' && (
-                    <button className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-surface-900 dark:text-white hover:bg-indigo-700">
+                    <button
+                      onClick={() => router.push(`/meetings/${m.id}`)}
+                      className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-surface-900 dark:text-white hover:bg-indigo-700">
                       <Play className="h-3 w-3" /> Join
                     </button>
                   )}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
+import { authFetch, getBestToken } from '@/lib/api/token';
 import {
   Video,
   Upload,
@@ -77,13 +78,18 @@ export default function VideoPage() {
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const fetchVideos = async (token: string) => {
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
+
+  const fetchVideos = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/backend/knowledge/documents?documentType=video&pageSize=50', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authFetch(
+        '/api/backend/knowledge/documents?documentType=video&pageSize=50',
+        {},
+        session?.accessToken,
+        getUser(),
+      );
       if (!res.ok) {
         const msg = await res.json().catch(() => ({}));
         throw new Error((msg as any).detail || `HTTP ${res.status}`);
@@ -100,24 +106,15 @@ export default function VideoPage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      if ((session as any)?.error) {
-        // Token refresh failed — ask user to sign in again
-        setError('Your session has expired. Please sign in again.');
-        setLoading(false);
-        return;
-      }
-      if (session?.accessToken) {
-        fetchVideos(session.accessToken);
-      }
+      fetchVideos();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, session?.accessToken, (session as any)?.error]);
+  }, [status, session?.accessToken, session?.user?.email]);
 
   const uploadVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     const videoFile = files?.[0];
     if (!videoFile) return;
-    if (!session?.accessToken) { setError('Not authenticated.'); return; }
     setUploading(true);
     setUploadProgress(0);
     setError('');
@@ -127,11 +124,12 @@ export default function VideoPage() {
       const progressInterval = setInterval(() => {
         setUploadProgress(p => Math.min(p + 10, 90));
       }, 300);
-      const res = await fetch('/api/backend/knowledge/videos/upload', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-        body: form,
-      });
+      const res = await authFetch(
+        '/api/backend/knowledge/videos/upload',
+        { method: 'POST', body: form },
+        session?.accessToken,
+        getUser(),
+      );
       clearInterval(progressInterval);
       setUploadProgress(100);
       if (!res.ok) {
@@ -139,7 +137,7 @@ export default function VideoPage() {
         throw new Error((msg as any).detail || 'Upload failed');
       }
       setShowUpload(false);
-      setTimeout(() => { fetchVideos(session.accessToken!); setUploadProgress(0); }, 800);
+      setTimeout(() => { fetchVideos(); setUploadProgress(0); }, 800);
     } catch (e: any) {
       setError(`Upload failed: ${e?.message || 'Please try again.'}`);
     } finally {

@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -158,6 +159,59 @@ async def list_document_chunks(
         page=page,
         pageSize=pageSize,
         totalPages=math.ceil(total / pageSize) if total > 0 else 1,
+    )
+
+
+@router.get("/documents/{document_id}/download")
+async def download_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Download a document.
+    - Uploaded files (pdf, docx, txt, etc.): served directly from disk.
+    - Web/crawler/connector docs: chunks are assembled into a .txt export.
+    """
+    from fastapi.responses import FileResponse, PlainTextResponse
+    import mimetypes
+
+    doc = await _get_user_document(document_id, current_user.id, db)
+
+    WEB_TYPES = {"web", "google_drive", "github", "figma", "web_crawler"}
+
+    if doc.file_type not in WEB_TYPES and doc.file_path and Path(doc.file_path).is_file():
+        mime, _ = mimetypes.guess_type(doc.file_path)
+        return FileResponse(
+            path=doc.file_path,
+            filename=doc.original_name or doc.name,
+            media_type=mime or "application/octet-stream",
+        )
+
+    # For web/connector docs, assemble chunks into a text file
+    result = await db.execute(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id)
+        .order_by(DocumentChunk.chunk_index.asc())
+    )
+    chunks = result.scalars().all()
+
+    source_url = doc.original_name or doc.file_path or ""
+    lines = [f"# {doc.name}"]
+    if source_url.startswith("http"):
+        lines.append(f"Source: {source_url}")
+    lines.append(f"Type: {doc.file_type}")
+    lines.append(f"Words: {doc.word_count or 0}")
+    lines.append("")
+    for chunk in chunks:
+        lines.append(chunk.content)
+        lines.append("")
+
+    content = "\n".join(lines)
+    safe_name = re.sub(r'[^\w\-.]', '_', doc.name)[:80] + ".txt"
+    return PlainTextResponse(
+        content=content,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
 
 
@@ -518,6 +572,13 @@ async def sync_connector(
             connector.status = ConnectorStatus.connected
             await db.flush()
             return {"message": f"Google Drive sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
+
+        if connector.type == "web_crawler":
+            chunks_created = await _sync_web_crawler(connector, current_user.id, db)
+            connector.status = ConnectorStatus.connected
+            connector.document_count = chunks_created
+            await db.flush()
+            return {"message": f"Web crawl complete: {chunks_created} pages indexed", "connectorId": str(connector_id)}
 
         # Generic / unimplemented connector types — mark connected without real sync
         connector.status = ConnectorStatus.connected
@@ -884,6 +945,141 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
 
     await db.flush()
     return len(chunks_text)
+
+
+async def _sync_web_crawler(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
+    """
+    Crawl a website starting from the configured URL, extract text from each page,
+    and store it as DocumentChunks so it becomes searchable via RAG.
+    Returns the number of pages indexed.
+    """
+    import httpx
+    import re
+    from urllib.parse import urljoin, urlparse
+
+    cfg: Dict[str, Any] = connector.config or {}
+    start_url: str = cfg.get("url", "")
+    max_depth: int = min(int(cfg.get("depth", 2)), 3)  # cap at 3 to avoid runaway crawls
+    max_pages: int = 30  # safety limit
+
+    if not start_url:
+        raise ValueError("Web crawler URL missing in connector config")
+
+    base_domain = urlparse(start_url).netloc
+
+    def _extract_text_from_html(html: str) -> str:
+        """Strip tags and return readable text."""
+        # Remove script/style blocks
+        html = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+        # Remove all tags
+        text = re.sub(r'<[^>]+>', ' ', html)
+        # Collapse whitespace
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        # Remove null bytes
+        text = text.replace('\x00', '').replace('\x0b', ' ').replace('\x0c', ' ')
+        return text.strip()
+
+    def _extract_links(html: str, current_url: str) -> List[str]:
+        """Extract same-domain links from a page."""
+        hrefs = re.findall(r'<a[^>]+href=["\']([^"\'#?][^"\']*)["\']', html, re.IGNORECASE)
+        links = []
+        for href in hrefs:
+            full = urljoin(current_url, href)
+            parsed = urlparse(full)
+            if parsed.netloc == base_domain and parsed.scheme in ('http', 'https'):
+                # Normalise: drop fragments and query strings for dedup
+                clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip('/')
+                links.append(clean)
+        return links
+
+    # BFS crawl
+    visited: set = set()
+    queue: List[tuple] = [(start_url.rstrip('/'), 0)]  # (url, depth)
+    pages: List[Dict[str, str]] = []  # [{url, title, text}]
+
+    async with httpx.AsyncClient(
+        timeout=10.0,
+        follow_redirects=True,
+        headers={"User-Agent": "KnowledgeForge-Crawler/1.0"},
+    ) as client:
+        while queue and len(pages) < max_pages:
+            url, depth = queue.pop(0)
+            if url in visited:
+                continue
+            visited.add(url)
+
+            try:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    continue
+                content_type = resp.headers.get("content-type", "")
+                if "text/html" not in content_type:
+                    continue
+                html = resp.text
+
+                # Extract title
+                title_m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+                title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip() if title_m else url
+
+                text = _extract_text_from_html(html)
+                if len(text) > 100:  # skip near-empty pages
+                    pages.append({"url": url, "title": title, "text": text})
+
+                # Enqueue links for next depth level
+                if depth < max_depth:
+                    for link in _extract_links(html, url):
+                        if link not in visited:
+                            queue.append((link, depth + 1))
+
+            except Exception as exc:
+                logger.warning("Crawler skipped %s: %s", url, exc)
+                continue
+
+    if not pages:
+        pages = [{"url": start_url, "title": connector.name, "text": f"Crawled {start_url} but found no readable content."}]
+
+    # Remove previous documents from this connector
+    doc_name_prefix = f"[Crawler] {connector.name}"
+    existing = await db.execute(
+        select(Document).where(
+            Document.user_id == user_id,
+            Document.name.like(f"{doc_name_prefix}%"),
+        )
+    )
+    for old_doc in existing.scalars().all():
+        await db.delete(old_doc)
+    await db.flush()
+
+    # Store each page as a Document with chunks
+    total_chunks = 0
+    from app.services.document_service import _chunk_text
+    for page in pages:
+        doc = Document(
+            user_id=user_id,
+            name=f"{doc_name_prefix}: {page['title'][:80]}",
+            original_name=page["url"],
+            file_path=page["url"],
+            file_type="web",
+            file_size=len(page["text"].encode()),
+            status="indexed",
+            word_count=len(page["text"].split()),
+            page_count=1,
+        )
+        db.add(doc)
+        await db.flush()
+
+        for chunk_idx, chunk_text in _chunk_text(page["text"]):
+            db.add(DocumentChunk(
+                document_id=doc.id,
+                content=chunk_text,
+                chunk_index=chunk_idx,
+                token_count=len(chunk_text.split()),
+            ))
+            total_chunks += 1
+
+    await db.flush()
+    return len(pages)
 
 
 @router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)

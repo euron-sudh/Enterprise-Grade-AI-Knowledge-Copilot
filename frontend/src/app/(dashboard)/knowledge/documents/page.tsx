@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, Filter, Search, Trash2 } from 'lucide-react';
+import { Download, ExternalLink, FileText, Filter, Search, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,16 @@ export default function DocumentsPage() {
   const [search, setSearch] = useState('');
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  const handleDownload = async (id: string, name: string) => {
+    setDownloading(id);
+    try {
+      await knowledgeApi.downloadDocument(id, name);
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['documents', { search }],
@@ -182,14 +192,37 @@ export default function DocumentsPage() {
                       {formatRelativeTime(doc.createdAt)}
                     </td>
                     <td className="px-4 py-3">
-                      <Button
-                        aria-label="Delete document"
-                        size="icon-xs"
-                        variant="danger-ghost"
-                        onClick={() => handleDelete(doc.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {(doc as any).originalName?.startsWith('http') ? (
+                          <a
+                            href={(doc as any).originalName}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open source URL"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-surface-400 hover:text-brand-500 transition-colors"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        ) : null}
+                        <Button
+                          aria-label="Download document"
+                          size="icon-xs"
+                          variant="ghost"
+                          title="Download"
+                          onClick={() => handleDownload(doc.id, doc.name)}
+                          disabled={downloading === doc.id}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          aria-label="Delete document"
+                          size="icon-xs"
+                          variant="danger-ghost"
+                          onClick={() => handleDelete(doc.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

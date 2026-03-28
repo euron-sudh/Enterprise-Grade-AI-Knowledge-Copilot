@@ -115,3 +115,17 @@ export async function getKnowledgeStats(): Promise<KnowledgeStats> {
   const { data } = await apiClient.get<KnowledgeStats>('/knowledge/stats');
   return data;
 }
+
+export async function downloadDocument(id: string, filename: string): Promise<void> {
+  const response = await apiClient.get(`/knowledge/documents/${id}/download`, {
+    responseType: 'blob',
+  });
+  const url = URL.createObjectURL(new Blob([response.data]));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

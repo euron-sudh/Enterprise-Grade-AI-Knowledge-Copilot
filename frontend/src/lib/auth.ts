@@ -149,12 +149,32 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
-      // OAuth providers (Google, Azure)
-      if (account?.access_token) {
-        token.accessToken = account.access_token;
-        token.refreshToken = account.refresh_token ?? '';
-        token.accessTokenExpiry = Date.now() + 58 * 60 * 1000;
-        return token;
+      // OAuth providers (Google, Azure) — exchange for a backend JWT
+      if (account?.access_token && user) {
+        try {
+          const res = await fetch(`${API_URL}/auth/oauth-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              name: user.name ?? user.email,
+              provider: account.provider,
+              avatarUrl: user.image ?? null,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json() as { accessToken: string; refreshToken: string; user: { id: string; role: string } };
+            token.id = data.user.id;
+            token.role = data.user.role;
+            token.accessToken = data.accessToken;
+            token.refreshToken = data.refreshToken;
+            token.accessTokenExpiry = Date.now() + 58 * 60 * 1000;
+            token.error = undefined;
+            return token;
+          }
+        } catch {
+          // fall through — token will be missing and caller will re-auth
+        }
       }
 
       // Token still valid — return as-is

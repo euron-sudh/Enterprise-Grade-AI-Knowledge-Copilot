@@ -6,6 +6,7 @@ import {
   Bot, Loader2, Send, X, Paperclip, FileText, FileImage,
   FileCode2, File, Globe, BookOpen, AlertCircle, CheckCircle2,
 } from 'lucide-react';
+import { authFetch } from '@/lib/api/token';
 
 /* ─── Agent definitions ─────────────────────────────────── */
 const PREBUILT_AGENTS = [
@@ -207,9 +208,7 @@ export default function AgentsPage() {
   const reportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const authHeader = session?.accessToken
-    ? { Authorization: `Bearer ${session.accessToken}` }
-    : {};
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
   /* ── File handling ── */
   const processFile = async (file: File, id: string) => {
@@ -298,16 +297,21 @@ export default function AgentsPage() {
     });
 
     try {
-      const res = await fetch(activeAgent.endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({
-          query: enrichedQuery,
-          model: 'gpt-4o-mini',
-          max_sources: 6,
-          web_search: true,
-        }),
-      });
+      const res = await authFetch(
+        activeAgent.endpoint,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: enrichedQuery,
+            model: 'gpt-4o-mini',
+            max_sources: 6,
+            web_search: true,
+          }),
+        },
+        session?.accessToken,
+        getUser(),
+      );
 
       if (!res.ok) throw new Error('Agent request failed');
       if (!res.body) throw new Error('No response body');

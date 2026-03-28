@@ -71,3 +71,10 @@ class PasswordResetRequestBody(BaseModel):
 class PasswordResetConfirmBody(BaseModel):
     token: str
     newPassword: str = Field(..., min_length=8)
+
+
+class OAuthLoginRequest(BaseModel):
+    email: EmailStr
+    name: str
+    provider: str  # "google" | "azure-ad"
+    avatarUrl: Optional[str] = None

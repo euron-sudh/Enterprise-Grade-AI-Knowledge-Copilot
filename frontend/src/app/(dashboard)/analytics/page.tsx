@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { authFetch } from '@/lib/api/token';
 import {
   BarChart3,
   Users,
@@ -92,36 +93,37 @@ function fmt(n: number) {
 }
 
 export default function AnalyticsPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [range, setRange] = useState<DateRange>('30d');
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const authHeader = session?.accessToken
-    ? { Authorization: `Bearer ${session.accessToken}` }
-    : {};
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
   const fetchDashboard = async () => {
     setLoading(true);
     setError('');
     try {
       const [dashRes, gapsRes] = await Promise.all([
-        fetch(`/api/backend/analytics/dashboard?range=${range}`, { headers: authHeader }),
-        fetch(`/api/backend/analytics/knowledge?range=${range}`, { headers: authHeader }),
+        authFetch(`/api/backend/analytics/dashboard?range=${range}`, {}, session?.accessToken, getUser()),
+        authFetch(`/api/backend/analytics/knowledge-gaps?range=${range}`, {}, session?.accessToken, getUser()),
       ]);
-      if (!dashRes.ok) throw new Error('Failed to load analytics');
+      if (!dashRes.ok) throw new Error(`HTTP ${dashRes.status}`);
       const dash = await dashRes.json();
       const knowledge = gapsRes.ok ? await gapsRes.json() : null;
       setData({ ...dash, knowledge: knowledge || dash.knowledge });
-    } catch {
-      setError('Failed to load analytics data.');
+    } catch (e: any) {
+      setError(`Failed to load analytics data: ${e?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchDashboard(); }, [range]);
+  useEffect(() => {
+    if (status === 'authenticated') fetchDashboard();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, status, session?.accessToken]);
 
   const maxQueryCount = data?.topQueries ? Math.max(...data.topQueries.map(q => q.count), 1) : 1;
 
