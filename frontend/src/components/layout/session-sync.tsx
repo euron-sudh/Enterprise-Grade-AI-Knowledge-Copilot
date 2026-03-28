@@ -17,26 +17,27 @@ export function SessionSync() {
   useEffect(() => {
     if (!session) { setApiToken(null); return; }
 
-    // Prefer the cached backend JWT (set by authFetch on 401 exchange)
+    // 1. Prefer the cached backend JWT (set by a prior authFetch exchange)
     const cached = getCachedToken();
     if (cached) { setApiToken(cached); return; }
 
     const sessionToken = (session as any)?.accessToken as string | undefined;
 
-    // If session has a token, try to use it — but it may be an OAuth provider
-    // token. Try exchanging it for a backend JWT first.
+    // 2. Credentials login: session.accessToken IS the backend JWT — use it directly
+    if (sessionToken) {
+      setApiToken(sessionToken);
+      return;
+    }
+
+    // 3. OAuth login without a backend JWT yet — exchange the identity now
     if (session.user?.email) {
       exchangeOAuthToken({
         email: session.user.email,
         name: session.user.name,
         image: session.user.image,
       }).then(backendToken => {
-        setApiToken(backendToken ?? sessionToken ?? null);
-      }).catch(() => {
-        setApiToken(sessionToken ?? null);
-      });
-    } else {
-      setApiToken(sessionToken ?? null);
+        if (backendToken) setApiToken(backendToken);
+      }).catch(() => {});
     }
   }, [session]);
 

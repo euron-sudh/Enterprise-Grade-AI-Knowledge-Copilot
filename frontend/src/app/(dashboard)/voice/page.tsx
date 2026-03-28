@@ -76,9 +76,13 @@ export default function VoicePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const isActive = voiceState !== 'idle';
 
-  const authHeader = session?.accessToken
-    ? { Authorization: `Bearer ${session.accessToken}` }
-    : {};
+  const getAuthHeader = useCallback(() => {
+    const token =
+      (typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null) ||
+      (session as any)?.accessToken ||
+      '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, [session]);
 
   const speak = useCallback((text: string) => {
     if (isMuted || !('speechSynthesis' in window)) return;
@@ -97,7 +101,7 @@ export default function VoicePage() {
     try {
       const res = await fetch('/api/backend/voice/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
         body: JSON.stringify({ question }),
       });
       if (!res.ok) throw new Error('Ask failed');
@@ -173,7 +177,7 @@ export default function VoicePage() {
         try {
           const res = await fetch('/api/backend/voice/transcribe', {
             method: 'POST',
-            headers: authHeader,
+            headers: getAuthHeader(),
             body: form,
           });
           if (!res.ok) throw new Error('Transcription failed');
@@ -194,7 +198,7 @@ export default function VoicePage() {
       setError('Microphone access denied.');
       setVoiceState('idle');
     }
-  }, [selectedLanguage, transcript, askBackend, authHeader]);
+  }, [selectedLanguage, transcript, askBackend, getAuthHeader]);
 
   const handleMicClick = async () => {
     if (isActive) {
