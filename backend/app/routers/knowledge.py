@@ -351,39 +351,22 @@ async def upload_video(
             engine = f"Gemini {GEMINI_VIDEO_MODEL}"
         else:
             # ── FALLBACK: OpenAI Whisper (audio-only) ─────────────────────────
-            import subprocess
             from openai import OpenAI as SyncOpenAI
             client = SyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-            whisper_input = file_path
             if file_size > WHISPER_SIZE_LIMIT:
-                audio_tmp_path = upload_dir / f"{file_path.stem}_audio.mp3"
-                try:
-                    proc = subprocess.run(
-                        [
-                            "ffmpeg", "-y", "-i", str(file_path),
-                            "-vn", "-q:a", "4", "-map", "a", str(audio_tmp_path),
-                        ],
-                        capture_output=True,
-                        timeout=300,
-                    )
-                    if proc.returncode != 0 or not audio_tmp_path.exists():
-                        raise RuntimeError(
-                            f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
-                        )
-                    whisper_input = audio_tmp_path
-                    logger.info(
-                        "Large video '%s': extracted audio → %s (%d KB)",
-                        original_name, audio_tmp_path.name,
-                        audio_tmp_path.stat().st_size // 1024,
-                    )
-                except (FileNotFoundError, OSError):
-                    # ffmpeg not installed or not in PATH — send original to Whisper
-                    logger.warning(
-                        "ffmpeg not available on this system; sending original file to Whisper directly"
-                    )
-                    audio_tmp_path = None
+                # File exceeds Whisper's 25 MB limit — truncate to first 25 MB
+                # (ffmpeg is not required; we just slice the raw bytes)
+                logger.warning(
+                    "Video '%s' is %d MB, exceeds Whisper 25 MB limit — truncating to first 25 MB for transcription",
+                    original_name, file_size // (1024 * 1024),
+                )
+                audio_tmp_path = upload_dir / f"{file_path.stem}_truncated{suffix}"
+                audio_tmp_path.write_bytes(content[:WHISPER_SIZE_LIMIT])
+            else:
+                audio_tmp_path = None
 
+            whisper_input = audio_tmp_path if audio_tmp_path else file_path
             with open(whisper_input, "rb") as af:
                 result = client.audio.transcriptions.create(
                     model="whisper-1",
