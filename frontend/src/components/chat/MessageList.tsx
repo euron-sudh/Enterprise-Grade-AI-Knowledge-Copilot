@@ -131,7 +131,7 @@ function MessageBubble({ message }: { message: Message }) {
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <div className="prose-chat">
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:leading-relaxed prose-pre:bg-surface-800 prose-code:text-brand-400 prose-code:bg-surface-700 prose-code:rounded prose-code:px-1 prose-code:before:content-none prose-code:after:content-none prose-blockquote:border-brand-500 prose-a:text-brand-400 prose-a:no-underline hover:prose-a:underline">
               <ReactMarkdown
                 rehypePlugins={[rehypeHighlight]}
                 remarkPlugins={[remarkGfm]}
