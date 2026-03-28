@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { authFetch, getBestToken } from '@/lib/api/token';
+import { authFetch } from '@/lib/api/token';
 import {
   Video,
   Upload,
@@ -14,6 +14,7 @@ import {
   Loader2,
   FileVideo,
   RefreshCw,
+  X,
 } from 'lucide-react';
 
 type VideoCategory = 'All' | 'Meetings' | 'Training' | 'Product Demo' | 'Other';
@@ -76,7 +77,36 @@ export default function VideoPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
+  const [playingVideo, setPlayingVideo] = useState<{ id: string; title: string; blobUrl: string } | null>(null);
+  const [loadingPlay, setLoadingPlay] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const handlePlay = async (v: VideoItem) => {
+    setLoadingPlay(v.id);
+    try {
+      const res = await authFetch(
+        `/api/backend/knowledge/documents/${v.id}/download`,
+        {},
+        session?.accessToken,
+        getUser(),
+      );
+      if (!res.ok) throw new Error('Failed to load video');
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setPlayingVideo({ id: v.id, title: v.title, blobUrl });
+    } catch (e: any) {
+      setError(`Failed to play video: ${e?.message}`);
+    } finally {
+      setLoadingPlay(null);
+    }
+  };
+
+  const closePlayer = () => {
+    if (playingVideo) {
+      URL.revokeObjectURL(playingVideo.blobUrl);
+      setPlayingVideo(null);
+    }
+  };
 
   const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
@@ -161,7 +191,7 @@ export default function VideoPage() {
           <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">Upload and search video content with AI-powered transcription</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => session?.accessToken && fetchVideos(session.accessToken)} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
+          <button onClick={() => fetchVideos()} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button onClick={() => setShowUpload(!showUpload)}
@@ -195,6 +225,24 @@ export default function VideoPage() {
             </>
           )}
           <button onClick={() => setShowUpload(false)} className="ml-3 text-xs text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300">Cancel</button>
+        </div>
+      )}
+
+      {/* Video player modal */}
+      {playingVideo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={closePlayer}>
+          <div className="relative w-full max-w-4xl" onClick={e => e.stopPropagation()}>
+            <button onClick={closePlayer} className="absolute -top-10 right-0 text-white/70 hover:text-white">
+              <X className="h-6 w-6" />
+            </button>
+            <p className="mb-2 text-sm font-medium text-white truncate">{playingVideo.title}</p>
+            <video
+              src={playingVideo.blobUrl}
+              controls
+              autoPlay
+              className="w-full rounded-xl max-h-[70vh] bg-black"
+            />
+          </div>
         </div>
       )}
 
@@ -237,8 +285,14 @@ export default function VideoPage() {
             <div key={v.id} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden hover:border-surface-300 dark:hover:border-gray-700 transition-colors group">
               {/* Thumbnail */}
               <div className={`relative h-40 bg-gradient-to-br ${v.thumbnail} flex items-center justify-center`}>
-                <button className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-surface-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Play className="h-5 w-5 ml-0.5" />
+                <button
+                  onClick={() => handlePlay(v)}
+                  disabled={loadingPlay === v.id}
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                >
+                  {loadingPlay === v.id
+                    ? <Loader2 className="h-5 w-5 animate-spin" />
+                    : <Play className="h-5 w-5 ml-0.5" />}
                 </button>
                 <div className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-surface-900 dark:text-white">
                   {v.duration}

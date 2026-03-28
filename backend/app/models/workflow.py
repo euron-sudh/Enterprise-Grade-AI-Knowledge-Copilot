@@ -24,6 +24,9 @@ class WorkflowStatus(str, enum.Enum):
 class WorkflowTrigger(str, enum.Enum):
     manual = "manual"
     document_upload = "document_upload"
+    schedule = "schedule"
+    event = "event"
+    webhook = "webhook"
 
 
 class RunStatus(str, enum.Enum):

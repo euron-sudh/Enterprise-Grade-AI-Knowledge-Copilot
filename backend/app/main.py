@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
 from app.database import init_db
@@ -83,6 +84,7 @@ app = FastAPI(
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,

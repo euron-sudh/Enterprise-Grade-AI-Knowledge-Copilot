@@ -320,19 +320,26 @@ async def upload_video(
             whisper_input = file_path
             if file_size > WHISPER_SIZE_LIMIT:
                 audio_tmp_path = upload_dir / f"{file_path.stem}_audio.mp3"
-                proc = subprocess.run(
-                    [
-                        "ffmpeg", "-y", "-i", str(file_path),
-                        "-vn", "-q:a", "4", "-map", "a", str(audio_tmp_path),
-                    ],
-                    capture_output=True,
-                    timeout=300,
-                )
-                if proc.returncode != 0 or not audio_tmp_path.exists():
-                    raise RuntimeError(
-                        f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
+                try:
+                    proc = subprocess.run(
+                        [
+                            "ffmpeg", "-y", "-i", str(file_path),
+                            "-vn", "-q:a", "4", "-map", "a", str(audio_tmp_path),
+                        ],
+                        capture_output=True,
+                        timeout=300,
                     )
-                whisper_input = audio_tmp_path
+                    if proc.returncode != 0 or not audio_tmp_path.exists():
+                        raise RuntimeError(
+                            f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
+                        )
+                    whisper_input = audio_tmp_path
+                except FileNotFoundError:
+                    # ffmpeg not installed — send original file to Whisper directly
+                    logger.warning(
+                        "ffmpeg not found; sending original file to Whisper (may fail if > 25 MB)"
+                    )
+                    audio_tmp_path = None  # don't try to clean up a non-existent file
                 logger.info(
                     "Large video '%s': extracted audio → %s (%d KB)",
                     original_name, audio_tmp_path.name,
