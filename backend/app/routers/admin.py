@@ -355,3 +355,102 @@ async def revoke_invite(
 
     await db.delete(invite)
     await db.flush()
+
+
+# ── Teams endpoints (appended to admin router, served under /admin/teams) ─────
+
+TEAMS_DDL = """
+CREATE TABLE IF NOT EXISTS teams (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_by UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS team_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member',
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(team_id, user_id)
+);
+"""
+
+from sqlalchemy import text as _text
+from pydantic import BaseModel as _BaseModel
+
+
+class CreateTeamBody(_BaseModel):
+    name: str
+    description: Optional[str] = ""
+
+
+async def _ensure_team_tables(db: AsyncSession):
+    try:
+        for s in TEAMS_DDL.strip().split(";"):
+            s = s.strip()
+            if s:
+                await db.execute(_text(s))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+
+
+@router.get("/teams")
+async def list_teams(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _ensure_team_tables(db)
+    result = await db.execute(_text("""
+        SELECT t.id, t.name, t.description, t.created_at,
+               COUNT(tm.user_id) AS member_count
+        FROM teams t
+        LEFT JOIN team_members tm ON tm.team_id = t.id
+        GROUP BY t.id, t.name, t.description, t.created_at
+        ORDER BY t.created_at DESC
+    """))
+    rows = result.fetchall()
+    return [{"id": str(r[0]), "name": r[1], "description": r[2],
+             "createdAt": r[3].isoformat() if r[3] else None, "memberCount": r[4] or 0}
+            for r in rows]
+
+
+@router.post("/teams", status_code=201)
+async def create_team(
+    body: CreateTeamBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Team name is required")
+    await _ensure_team_tables(db)
+    team_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    await db.execute(_text("""
+        INSERT INTO teams (id, name, description, created_by, created_at)
+        VALUES (:id, :name, :desc, :cb, :now)
+    """), {"id": team_id, "name": body.name.strip(), "desc": body.description or "", "cb": str(current_user.id), "now": now})
+    await db.execute(_text("""
+        INSERT INTO team_members (id, team_id, user_id, role, joined_at)
+        VALUES (:id, :tid, :uid, 'owner', :now)
+    """), {"id": str(uuid.uuid4()), "tid": team_id, "uid": str(current_user.id), "now": now})
+    await db.commit()
+    return {"id": team_id, "name": body.name.strip(), "description": body.description or "",
+            "memberCount": 1, "createdAt": now.isoformat()}
+
+
+@router.delete("/teams/{team_id}", status_code=204)
+async def delete_team(
+    team_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _ensure_team_tables(db)
+    result = await db.execute(_text("SELECT created_by FROM teams WHERE id = :id"), {"id": team_id})
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Team not found")
+    await db.execute(_text("DELETE FROM teams WHERE id = :id"), {"id": team_id})
+    await db.commit()

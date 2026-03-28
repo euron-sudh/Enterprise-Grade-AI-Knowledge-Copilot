@@ -155,16 +155,27 @@ async def voice_ask(
 ):
     """Answer a voice question using RAG + AI, returns plain text for TTS."""
     from app.config import settings
-    from app.services.ai_service import _search_relevant_chunks
+    from app.services.ai_service import _search_relevant_chunks, _list_user_documents
 
-    # 1. Search relevant document chunks
+    # 1. Search relevant document chunks + inventory
     sources = await _search_relevant_chunks(body.question, db)
+    doc_inventory = await _list_user_documents(current_user.id, db)
 
     system_prompt = (
         "You are KnowledgeForge Voice Assistant. Answer the user's question clearly and concisely "
         "in 2-3 sentences — your response will be read aloud by text-to-speech. "
         "Do not use markdown, bullet points, or special characters."
     )
+    if doc_inventory:
+        inv_lines = []
+        for d in doc_inventory:
+            note = ""
+            if d["type"] == "video" and d["wordCount"] < 5:
+                note = " (minimal speech — visual analysis requires Google Gemini key)"
+            inv_lines.append(f"{d['type'].upper()}: {d['name']}{note}")
+        system_prompt += (
+            " Knowledge base contains: " + "; ".join(inv_lines) + "."
+        )
     if sources:
         context = "\n\n".join(
             f"[{s['documentName']}]: {s['chunkText']}" for s in sources

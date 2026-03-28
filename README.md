@@ -95,6 +95,10 @@ KnowledgeForge is a full-stack enterprise SaaS platform that indexes every piece
 - 20+ data source connectors: Google Drive, Slack, Confluence, Notion, GitHub, GitLab, Jira, Salesforce, HubSpot, Zendesk, Teams, Gmail, Outlook, OneDrive, Dropbox, SharePoint, and more
 - Connector health monitoring and sync status tracking
 - Document version history
+- Global document view — all documents visible regardless of uploader (no per-user filter)
+- AI chat is aware of the full document inventory (injects KB file list into system prompt)
+- Per-document chunk cap in RAG search (max 2 chunks/doc) prevents large docs dominating results
+- Video analysis via Google Gemini 2.0 Flash (`GOOGLE_API_KEY`) for visual understanding of silent/non-speech videos
 
 ### Video Knowledge Base
 - Video library with search and filtering
@@ -130,9 +134,16 @@ KnowledgeForge is a full-stack enterprise SaaS platform that indexes every piece
 - Usage analytics: query volume, active users, tokens used, feature adoption breakdown
 - Top users leaderboard with per-user usage bars
 - AI-generated insights with actionable recommendations (opportunity, trend, cost-saving types)
-- Knowledge gap analysis — identifies frequently asked unanswered questions with priority ratings
 - Automated reports: scheduled PDF/Excel/email reports with 5 built-in templates
 - Cost tracking and model usage breakdown per 30-day period
+- Analytics queries run sequentially (SQLAlchemy async session safe — no concurrent execute errors)
+
+### Team Management
+- Create, list, and delete teams with full CRUD API (`/teams`)
+- Creator is automatically assigned as team owner
+- Member count tracking with cascading deletes
+- Functional Create Team modal with name and description fields
+- Delete team with owner-only authorization check
 
 ### Authentication & Security
 - Email/password with strong password policy enforcement
@@ -143,6 +154,7 @@ KnowledgeForge is a full-stack enterprise SaaS platform that indexes every piece
 - Session timeout management (configurable)
 - Account lockout after failed login attempts
 - Login audit trail with IP address logging
+- **Demo Quick Login** — one-click login buttons on the login page for Admin and Demo User accounts
 
 ### Full Admin Panel (10 pages)
 | Page | Features |
@@ -297,6 +309,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 DEFAULT_LLM_MODEL=claude-sonnet-4-6
 
+# Video Analysis (Google Gemini — required for visual video understanding)
+GOOGLE_API_KEY=your_google_ai_studio_key
+
 # Vector Database
 PINECONE_API_KEY=your_pinecone_key
 PINECONE_ENVIRONMENT=us-east-1
@@ -316,6 +331,19 @@ ELEVENLABS_API_KEY=your_elevenlabs_key
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 ```
+
+---
+
+## Demo Credentials
+
+The backend auto-seeds two accounts on first startup:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Super Admin | `admin@knowledgeforge.ai` | `Admin@123` |
+| Admin (Demo) | `demo@knowledgeforge.ai` | `Demo@123` |
+
+Quick login buttons for both accounts are available directly on the login page.
 
 ---
 
@@ -371,6 +399,14 @@ The following items from the PRD are not yet fully implemented:
 - **UI component library** — toast system, dialog, dropdown-menu, command palette (Cmd+K), data-table, skeleton loaders
 - **Shared chat view** — `/chat/shared/[shareId]` for public conversation links
 - **Notification service** — email (AWS SES), push (FCM/APNs), Slack, Teams delivery
+
+### Recently Fixed
+- ✅ Analytics dashboard HTTP 500 — replaced concurrent `asyncio.gather()` with sequential queries (SQLAlchemy `AsyncSession` does not support concurrent operations)
+- ✅ AI chat document awareness — injected full knowledge base inventory into system prompt; added per-doc chunk cap (2 max) in RAG retrieval
+- ✅ Teams CRUD — fully functional create/delete with owner authorization
+- ✅ Login quick-access — demo credential buttons on login page
+- ✅ Sidebar cleanup — removed unused "Usage" and "Knowledge Gaps" nav items
+- ✅ Global document list — knowledge base documents shown regardless of uploader
 
 ### Infrastructure (Future)
 - **Terraform modules** — all AWS services (VPC, EKS, RDS, ElastiCache, S3, CloudFront, WAF, MSK)

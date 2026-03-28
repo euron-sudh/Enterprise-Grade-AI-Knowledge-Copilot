@@ -1,7 +1,6 @@
 """
 Analytics router — real DB data with parallel query execution.
 """
-import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -35,101 +34,76 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
     start = now - timedelta(days=days)
     prev_start = start - timedelta(days=days)
 
-    # ── Run all independent queries in parallel ────────────────────────────
-    (
-        total_q_res,
-        prev_q_res,
-        active_u_res,
-        prev_active_u_res,
-        daily_rows_res,
-        peak_rows_res,
-        docs_res,
-        indexed_res,
-        pending_res,
-        failed_res,
-        storage_res,
-        connectors_res,
-        recent_docs_res,
-        model_res,
-        feedback_up_res,
-        feedback_down_res,
-    ) = await asyncio.gather(
-        db.execute(
-            select(func.count(Message.id)).where(
-                Message.role == MessageRole.user,
-                Message.created_at >= start,
-            )
-        ),
-        db.execute(
-            select(func.count(Message.id)).where(
-                Message.role == MessageRole.user,
-                Message.created_at >= prev_start,
-                Message.created_at < start,
-            )
-        ),
-        db.execute(
-            select(func.count(func.distinct(Conversation.user_id))).where(
-                Conversation.created_at >= start,
-            )
-        ),
-        db.execute(
-            select(func.count(func.distinct(Conversation.user_id))).where(
-                Conversation.created_at >= prev_start,
-                Conversation.created_at < start,
-            )
-        ),
-        db.execute(
-            select(
-                cast(Message.created_at, Date).label("day"),
-                func.count(Message.id).label("cnt"),
-            )
-            .where(Message.role == MessageRole.user, Message.created_at >= start)
-            .group_by(cast(Message.created_at, Date))
-            .order_by(cast(Message.created_at, Date))
-        ),
-        db.execute(
-            select(
-                func.extract("hour", Message.created_at).label("hr"),
-                func.count(Message.id).label("cnt"),
-            )
-            .where(Message.role == MessageRole.user, Message.created_at >= start)
-            .group_by(func.extract("hour", Message.created_at))
-            .order_by(func.extract("hour", Message.created_at))
-        ),
-        db.execute(select(func.count(Document.id))),
-        db.execute(
-            select(func.count(Document.id)).where(Document.status == DocumentStatus.indexed)
-        ),
-        db.execute(
-            select(func.count(Document.id)).where(Document.status == DocumentStatus.processing)
-        ),
-        db.execute(
-            select(func.count(Document.id)).where(Document.status == DocumentStatus.failed)
-        ),
-        db.execute(
-            select(func.coalesce(func.sum(Document.file_size), 0))
-        ),
-        db.execute(select(Connector).order_by(Connector.created_at.desc()).limit(10)),
-        db.execute(
-            select(Document.id, Document.original_name, Document.created_at)
-            .order_by(Document.created_at.desc())
-            .limit(5)
-        ),
-        db.execute(
-            select(Conversation.model, func.count(Conversation.id).label("cnt"))
-            .group_by(Conversation.model)
-            .order_by(func.count(Conversation.id).desc())
-        ),
-        db.execute(
-            select(func.count(Message.id)).where(
-                Message.feedback_rating == FeedbackRating.up
-            )
-        ),
-        db.execute(
-            select(func.count(Message.id)).where(
-                Message.feedback_rating == FeedbackRating.down
-            )
-        ),
+    # ── Run queries sequentially (AsyncSession does not support concurrent execute) ──
+    total_q_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.user,
+            Message.created_at >= start,
+        )
+    )
+    prev_q_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.user,
+            Message.created_at >= prev_start,
+            Message.created_at < start,
+        )
+    )
+    active_u_res = await db.execute(
+        select(func.count(func.distinct(Conversation.user_id))).where(
+            Conversation.created_at >= start,
+        )
+    )
+    prev_active_u_res = await db.execute(
+        select(func.count(func.distinct(Conversation.user_id))).where(
+            Conversation.created_at >= prev_start,
+            Conversation.created_at < start,
+        )
+    )
+    daily_rows_res = await db.execute(
+        select(
+            cast(Message.created_at, Date).label("day"),
+            func.count(Message.id).label("cnt"),
+        )
+        .where(Message.role == MessageRole.user, Message.created_at >= start)
+        .group_by(cast(Message.created_at, Date))
+        .order_by(cast(Message.created_at, Date))
+    )
+    peak_rows_res = await db.execute(
+        select(
+            func.extract("hour", Message.created_at).label("hr"),
+            func.count(Message.id).label("cnt"),
+        )
+        .where(Message.role == MessageRole.user, Message.created_at >= start)
+        .group_by(func.extract("hour", Message.created_at))
+        .order_by(func.extract("hour", Message.created_at))
+    )
+    docs_res = await db.execute(select(func.count(Document.id)))
+    indexed_res = await db.execute(
+        select(func.count(Document.id)).where(Document.status == DocumentStatus.indexed)
+    )
+    pending_res = await db.execute(
+        select(func.count(Document.id)).where(Document.status == DocumentStatus.processing)
+    )
+    failed_res = await db.execute(
+        select(func.count(Document.id)).where(Document.status == DocumentStatus.failed)
+    )
+    storage_res = await db.execute(select(func.coalesce(func.sum(Document.file_size), 0)))
+    connectors_res = await db.execute(select(Connector).order_by(Connector.created_at.desc()).limit(10))
+    recent_docs_res = await db.execute(
+        select(Document.id, Document.original_name, Document.created_at)
+        .order_by(Document.created_at.desc())
+        .limit(5)
+    )
+    model_res = await db.execute(
+        select(Conversation.model, func.count(Conversation.id).label("cnt"))
+        .group_by(Conversation.model)
+        .order_by(func.count(Conversation.id).desc())
+    )
+    feedback_up_res = await db.execute(
+        select(func.count(Message.id)).where(Message.feedback_rating == FeedbackRating.up)
+    )
+    feedback_down_res = await db.execute(
+        select(func.count(Message.id)).where(Message.feedback_rating == FeedbackRating.down)
     )
 
     # ── Unpack ─────────────────────────────────────────────────────────────
@@ -375,54 +349,43 @@ async def get_home_stats(
     yesterday_start = today_start - timedelta(days=1)
     seven_days_ago = now - timedelta(days=7)
 
-    # Run all queries in parallel
-    (
-        queries_today_res,
-        queries_yesterday_res,
-        docs_res,
-        connectors_res,
-        convs_res,
-        daily_res,
-        recent_convs_res,
-        recent_docs_res,
-    ) = await asyncio.gather(
-        db.execute(
-            select(func.count(Message.id)).where(
-                Message.role == MessageRole.user,
-                Message.created_at >= today_start,
-            )
-        ),
-        db.execute(
-            select(func.count(Message.id)).where(
-                Message.role == MessageRole.user,
-                Message.created_at >= yesterday_start,
-                Message.created_at < today_start,
-            )
-        ),
-        db.execute(select(func.count(Document.id))),
-        db.execute(
-            select(func.count(Connector.id)).where(Connector.status == ConnectorStatus.connected)
-        ),
-        db.execute(select(func.count(Conversation.id))),
-        db.execute(
-            select(
-                cast(Message.created_at, Date).label("day"),
-                func.count(Message.id).label("cnt"),
-            )
-            .where(Message.role == MessageRole.user, Message.created_at >= seven_days_ago)
-            .group_by(cast(Message.created_at, Date))
-            .order_by(cast(Message.created_at, Date))
-        ),
-        db.execute(
-            select(Conversation.title, Conversation.created_at)
-            .order_by(Conversation.created_at.desc())
-            .limit(3)
-        ),
-        db.execute(
-            select(Document.original_name, Document.created_at)
-            .order_by(Document.created_at.desc())
-            .limit(3)
-        ),
+    # Run queries sequentially (AsyncSession does not support concurrent execute)
+    queries_today_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.user,
+            Message.created_at >= today_start,
+        )
+    )
+    queries_yesterday_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.user,
+            Message.created_at >= yesterday_start,
+            Message.created_at < today_start,
+        )
+    )
+    docs_res = await db.execute(select(func.count(Document.id)))
+    connectors_res = await db.execute(
+        select(func.count(Connector.id)).where(Connector.status == ConnectorStatus.connected)
+    )
+    convs_res = await db.execute(select(func.count(Conversation.id)))
+    daily_res = await db.execute(
+        select(
+            cast(Message.created_at, Date).label("day"),
+            func.count(Message.id).label("cnt"),
+        )
+        .where(Message.role == MessageRole.user, Message.created_at >= seven_days_ago)
+        .group_by(cast(Message.created_at, Date))
+        .order_by(cast(Message.created_at, Date))
+    )
+    recent_convs_res = await db.execute(
+        select(Conversation.title, Conversation.created_at)
+        .order_by(Conversation.created_at.desc())
+        .limit(3)
+    )
+    recent_docs_res = await db.execute(
+        select(Document.original_name, Document.created_at)
+        .order_by(Document.created_at.desc())
+        .limit(3)
     )
 
     queries_today: int = queries_today_res.scalar_one() or 0

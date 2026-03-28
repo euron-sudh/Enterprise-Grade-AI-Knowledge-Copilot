@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mpeg", ".mpga"}
 WHISPER_SIZE_LIMIT = 25 * 1024 * 1024   # 25 MB — OpenAI Whisper hard limit
 MAX_VIDEO_UPLOAD   = 100 * 1024 * 1024  # 100 MB — user-facing limit
-GEMINI_VIDEO_MODEL = "gemini-2.0-flash"
+GEMINI_VIDEO_MODEL = "gemini-2.0-flash-lite"
 
 # MIME types accepted by the Gemini Files API
 GEMINI_VIDEO_MIME = {
@@ -73,7 +73,7 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Document).where(Document.user_id == current_user.id)
+    q = select(Document)
 
     if search:
         q = q.where(Document.name.ilike(f"%{search}%"))

@@ -64,15 +64,62 @@ export default function TeamsPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDesc, setNewDesc] = useState('');
 
   const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
+
+  const handleCreateTeam = async () => {
+    if (!newName.trim()) return;
+    setCreating(true);
+    try {
+      const res = await authFetch('/api/backend/admin/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim(), description: newDesc.trim() }),
+      }, session?.accessToken, getUser());
+      if (res.ok) {
+        const created = await res.json();
+        setTeams(prev => [{
+          id: created.id,
+          name: created.name,
+          description: created.description,
+          members: created.memberCount ?? 1,
+          docs: 0,
+          color: GRADIENT_COLORS[prev.length % GRADIENT_COLORS.length],
+          role: 'owner',
+        }, ...prev]);
+        setNewName('');
+        setNewDesc('');
+        setShowCreate(false);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.detail ?? 'Failed to create team');
+      }
+    } catch {
+      setError('Failed to create team');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string) => {
+    try {
+      await authFetch(`/api/backend/admin/teams/${teamId}`, { method: 'DELETE' }, session?.accessToken, getUser());
+      setTeams(prev => prev.filter(t => t.id !== teamId));
+    } catch {
+      setError('Failed to delete team');
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
       const [teamsRes, usersRes] = await Promise.all([
-        authFetch('/api/backend/teams', {}, session?.accessToken, getUser()),
+        authFetch('/api/backend/admin/teams', {}, session?.accessToken, getUser()),
         authFetch('/api/backend/users', {}, session?.accessToken, getUser()),
       ]);
 
@@ -137,7 +184,7 @@ export default function TeamsPage() {
           <button onClick={fetchData} className="p-2 text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white border border-surface-300 dark:border-gray-700 rounded-lg transition-colors">
             <RefreshCw className="w-4 h-4" />
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-surface-900 dark:text-white text-sm font-medium rounded-lg transition-colors">
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
             <Plus className="w-4 h-4" />
             Create Team
           </button>
@@ -189,7 +236,7 @@ export default function TeamsPage() {
             <Users className="w-10 h-10 text-surface-400 dark:text-gray-600 mx-auto mb-3" />
             <p className="text-surface-500 dark:text-gray-400 font-medium mb-1">No teams yet</p>
             <p className="text-surface-400 dark:text-gray-600 text-sm mb-3">Create your first team to organize members and knowledge</p>
-            <button className="text-sm text-indigo-400 hover:text-indigo-300 font-medium">Create a team →</button>
+            <button onClick={() => setShowCreate(true)} className="text-sm text-indigo-400 hover:text-indigo-300 font-medium">Create a team →</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -203,7 +250,7 @@ export default function TeamsPage() {
                     <button className="p-1.5 text-surface-400 dark:text-gray-500 hover:text-surface-900 dark:hover:text-white rounded-md hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
                       <Settings className="w-4 h-4" />
                     </button>
-                    <button className="p-1.5 text-surface-400 dark:text-gray-500 hover:text-surface-900 dark:hover:text-white rounded-md hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
+                    <button onClick={() => handleDeleteTeam(team.id)} className="p-1.5 text-surface-400 dark:text-gray-500 hover:text-red-400 rounded-md hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
                       <MoreHorizontal className="w-4 h-4" />
                     </button>
                   </div>
@@ -220,7 +267,7 @@ export default function TeamsPage() {
               </div>
             ))}
             {/* Add team card */}
-            <button className="bg-white dark:bg-gray-900 border border-dashed border-surface-300 dark:border-gray-700 rounded-xl p-5 hover:border-indigo-500 hover:bg-surface-100 dark:hover:bg-gray-800/50 transition-all flex flex-col items-center justify-center gap-2 text-surface-400 dark:text-gray-500 hover:text-indigo-400 min-h-[160px]">
+            <button onClick={() => setShowCreate(true)} className="bg-white dark:bg-gray-900 border border-dashed border-surface-300 dark:border-gray-700 rounded-xl p-5 hover:border-indigo-500 hover:bg-surface-100 dark:hover:bg-gray-800/50 transition-all flex flex-col items-center justify-center gap-2 text-surface-400 dark:text-gray-500 hover:text-indigo-400 min-h-[160px]">
               <Plus className="w-8 h-8" />
               <span className="text-sm font-medium">Create new team</span>
             </button>
@@ -282,6 +329,51 @@ export default function TeamsPage() {
             </table>
           </div>
         )
+      )}
+
+      {/* Create Team Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
+          <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-surface-900 dark:text-white mb-4">Create Team</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-surface-700 dark:text-gray-300 mb-1">Team Name <span className="text-red-400">*</span></label>
+                <input
+                  autoFocus
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleCreateTeam()}
+                  placeholder="e.g. Engineering, Marketing"
+                  className="w-full px-3 py-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-50 dark:bg-gray-800 text-surface-900 dark:text-white text-sm focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-surface-700 dark:text-gray-300 mb-1">Description</label>
+                <textarea
+                  value={newDesc}
+                  onChange={e => setNewDesc(e.target.value)}
+                  placeholder="What does this team work on?"
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-50 dark:bg-gray-800 text-surface-900 dark:text-white text-sm focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-surface-600 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white rounded-lg border border-surface-300 dark:border-gray-700 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateTeam}
+                disabled={creating || !newName.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
+              >
+                {creating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Create Team
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

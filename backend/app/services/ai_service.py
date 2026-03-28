@@ -142,8 +142,8 @@ async def _tavily_web_search(query: str, max_results: int = 5) -> list:
 async def _search_relevant_chunks(
     query: str, db: AsyncSession, limit: int = 5
 ) -> list:
-    """Full-text search over document chunks. Searches all meaningful words,
-    ordered by most recently uploaded document so the latest attachment is prioritised."""
+    """Full-text search over document chunks. Returns up to 2 chunks per document
+    so a single large document cannot crowd out other sources (e.g. videos)."""
     from sqlalchemy import or_
 
     try:
@@ -158,15 +158,21 @@ async def _search_relevant_chunks(
             .join(Document, DocumentChunk.document_id == Document.id)
             .where(or_(*filters))
             .order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
-            .limit(limit)
+            .limit(limit * 8)  # fetch more then de-duplicate per doc below
         )
         rows = result.all()
 
+        # Cap at 2 chunks per document so diverse sources are represented
+        seen_doc: dict[str, int] = {}
         sources = []
         for chunk, doc in rows:
+            doc_id = str(doc.id)
+            if seen_doc.get(doc_id, 0) >= 2:
+                continue
+            seen_doc[doc_id] = seen_doc.get(doc_id, 0) + 1
             sources.append({
                 "id": str(uuid.uuid4()),
-                "documentId": str(doc.id),
+                "documentId": doc_id,
                 "documentName": doc.name,
                 "documentType": doc.file_type,
                 "pageNumber": None,
@@ -176,9 +182,38 @@ async def _search_relevant_chunks(
                 "connectorType": None,
                 "sourceType": "knowledge_base",
             })
+            if len(sources) >= limit:
+                break
+
         return sources
     except Exception as e:
         logger.warning(f"Chunk search failed: {e}")
+        return []
+
+
+async def _list_user_documents(user_id: uuid.UUID, db: AsyncSession) -> list:
+    """Return a brief inventory of all indexed documents in the knowledge base."""
+    try:
+        result = await db.execute(
+            select(Document)
+            .where(Document.status == "indexed")
+            .order_by(Document.created_at.desc())
+            .limit(100)
+        )
+        docs = result.scalars().all()
+        inventory = []
+        for doc in docs:
+            entry = {
+                "id": str(doc.id),
+                "name": doc.name,
+                "type": doc.file_type,
+                "status": doc.status,
+                "wordCount": doc.word_count or 0,
+            }
+            inventory.append(entry)
+        return inventory
+    except Exception as e:
+        logger.warning(f"Document inventory query failed: {e}")
         return []
 
 
@@ -303,6 +338,7 @@ async def stream_chat_response(
     user_message_content: str,
     system_prompt: Optional[str] = None,
     images: Optional[List[str]] = None,
+    user_id: Optional[uuid.UUID] = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Main streaming generator. Yields dicts that will be serialized to SSE frames.
@@ -313,6 +349,11 @@ async def stream_chat_response(
       3. done chunk (with saved message_id)
     """
     start_time = time.time()
+
+    # --- 0. Fetch document inventory so Claude knows what's in the KB ------
+    doc_inventory: list = []
+    if user_id:
+        doc_inventory = await _list_user_documents(user_id, db)
 
     # --- 1. Search knowledge base ---
     kb_sources = await _search_relevant_chunks(user_message_content, db)
@@ -348,6 +389,29 @@ async def stream_chat_response(
         "You help users search, analyze, and extract insights from their document library. "
         "Be concise, accurate, and helpful."
     )
+
+    # Include document inventory so Claude knows ALL items in the KB
+    if doc_inventory:
+        lines = []
+        for d in doc_inventory:
+            status_note = ""
+            if d["status"] == "indexed":
+                if d["type"] == "video" and d["wordCount"] < 5:
+                    status_note = " (indexed — minimal/no speech detected; visual content requires Google Gemini key)"
+                else:
+                    status_note = f" ({d['wordCount']} words indexed)"
+            elif d["status"] == "processing":
+                status_note = " (still processing)"
+            elif d["status"] == "failed":
+                status_note = " (processing failed)"
+            lines.append(f"- [{d['type'].upper()}] {d['name']}{status_note}")
+        inventory_text = "\n".join(lines)
+        effective_system += (
+            f"\n\nKnowledge base inventory (all uploaded documents):\n{inventory_text}\n\n"
+            "When the user asks about a document or video by name or type, reference this inventory. "
+            "If a video has no transcript, explain that transcription requires an AI key (Google Gemini or OpenAI)."
+        )
+
     if kb_sources:
         context_text = "\n\n".join(
             f"[Knowledge Base — {s['documentName']}]\n{s['chunkText']}" for s in kb_sources

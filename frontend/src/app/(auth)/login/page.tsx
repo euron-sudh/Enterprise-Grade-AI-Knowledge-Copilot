@@ -55,11 +55,22 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '', rememberMe: false },
   });
+
+  const quickLogin = async (email: string, password: string) => {
+    setValue('email', email);
+    setValue('password', password);
+    try {
+      const result = await signIn('credentials', { email, password, redirect: false, callbackUrl });
+      if (result?.error) { toast.error('Quick login failed. Please check credentials.'); return; }
+      if (result?.ok) { toast.success('Welcome back!'); router.push(callbackUrl); router.refresh(); }
+    } catch { toast.error('An error occurred. Please try again.'); }
+  };
 
   const onSubmit = async (data: LoginFormData) => {
     try {
@@ -236,6 +247,31 @@ export default function LoginPage() {
           Using SSO?{' '}
           <Link href="/sso" className="font-medium text-brand-600 dark:text-brand-400 hover:underline">Sign in with SAML</Link>
         </p>
+      </div>
+
+      {/* Quick Login (Dev/Demo) */}
+      <div className="rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 space-y-2">
+        <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 text-center uppercase tracking-wide">Demo Quick Login</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => quickLogin('admin@knowledgeforge.ai', 'Admin@123')}
+            disabled={isSubmitting || !!oauthLoading}
+            className="flex flex-col items-center gap-0.5 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-xs transition hover:bg-amber-50 dark:hover:bg-surface-700 disabled:opacity-50"
+          >
+            <span className="font-semibold text-surface-800 dark:text-surface-200">Admin</span>
+            <span className="text-surface-400 dark:text-surface-500 truncate w-full text-center">admin@knowledgeforge.ai</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => quickLogin('demo@knowledgeforge.ai', 'Demo@123')}
+            disabled={isSubmitting || !!oauthLoading}
+            className="flex flex-col items-center gap-0.5 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-xs transition hover:bg-amber-50 dark:hover:bg-surface-700 disabled:opacity-50"
+          >
+            <span className="font-semibold text-surface-800 dark:text-surface-200">Demo User</span>
+            <span className="text-surface-400 dark:text-surface-500 truncate w-full text-center">demo@knowledgeforge.ai</span>
+          </button>
+        </div>
       </div>
     </div>
   );
