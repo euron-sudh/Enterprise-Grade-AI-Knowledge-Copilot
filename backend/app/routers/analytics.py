@@ -418,3 +418,113 @@ async def get_home_stats(
         "chartData": chart_data,
         "recentActivity": activity[:5],
     }
+
+
+@router.get("/insights")
+async def get_insights(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Generate actionable insights from real analytics data."""
+    dashboard = await _build_dashboard(db, current_user.id, days=30)
+    usage = dashboard.usage
+    knowledge = dashboard.knowledge
+    ai_perf = dashboard.aiPerformance
+
+    insights = []
+
+    # Knowledge base health
+    total = knowledge.totalDocuments
+    indexed = knowledge.indexedDocuments
+    failed = knowledge.failedDocuments
+    if total > 0:
+        coverage = round(indexed / total * 100, 1)
+        if coverage < 80:
+            insights.append({
+                "id": "kb-coverage", "type": "warning",
+                "title": f"Only {coverage}% of documents are indexed",
+                "desc": f"{indexed} of {total} documents are searchable. {failed} failed to index.",
+                "action": "Review failed documents", "impact": "High",
+            })
+        else:
+            insights.append({
+                "id": "kb-coverage", "type": "trend",
+                "title": f"Knowledge base is {coverage}% indexed",
+                "desc": f"{indexed} of {total} documents are fully searchable and ready for AI queries.",
+                "action": "View knowledge base", "impact": "Positive",
+            })
+
+    # Query volume trend
+    queries = usage.totalQueries
+    change = usage.queriesChange
+    if queries > 0:
+        if change > 20:
+            insights.append({
+                "id": "query-growth", "type": "trend",
+                "title": f"Query volume up {change}% vs previous period",
+                "desc": f"{queries} queries in the last 30 days. Strong engagement growth.",
+                "action": "View usage analytics", "impact": "Positive",
+            })
+        elif change < -20:
+            insights.append({
+                "id": "query-decline", "type": "warning",
+                "title": f"Query volume down {abs(change)}% vs previous period",
+                "desc": f"Usage has dropped from the previous period. Consider user outreach.",
+                "action": "Check engagement", "impact": "Medium",
+            })
+
+    # Active users
+    active = usage.activeUsers
+    if active > 0:
+        insights.append({
+            "id": "active-users", "type": "opportunity",
+            "title": f"{active} active users in the last 30 days",
+            "desc": "Expand training to inactive team members to increase platform adoption.",
+            "action": "Identify inactive users", "impact": "High",
+        })
+
+    # Feedback quality
+    pos_rate = ai_perf.feedbackPositiveRate
+    neg_rate = ai_perf.feedbackNegativeRate
+    if pos_rate > 0 or neg_rate > 0:
+        score = round(pos_rate * 100, 1)
+        if score >= 80:
+            insights.append({
+                "id": "ai-quality", "type": "trend",
+                "title": f"AI response quality at {score}% positive feedback",
+                "desc": "Users are satisfied with AI answers. Keep knowledge base fresh to maintain quality.",
+                "action": "View AI performance", "impact": "Positive",
+            })
+        else:
+            insights.append({
+                "id": "ai-quality", "type": "warning",
+                "title": f"AI response quality at {score}% positive feedback",
+                "desc": "Low positive feedback rate. Add more relevant documents to improve answer quality.",
+                "action": "Expand knowledge base", "impact": "High",
+            })
+
+    # Storage
+    storage_gb = knowledge.storageUsedGb
+    if storage_gb > 0:
+        insights.append({
+            "id": "storage", "type": "cost",
+            "title": f"{round(storage_gb, 2)} GB of knowledge stored",
+            "desc": f"Storage is at {round(storage_gb / knowledge.storageQuotaGb * 100, 1)}% of your {knowledge.storageQuotaGb} GB quota.",
+            "action": "Manage documents", "impact": "Info",
+        })
+
+    if not insights:
+        insights.append({
+            "id": "getting-started", "type": "opportunity",
+            "title": "Get started by uploading documents",
+            "desc": "Upload your first documents to the knowledge base and start chatting with your data.",
+            "action": "Upload documents", "impact": "High",
+        })
+
+    return {
+        "insights": insights,
+        "generatedAt": dashboard.generatedAt,
+        "totalInsights": len(insights),
+        "highImpact": sum(1 for i in insights if i["impact"] == "High"),
+        "opportunities": sum(1 for i in insights if i["type"] == "opportunity"),
+    }

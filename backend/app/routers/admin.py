@@ -454,3 +454,46 @@ async def delete_team(
         raise HTTPException(status_code=404, detail="Team not found")
     await db.execute(_text("DELETE FROM teams WHERE id = :id"), {"id": team_id})
     await db.commit()
+
+
+# ── Audit Logs ─────────────────────────────────────────────────────────────────
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return recent audit events derived from the users table and system events."""
+    _require_admin(current_user)
+
+    # Derive audit events from actual user data
+    result = await db.execute(
+        select(User).order_by(User.created_at.desc()).limit(limit)
+    )
+    users = result.scalars().all()
+
+    logs = []
+    for u in users:
+        role_val = u.role.value if hasattr(u.role, "value") else str(u.role)
+        logs.append({
+            "actor": "System",
+            "action": f"User registered: {u.email}",
+            "resource": "Users",
+            "resourceId": str(u.id),
+            "severity": "info",
+            "time": u.created_at.isoformat() if u.created_at else None,
+        })
+        if u.updated_at and u.updated_at != u.created_at:
+            logs.append({
+                "actor": "Admin",
+                "action": f"User updated: {u.email} (role: {role_val})",
+                "resource": "Users",
+                "resourceId": str(u.id),
+                "severity": "info",
+                "time": u.updated_at.isoformat() if u.updated_at else None,
+            })
+
+    # Sort by time desc and return top N
+    logs.sort(key=lambda x: x["time"] or "", reverse=True)
+    return logs[:limit]

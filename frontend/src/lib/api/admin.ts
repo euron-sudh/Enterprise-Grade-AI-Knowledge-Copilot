@@ -99,3 +99,17 @@ export async function listInviteLinks(): Promise<InviteLink[]> {
 export async function revokeInviteLink(id: string): Promise<void> {
   await apiClient.delete(`/admin/invites/${id}`);
 }
+
+export interface AuditLog {
+  actor: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  severity: string;
+  time: string | null;
+}
+
+export async function listAuditLogs(limit = 20): Promise<AuditLog[]> {
+  const res = await apiClient.get<AuditLog[]>(`/admin/audit-logs?limit=${limit}`);
+  return res.data;
+}

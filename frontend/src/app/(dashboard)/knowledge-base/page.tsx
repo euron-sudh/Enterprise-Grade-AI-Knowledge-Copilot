@@ -688,11 +688,12 @@ function ConnectorsPanel({
 
 /* ─── Main Page ──────────────────────────────────────────── */
 export default function KnowledgeBasePage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   const [, setUploadStatus] = useState<Record<string, 'uploading' | 'done' | 'error'>>({});
   const [realDocs, setRealDocs] = useState<Document[]>([]);
+  const [totalDocsCount, setTotalDocsCount] = useState(0);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [connectors, setConnectors] = useState<Connector[]>(CONNECTORS);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
@@ -700,16 +701,17 @@ export default function KnowledgeBasePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeConnectors = connectors.filter(c => c.status !== 'disconnected').length;
-  const totalDocs = connectors.reduce((a, c) => a + c.docs, 0) + realDocs.length;
+  const totalDocs = connectors.reduce((a, c) => a + c.docs, 0) + totalDocsCount;
   const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
   useEffect(() => {
     if (status !== 'authenticated') return;
     setLoadingDocs(true);
-    authFetch('/api/backend/knowledge/documents?pageSize=20', {}, (session as any)?.accessToken, getUser())
+    authFetch('/api/backend/knowledge/documents?pageSize=100', {}, (session as any)?.accessToken, getUser())
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.items) {
+          setTotalDocsCount(data.total ?? data.items.length);
           setRealDocs(data.items.map((d: any) => ({
             id: d.id, name: d.name,
             type: d.type ?? 'other',
@@ -774,6 +776,7 @@ export default function KnowledgeBasePage() {
               uploadedAt: new Date().toLocaleDateString(),
               status: 'processing', source: 'Upload',
             }, ...prev]);
+            setTotalDocsCount(prev => prev + 1);
           }
         }
       } catch {

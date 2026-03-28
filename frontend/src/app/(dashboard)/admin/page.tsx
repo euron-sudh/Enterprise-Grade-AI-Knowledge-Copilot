@@ -36,7 +36,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import * as adminApi from '@/lib/api/admin';
-import type { AdminUser, InviteLink, Role } from '@/lib/api/admin';
+import type { AdminUser, AuditLog, InviteLink, Role } from '@/lib/api/admin';
+import { getKnowledgeIntelligence } from '@/lib/api/analytics';
 import { cn } from '@/lib/utils';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -56,16 +57,10 @@ const severityConfig = {
   danger: { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950', icon: Shield },
 };
 
-const auditLogs = [
-  { actor: 'System', action: 'Application started successfully', resource: 'System', time: 'Just now', severity: 'info' },
-  { actor: 'System', action: 'Database connection pool initialized', resource: 'DB', time: '1 min ago', severity: 'info' },
-  { actor: 'System', action: 'AI service connected (Anthropic)', resource: 'AI', time: '1 min ago', severity: 'info' },
-];
-
+// billing is kept as a display constant — no billing backend is configured
 const billing = {
   plan: 'Professional',
-  seats: { used: 0, total: 100 },
-  storage: { used: 0, total: 100 },
+  seats: { total: 100 },
   nextBilling: 'Apr 1, 2026',
   amount: '$960 / mo',
 };
@@ -400,6 +395,8 @@ export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('Users');
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [storageGb, setStorageGb] = useState(0);
   const [roles, setRoles] = useState<Role[]>([
     { value: 'super_admin', label: 'Super Admin', description: 'Full platform access' },
     { value: 'admin', label: 'Admin', description: 'Organization-level administration' },
@@ -460,7 +457,9 @@ export default function AdminPage() {
 
   useEffect(() => {
     void fetchUsers();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    adminApi.listAuditLogs(20).then(setAuditLogs).catch(() => {});
+    getKnowledgeIntelligence().then(d => setStorageGb(d.storageUsedGb ?? 0)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Debounced search — only re-fetch when search term changes (not on initial mount)
@@ -820,8 +819,10 @@ export default function AdminPage() {
                 <Button size="sm" variant="outline">Export</Button>
               </div>
               <div className="space-y-2">
-                {auditLogs.map((log, i) => {
-                  const sc = severityConfig[log.severity as keyof typeof severityConfig];
+                {auditLogs.length === 0 ? (
+                  <p className="text-sm text-surface-400 text-center py-4">No audit events yet</p>
+                ) : auditLogs.slice(0, 15).map((log, i) => {
+                  const sc = severityConfig[log.severity as keyof typeof severityConfig] ?? severityConfig.info;
                   return (
                     <div key={i} className="flex items-start gap-3 rounded-lg p-2.5 hover:bg-surface-50 dark:hover:bg-surface-800/30">
                       <div className={cn('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full', sc.bg, sc.color)}>
@@ -834,7 +835,7 @@ export default function AdminPage() {
                         </p>
                         <div className="mt-0.5 flex items-center gap-2 text-xs text-surface-400">
                           <Badge size="sm" variant="outline">{log.resource}</Badge>
-                          {log.time}
+                          {log.time ? new Date(log.time).toLocaleString() : '—'}
                         </div>
                       </div>
                     </div>
@@ -873,7 +874,7 @@ export default function AdminPage() {
                 <div className="h-2 rounded-full bg-surface-100 dark:bg-surface-800">
                   <div className="h-2 rounded-full bg-brand-600 transition-all" style={{ width: `${Math.min(100, (stats.totalUsers / billing.seats.total) * 100)}%` }} />
                 </div>
-                <p className="mt-2 text-xs text-surface-400">{billing.seats.total - stats.totalUsers} seats remaining</p>
+                <p className="mt-2 text-xs text-surface-400">{Math.max(0, billing.seats.total - stats.totalUsers)} seats remaining</p>
               </Card>
 
               <Card variant="bordered">
@@ -881,13 +882,13 @@ export default function AdminPage() {
                   <Database className="h-4 w-4 text-brand-600" /> Storage
                 </h3>
                 <div className="flex items-end justify-between mb-2">
-                  <span className="text-3xl font-bold text-surface-900 dark:text-surface-100">{billing.storage.used} GB</span>
-                  <span className="text-sm text-surface-400">/ {billing.storage.total} GB</span>
+                  <span className="text-3xl font-bold text-surface-900 dark:text-surface-100">{storageGb.toFixed(2)} GB</span>
+                  <span className="text-sm text-surface-400">/ 100 GB</span>
                 </div>
                 <div className="h-2 rounded-full bg-surface-100 dark:bg-surface-800">
-                  <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${(billing.storage.used / billing.storage.total) * 100}%` }} />
+                  <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, storageGb)}%` }} />
                 </div>
-                <p className="mt-2 text-xs text-surface-400">{billing.storage.total - billing.storage.used} GB remaining</p>
+                <p className="mt-2 text-xs text-surface-400">{(100 - storageGb).toFixed(2)} GB remaining</p>
               </Card>
             </div>
 

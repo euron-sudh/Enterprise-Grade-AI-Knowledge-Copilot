@@ -55,18 +55,6 @@ const TEMPLATES = [
   { name: 'Custom Report', desc: 'Build your own from scratch', icon: '⚙️', type: 'dashboard', iconKey: 'FileText', color: 'from-gray-500 to-gray-600' },
 ];
 
-const INITIAL_REPORTS: Report[] = [
-  { id: '1', name: 'Weekly Usage Summary', schedule: 'Every Monday 9am', format: 'PDF', lastRun: 'Mar 24, 2026', recipients: 3, iconKey: 'BarChart3', color: 'from-indigo-500 to-violet-600', type: 'usage' },
-  { id: '2', name: 'Monthly AI Cost Report', schedule: '1st of month', format: 'Excel', lastRun: 'Mar 1, 2026', recipients: 2, iconKey: 'Zap', color: 'from-amber-500 to-orange-600', type: 'ai-performance' },
-  { id: '3', name: 'User Engagement Digest', schedule: 'Every Friday 5pm', format: 'Email', lastRun: 'Mar 22, 2026', recipients: 5, iconKey: 'Users', color: 'from-green-500 to-emerald-600', type: 'usage' },
-  { id: '4', name: 'Knowledge Gap Analysis', schedule: 'Monthly', format: 'PDF', lastRun: 'Mar 1, 2026', recipients: 4, iconKey: 'TrendingUp', color: 'from-cyan-500 to-blue-600', type: 'knowledge' },
-];
-
-const INITIAL_EXPORTS: ExportFile[] = [
-  { id: 'e1', name: 'usage-report-march-2026.csv', size: '2.4 MB', time: '2 hours ago', format: 'CSV', content: '' },
-  { id: 'e2', name: 'ai-costs-feb-2026.csv', size: '840 KB', time: '1 week ago', format: 'CSV', content: '' },
-  { id: 'e3', name: 'engagement-digest-2026-03-22.csv', size: '156 KB', time: '5 days ago', format: 'CSV', content: '' },
-];
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 function jsonToCsv(data: Record<string, unknown>): string {
@@ -242,8 +230,8 @@ function CreateReportModal({ template, onClose, onCreate }: CreateModalProps) {
 /* ── Main Page ────────────────────────────────────────────────── */
 export default function ReportsPage() {
   const { data: session } = useSession();
-  const [reports, setReports] = useState<Report[]>(INITIAL_REPORTS);
-  const [exports, setExports] = useState<ExportFile[]>(INITIAL_EXPORTS);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [exports, setExports] = useState<ExportFile[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<typeof TEMPLATES[0] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
