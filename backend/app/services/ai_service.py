@@ -140,10 +140,11 @@ async def _tavily_web_search(query: str, max_results: int = 5) -> list:
 
 
 async def _search_relevant_chunks(
-    query: str, db: AsyncSession, limit: int = 5
+    query: str, db: AsyncSession, limit: int = 5, user_id: Optional[uuid.UUID] = None
 ) -> list:
-    """Full-text search over document chunks. Returns up to 2 chunks per document
-    so a single large document cannot crowd out other sources (e.g. videos)."""
+    """Full-text search over document chunks owned by the user.
+    Returns up to 2 chunks per document so a single large document cannot
+    crowd out other sources (e.g. videos)."""
     from sqlalchemy import or_
 
     try:
@@ -153,13 +154,18 @@ async def _search_relevant_chunks(
 
         # Build OR filter across all query words
         filters = [DocumentChunk.content.ilike(f"%{w}%") for w in words[:6]]
-        result = await db.execute(
+        q = (
             select(DocumentChunk, Document)
             .join(Document, DocumentChunk.document_id == Document.id)
             .where(or_(*filters))
-            .order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
-            .limit(limit * 8)  # fetch more then de-duplicate per doc below
         )
+        # Restrict to current user's documents only
+        if user_id:
+            q = q.where(Document.user_id == user_id)
+        q = q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
+        q = q.limit(limit * 8)  # fetch more then de-duplicate per doc below
+
+        result = await db.execute(q)
         rows = result.all()
 
         # Cap at 2 chunks per document so diverse sources are represented
@@ -170,13 +176,14 @@ async def _search_relevant_chunks(
             if seen_doc.get(doc_id, 0) >= 2:
                 continue
             seen_doc[doc_id] = seen_doc.get(doc_id, 0) + 1
+            display_name = doc.original_name or doc.name
             sources.append({
                 "id": str(uuid.uuid4()),
                 "documentId": doc_id,
-                "documentName": doc.name,
+                "documentName": display_name,
                 "documentType": doc.file_type,
                 "pageNumber": None,
-                "chunkText": chunk.content[:300],
+                "chunkText": chunk.content[:400],
                 "relevanceScore": round(0.7 + (0.3 * (1 / (chunk.chunk_index + 1))), 3),
                 "url": None,
                 "connectorType": None,
@@ -192,23 +199,33 @@ async def _search_relevant_chunks(
 
 
 async def _list_user_documents(user_id: uuid.UUID, db: AsyncSession) -> list:
-    """Return a brief inventory of all indexed documents in the knowledge base."""
+    """Return a detailed inventory of all indexed documents for a specific user."""
     try:
         result = await db.execute(
             select(Document)
-            .where(Document.status == "indexed")
+            .where(Document.user_id == user_id, Document.status == "indexed")
             .order_by(Document.created_at.desc())
-            .limit(100)
+            .limit(200)
         )
         docs = result.scalars().all()
         inventory = []
         for doc in docs:
+            size_note = ""
+            if doc.file_size:
+                if doc.file_size >= 1_048_576:
+                    size_note = f"{doc.file_size / 1_048_576:.1f} MB"
+                else:
+                    size_note = f"{doc.file_size // 1024} KB"
             entry = {
                 "id": str(doc.id),
-                "name": doc.name,
+                "name": doc.original_name or doc.name,
                 "type": doc.file_type,
                 "status": doc.status,
                 "wordCount": doc.word_count or 0,
+                "pageCount": doc.page_count or 0,
+                "fileSize": size_note,
+                "uploadedAt": doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "",
+                "tags": doc.tags or [],
             }
             inventory.append(entry)
         return inventory
@@ -355,8 +372,8 @@ async def stream_chat_response(
     if user_id:
         doc_inventory = await _list_user_documents(user_id, db)
 
-    # --- 1. Search knowledge base ---
-    kb_sources = await _search_relevant_chunks(user_message_content, db)
+    # --- 1. Search knowledge base (scoped to this user) ---
+    kb_sources = await _search_relevant_chunks(user_message_content, db, user_id=user_id)
 
     # --- 1b. Decide whether to also query the web ---
     web_sources: list = []
@@ -390,35 +407,47 @@ async def stream_chat_response(
         "Be concise, accurate, and helpful."
     )
 
-    # Include document inventory so Claude knows ALL items in the KB
+    # Include document inventory so the AI knows ALL files in the user's KB
     if doc_inventory:
         lines = []
         for d in doc_inventory:
-            status_note = ""
-            if d["status"] == "indexed":
-                if d["type"] == "video" and d["wordCount"] < 5:
-                    status_note = " (indexed — minimal/no speech detected; visual content requires Google Gemini key)"
-                else:
-                    status_note = f" ({d['wordCount']} words indexed)"
-            elif d["status"] == "processing":
-                status_note = " (still processing)"
-            elif d["status"] == "failed":
-                status_note = " (processing failed)"
-            lines.append(f"- [{d['type'].upper()}] {d['name']}{status_note}")
+            meta_parts = []
+            if d["wordCount"]:
+                meta_parts.append(f"{d['wordCount']} words")
+            if d["pageCount"]:
+                meta_parts.append(f"{d['pageCount']} pages")
+            if d["fileSize"]:
+                meta_parts.append(d["fileSize"])
+            if d["uploadedAt"]:
+                meta_parts.append(f"uploaded {d['uploadedAt']}")
+            if d["tags"]:
+                meta_parts.append(f"tags: {', '.join(d['tags'])}")
+            if d["type"] == "video" and d["wordCount"] < 5:
+                meta_parts.append("no transcript — visual analysis requires Google Gemini key")
+            meta = f" ({'; '.join(meta_parts)})" if meta_parts else ""
+            lines.append(f"- [{d['type'].upper()}] {d['name']}{meta}")
         inventory_text = "\n".join(lines)
         effective_system += (
-            f"\n\nKnowledge base inventory (all uploaded documents):\n{inventory_text}\n\n"
-            "When the user asks about a document or video by name or type, reference this inventory. "
-            "If a video has no transcript, explain that transcription requires an AI key (Google Gemini or OpenAI)."
+            f"\n\n## User's Knowledge Base ({len(doc_inventory)} document(s)):\n{inventory_text}\n\n"
+            "When the user asks 'what files do I have', 'list my documents', or asks about a specific "
+            "document by name or type, refer to this inventory. "
+            "If a video has no transcript, explain that audio/visual transcription requires an AI key."
+        )
+    else:
+        effective_system += (
+            "\n\nThe user has no documents uploaded yet. "
+            "Encourage them to upload files via the Knowledge Base section."
         )
 
     if kb_sources:
         context_text = "\n\n".join(
-            f"[Knowledge Base — {s['documentName']}]\n{s['chunkText']}" for s in kb_sources
+            f"[Source: {s['documentName']} ({s['documentType'].upper()})]\n{s['chunkText']}"
+            for s in kb_sources
         )
         effective_system += (
-            f"\n\nRelevant context from the knowledge base:\n{context_text}\n\n"
-            "Use this context to answer the user's question when relevant. Cite the document names."
+            f"\n\n## Relevant content retrieved from the knowledge base:\n{context_text}\n\n"
+            "Base your answer primarily on the above context. "
+            "Always cite which document(s) the information comes from."
         )
     if web_sources:
         web_context = "\n\n".join(

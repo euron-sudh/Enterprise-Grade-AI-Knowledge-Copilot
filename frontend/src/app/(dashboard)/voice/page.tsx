@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { authFetch } from '@/lib/api/token';
 import {
   Mic,
   MicOff,
@@ -12,6 +13,8 @@ import {
   ChevronRight,
   Globe,
   Loader2,
+  FileText,
+  BookOpen,
 } from 'lucide-react';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking';
@@ -51,24 +54,32 @@ function WaveformBars({ active, color }: { active: boolean; color: string }) {
   );
 }
 
+interface Source { documentName: string; documentType: string; chunkText: string }
+
 interface HistoryItem {
   id: string;
   question: string;
   answer: string;
+  sources: Source[];
   time: string;
 }
 
+interface KBDoc { id: string; name: string; type: string; wordCount: number; pageCount: number; uploadedAt: string }
+
 export default function VoicePage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
+  const [lastSources, setLastSources] = useState<Source[]>([]);
   const [isMuted, setIsMuted] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('English (US)');
   const [selectedPersona, setSelectedPersona] = useState('Aria (Natural)');
   const [showSettings, setShowSettings] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [error, setError] = useState('');
+  const [kbDocs, setKbDocs] = useState<KBDoc[]>([]);
+  const [kbLoading, setKbLoading] = useState(true);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -76,11 +87,24 @@ export default function VoicePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const isActive = voiceState !== 'idle';
 
-  const getAuthHeader = useCallback(() => {
-    const token =
-      (typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null) ||
-      (session as any)?.accessToken ||
-      '';
+  const getToken = () => (session as any)?.accessToken;
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name });
+
+  // Load knowledge base document list on mount
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    setKbLoading(true);
+    authFetch('/api/backend/knowledge/documents?pageSize=100', {}, getToken(), getUser())
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.items) setKbDocs(data.items);
+      })
+      .catch(() => {})
+      .finally(() => setKbLoading(false));
+  }, [status, session?.user?.email]);
+
+  const getAuthHeader = useCallback((): Record<string, string> => {
+    const token = getToken() || '';
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [session]);
 
@@ -107,15 +131,18 @@ export default function VoicePage() {
       if (!res.ok) throw new Error('Ask failed');
       const data = await res.json();
       const answer = data.answer || 'No response';
+      const sources: Source[] = data.sources || [];
       setAiResponse(answer);
+      setLastSources(sources);
       setHistory(prev => [{
         id: Date.now().toString(),
         question,
         answer,
-        time: 'Just now',
+        sources,
+        time: new Date().toLocaleTimeString(),
       }, ...prev.slice(0, 9)]);
       speak(answer);
-    } catch (e) {
+    } catch {
       setError('Failed to get AI response. Please try again.');
       setVoiceState('idle');
     }
@@ -198,11 +225,10 @@ export default function VoicePage() {
       setError('Microphone access denied.');
       setVoiceState('idle');
     }
-  }, [selectedLanguage, transcript, askBackend, getAuthHeader]);
+  }, [selectedLanguage, askBackend, getAuthHeader]);
 
   const handleMicClick = async () => {
     if (isActive) {
-      // Stop
       recognitionRef.current?.stop();
       mediaRecorderRef.current?.stop();
       window.speechSynthesis?.cancel();
@@ -213,6 +239,7 @@ export default function VoicePage() {
     }
     setTranscript('');
     setAiResponse('');
+    setLastSources([]);
     await startRecording();
   };
 
@@ -311,6 +338,23 @@ export default function VoicePage() {
               <div className="mt-3 rounded-lg border border-indigo-800 bg-indigo-900/20 p-4 text-left">
                 <p className="text-xs font-medium text-indigo-400 mb-1">AI Response:</p>
                 <p className="text-sm text-surface-700 dark:text-gray-200">{aiResponse}</p>
+                {lastSources.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-indigo-800/40">
+                    <p className="text-xs font-medium text-indigo-400 mb-2">Sources:</p>
+                    <div className="space-y-1">
+                      {lastSources.map((s, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <FileText className="w-3 h-3 text-indigo-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-xs text-indigo-300 font-medium">{s.documentName}</span>
+                            <span className="text-xs text-gray-500 ml-1">({s.documentType})</span>
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{s.chunkText}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -334,10 +378,10 @@ export default function VoicePage() {
             <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3">Quick Questions</h3>
             <div className="space-y-2">
               {[
-                'What are the key action items from last week?',
-                'Summarize the Q4 product roadmap',
-                'What is our data retention policy?',
-                'Find documents related to GDPR compliance',
+                'What files do I have in my knowledge base?',
+                'Summarize the most recently uploaded document',
+                'What topics are covered in my documents?',
+                'Find information about data retention or compliance',
               ].map(q => (
                 <button
                   key={q}
@@ -353,14 +397,54 @@ export default function VoicePage() {
           </div>
         </div>
 
-        {/* History panel */}
+        {/* Right panel */}
         <div className="space-y-4">
+          {/* Knowledge base files */}
+          <div className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <BookOpen className="h-4 w-4 text-indigo-400" />
+              <h3 className="text-sm font-semibold text-surface-900 dark:text-white">
+                Knowledge Base
+                {!kbLoading && <span className="ml-1 text-gray-500 font-normal">({kbDocs.length})</span>}
+              </h3>
+            </div>
+            {kbLoading ? (
+              <div className="flex items-center gap-2 py-4 text-xs text-gray-500">
+                <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+              </div>
+            ) : kbDocs.length === 0 ? (
+              <p className="text-xs text-surface-400 dark:text-gray-500 text-center py-4">
+                No documents yet. Upload files to the Knowledge Base.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {kbDocs.slice(0, 20).map(doc => (
+                  <div key={doc.id} className="flex items-start gap-2 rounded-lg bg-surface-50 dark:bg-gray-800/50 px-2 py-1.5">
+                    <FileText className="h-3 w-3 text-indigo-400 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-surface-800 dark:text-gray-200 truncate font-medium">{doc.name || doc.original_name}</p>
+                      <p className="text-xs text-gray-500">
+                        {doc.type?.toUpperCase()}
+                        {doc.wordCount > 0 && ` · ${doc.wordCount} words`}
+                        {doc.pageCount > 0 && ` · ${doc.pageCount}p`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {kbDocs.length > 20 && (
+                  <p className="text-xs text-gray-500 text-center pt-1">+{kbDocs.length - 20} more</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* History panel */}
           <div className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
             <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3">Recent Queries</h3>
             {history.length === 0 ? (
               <p className="text-xs text-surface-400 dark:text-gray-500 text-center py-4">No queries yet. Start speaking!</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-64 overflow-y-auto">
                 {history.map(item => (
                   <div key={item.id} className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 p-3">
                     <div className="flex items-start gap-2 mb-1">
@@ -369,6 +453,16 @@ export default function VoicePage() {
                     </div>
                     <p className="text-xs font-medium text-surface-900 dark:text-white mb-1">{item.question}</p>
                     <p className="text-xs text-surface-500 dark:text-gray-400 line-clamp-2">{item.answer}</p>
+                    {item.sources.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {item.sources.map((s, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 text-xs bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded">
+                            <FileText className="h-2.5 w-2.5" />
+                            {s.documentName.length > 20 ? s.documentName.slice(0, 20) + '…' : s.documentName}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
