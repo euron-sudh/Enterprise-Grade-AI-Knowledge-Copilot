@@ -23,10 +23,10 @@ const LANGUAGES = ['English (US)', 'English (UK)', 'Spanish', 'French', 'German'
 const PERSONAS = ['Aria (Natural)', 'Nova (Professional)', 'Echo (Neutral)', 'Browser Default'];
 
 const STATE_LABELS: Record<VoiceState, string> = {
-  idle: 'Tap the mic to start',
-  listening: 'Listening...',
+  idle: 'Tap the mic and speak',
+  listening: 'Listening — tap again to submit',
   processing: 'Processing your request...',
-  speaking: 'Speaking response...',
+  speaking: 'Speaking — tap to stop',
 };
 
 const STATE_COLORS: Record<VoiceState, string> = {
@@ -148,58 +148,130 @@ export default function VoicePage() {
     }
   }, [getAuthHeader, speak]);
 
+  const LANG_CODES: Record<string, string> = {
+    'English (US)': 'en-US',
+    'English (UK)': 'en-GB',
+    'Spanish': 'es-ES',
+    'French': 'fr-FR',
+    'German': 'de-DE',
+    'Japanese': 'ja-JP',
+    'Portuguese': 'pt-BR',
+  };
+
   const startRecording = useCallback(async () => {
     setError('');
-    // Try Web Speech API first (streaming transcript)
+
+    // ── Web Speech API path ─────────────────────────────────────────────────
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognition = new SR();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = selectedLanguage.includes('Spanish') ? 'es-ES'
-        : selectedLanguage.includes('French') ? 'fr-FR'
-        : selectedLanguage.includes('German') ? 'de-DE'
-        : selectedLanguage.includes('Japanese') ? 'ja-JP'
-        : 'en-US';
+      const recognition: SpeechRecognition = new SR();
 
-      let finalTranscript = '';
+      // continuous=true keeps listening until the user clicks stop — prevents
+      // the browser from ending recognition after the first short pause
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 3;
+      recognition.lang = LANG_CODES[selectedLanguage] ?? 'en-US';
+
+      let accumulated = '';       // confirmed final text
+      let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const resetSilenceTimer = () => {
+        if (silenceTimer) clearTimeout(silenceTimer);
+        // Auto-submit after 2.5 s of silence once something has been said
+        silenceTimer = setTimeout(() => {
+          recognition.stop();
+        }, 2500);
+      };
+
       recognition.onstart = () => setVoiceState('listening');
+
       recognition.onresult = (e: SpeechRecognitionEvent) => {
-        let interim = '';
-        let final = '';
+        let interimText = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) final += e.results[i][0].transcript;
-          else interim += e.results[i][0].transcript;
+          const result = e.results[i];
+          // Pick the alternative with highest confidence
+          let bestText = result[0].transcript;
+          let bestConf = result[0].confidence ?? 0;
+          for (let a = 1; a < result.length; a++) {
+            if ((result[a].confidence ?? 0) > bestConf) {
+              bestConf = result[a].confidence ?? 0;
+              bestText = result[a].transcript;
+            }
+          }
+
+          if (result.isFinal) {
+            // Only accept if confidence is reasonable (>0.4), or confidence is 0
+            // (some browsers don't set it, treating 0 as "unknown" not "bad")
+            if (bestConf === 0 || bestConf >= 0.4) {
+              accumulated += (accumulated ? ' ' : '') + bestText.trim();
+            }
+            resetSilenceTimer();
+          } else {
+            interimText += bestText;
+            resetSilenceTimer();
+          }
         }
-        if (final) finalTranscript += final;
-        setTranscript(finalTranscript || interim);
+        setTranscript((accumulated + (interimText ? ' ' + interimText : '')).trim());
       };
+
       recognition.onend = () => {
-        const text = finalTranscript.trim();
-        if (text) askBackend(text);
-        else setVoiceState('idle');
+        if (silenceTimer) clearTimeout(silenceTimer);
+        const text = accumulated.trim();
+        if (text) {
+          askBackend(text);
+        } else {
+          setVoiceState('idle');
+          setTranscript('');
+        }
       };
-      recognition.onerror = () => {
-        setError('Microphone access denied or not available.');
+
+      recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+        if (silenceTimer) clearTimeout(silenceTimer);
+        if (e.error === 'no-speech') {
+          setError('No speech detected. Make sure your microphone is working.');
+        } else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          setError('Microphone access denied. Allow microphone in browser settings.');
+        } else if (e.error === 'network') {
+          setError('Network error during speech recognition. Check your connection.');
+        } else {
+          setError(`Speech recognition error: ${e.error}`);
+        }
         setVoiceState('idle');
       };
+
       recognitionRef.current = recognition;
       recognition.start();
       return;
     }
 
-    // Fallback: record audio → send to Whisper
+    // ── MediaRecorder fallback → Whisper ────────────────────────────────────
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
       streamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
+
+      // Pick best supported format for Whisper (prefers webm/opus or mp4/aac)
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : 'audio/webm';
+
+      const recorder = new MediaRecorder(stream, { mimeType });
       audioChunksRef.current = [];
-      recorder.ondataavailable = e => audioChunksRef.current.push(e.data);
+      recorder.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
         const form = new FormData();
-        form.append('audio', blob, 'recording.webm');
+        form.append('audio', blob, `recording.${ext}`);
         setVoiceState('processing');
         try {
           const res = await fetch('/api/backend/voice/transcribe', {
@@ -209,34 +281,47 @@ export default function VoicePage() {
           });
           if (!res.ok) throw new Error('Transcription failed');
           const data = await res.json();
-          const text = data.text || '';
+          const text = (data.text || '').trim();
           setTranscript(text);
-          if (text.trim()) await askBackend(text.trim());
-          else setVoiceState('idle');
+          if (text) await askBackend(text);
+          else {
+            setError('No speech detected in recording. Please try again.');
+            setVoiceState('idle');
+          }
         } catch {
           setError('Transcription failed. Please try again.');
           setVoiceState('idle');
         }
       };
+      // Collect data every 250ms so we don't miss audio at the end
       mediaRecorderRef.current = recorder;
-      recorder.start();
+      recorder.start(250);
       setVoiceState('listening');
     } catch {
-      setError('Microphone access denied.');
+      setError('Microphone access denied. Please allow microphone access in browser settings.');
       setVoiceState('idle');
     }
   }, [selectedLanguage, askBackend, getAuthHeader]);
 
   const handleMicClick = async () => {
-    if (isActive) {
-      recognitionRef.current?.stop();
-      mediaRecorderRef.current?.stop();
+    if (voiceState === 'speaking') {
+      // Cancel TTS and return to idle — don't wipe transcript
       window.speechSynthesis?.cancel();
-      streamRef.current?.getTracks().forEach(t => t.stop());
       setVoiceState('idle');
-      setTranscript('');
       return;
     }
+    if (voiceState === 'listening') {
+      // User manually clicks stop → submit whatever we have
+      recognitionRef.current?.stop();
+      mediaRecorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      // onend / onstop handlers will call askBackend
+      return;
+    }
+    if (voiceState === 'processing') {
+      return; // ignore clicks while processing
+    }
+    // idle → start listening
     setTranscript('');
     setAiResponse('');
     setLastSources([]);
@@ -314,12 +399,13 @@ export default function VoicePage() {
 
             <button
               onClick={handleMicClick}
-              className={`relative mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-2 transition-all ${STATE_COLORS[voiceState]}`}
+              disabled={voiceState === 'processing'}
+              className={`relative mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-2 transition-all disabled:cursor-not-allowed ${STATE_COLORS[voiceState]}`}
             >
               {voiceState === 'processing' ? (
-                <Loader2 className="h-10 w-10 text-surface-900 dark:text-white animate-spin" />
-              ) : isActive ? (
-                <MicOff className="h-10 w-10 text-surface-900 dark:text-white" />
+                <Loader2 className="h-10 w-10 text-white animate-spin" />
+              ) : voiceState === 'listening' ? (
+                <MicOff className="h-10 w-10 text-white" />
               ) : (
                 <Mic className="h-10 w-10 text-surface-900 dark:text-white" />
               )}
@@ -327,10 +413,20 @@ export default function VoicePage() {
 
             <p className="text-sm font-medium text-surface-600 dark:text-gray-300 mb-1">{STATE_LABELS[voiceState]}</p>
 
-            {transcript && (
+            {/* Live transcript — updates as you speak */}
+            {(voiceState === 'listening' || transcript) && (
               <div className="mt-4 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 p-4 text-left">
-                <p className="text-xs font-medium text-surface-500 dark:text-gray-400 mb-1">You said:</p>
-                <p className="text-sm text-surface-900 dark:text-white">{transcript}</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs font-medium text-surface-500 dark:text-gray-400">
+                    {voiceState === 'listening' ? 'Transcribing...' : 'You said:'}
+                  </p>
+                  {voiceState === 'listening' && (
+                    <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                  )}
+                </div>
+                <p className="text-sm text-surface-900 dark:text-white min-h-[1.25rem]">
+                  {transcript || <span className="text-gray-500 italic">Waiting for speech…</span>}
+                </p>
               </div>
             )}
 
