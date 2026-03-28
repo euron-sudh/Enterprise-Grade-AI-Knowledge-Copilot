@@ -119,7 +119,7 @@ export default function VoicePage() {
       setError('Failed to get AI response. Please try again.');
       setVoiceState('idle');
     }
-  }, [authHeader, speak]);
+  }, [getAuthHeader, speak]);
 
   const startRecording = useCallback(async () => {
     setError('');
