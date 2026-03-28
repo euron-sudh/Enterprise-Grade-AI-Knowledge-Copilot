@@ -139,20 +139,38 @@ async def _tavily_web_search(query: str, max_results: int = 5) -> list:
     return sources
 
 
+_STOP_WORDS = {
+    "what", "which", "where", "when", "who", "how", "why", "the", "are",
+    "was", "were", "has", "have", "had", "this", "that", "these", "those",
+    "can", "does", "did", "will", "would", "could", "should", "may", "might",
+    "and", "but", "for", "with", "about", "from", "into", "more", "than",
+    "its", "their", "your", "our", "his", "her", "any", "all", "not", "you",
+    "tell", "give", "show", "find", "get", "make", "just", "like", "some",
+    "there", "also", "well", "then", "say", "ask", "want", "need", "use",
+    "please", "help", "know", "does", "she", "they", "them", "him", "her",
+}
+
+
 async def _search_relevant_chunks(
     query: str, db: AsyncSession, limit: int = 5, user_id: Optional[uuid.UUID] = None
 ) -> list:
     """Full-text search over document chunks owned by the user.
     Returns up to 2 chunks per document so a single large document cannot
-    crowd out other sources (e.g. videos)."""
+    crowd out other sources (e.g. videos).
+    Only matches on meaningful (non-stop-word) query terms to avoid
+    returning irrelevant documents that happen to contain common words."""
     from sqlalchemy import or_
 
     try:
-        words = [w.strip() for w in query.split() if len(w.strip()) > 2]
+        # Strip stop words and short words — only search on meaningful terms
+        words = [
+            w.strip().lower() for w in query.split()
+            if len(w.strip()) > 3 and w.strip().lower() not in _STOP_WORDS
+        ]
         if not words:
             return []
 
-        # Build OR filter across all query words
+        # Build OR filter across meaningful query words only
         filters = [DocumentChunk.content.ilike(f"%{w}%") for w in words[:6]]
         q = (
             select(DocumentChunk, Document)
@@ -175,6 +193,19 @@ async def _search_relevant_chunks(
             doc_id = str(doc.id)
             if seen_doc.get(doc_id, 0) >= 2:
                 continue
+
+            # Relevance guard: chunk must contain at least one meaningful query word
+            chunk_lower = chunk.content.lower()
+            matched_words = [w for w in words if w in chunk_lower]
+            if not matched_words:
+                continue
+
+            # Score by fraction of query words matched
+            relevance_score = round(len(matched_words) / max(len(words), 1), 3)
+            # Require at least 30% of meaningful words to match
+            if relevance_score < 0.3 and len(words) > 1:
+                continue
+
             seen_doc[doc_id] = seen_doc.get(doc_id, 0) + 1
             display_name = doc.original_name or doc.name
             sources.append({
@@ -184,7 +215,7 @@ async def _search_relevant_chunks(
                 "documentType": doc.file_type,
                 "pageNumber": None,
                 "chunkText": chunk.content[:400],
-                "relevanceScore": round(0.7 + (0.3 * (1 / (chunk.chunk_index + 1))), 3),
+                "relevanceScore": min(0.95, round(0.5 + relevance_score * 0.5, 3)),
                 "url": None,
                 "connectorType": None,
                 "sourceType": "knowledge_base",
@@ -404,7 +435,9 @@ async def stream_chat_response(
     effective_system = system_prompt or (
         "You are KnowledgeForge AI, an intelligent knowledge management assistant. "
         "You help users search, analyze, and extract insights from their document library. "
-        "Be concise, accurate, and helpful."
+        "Be concise, accurate, and professional. "
+        "Do not use emojis in your responses. "
+        "Do not use informal language or filler phrases."
     )
 
     # Include document inventory so the AI knows ALL files in the user's KB
