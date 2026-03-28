@@ -12,6 +12,7 @@ import {
   LogOut,
   User,
   Settings,
+  Shield,
   ChevronDown,
   Keyboard,
   HelpCircle,
@@ -44,6 +45,8 @@ function useTheme() {
 export function Topbar() {
   const { data: session } = useSession();
   const { theme, toggle } = useTheme();
+  const role = (session?.user as any)?.role ?? '';
+  const isAdmin = ['super_admin', 'admin', 'org_admin'].includes(role);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const user = session?.user;
@@ -176,14 +179,16 @@ export function Topbar() {
                   <User className="h-4 w-4 text-surface-400" />
                   Profile & Settings
                 </Link>
-                <Link
-                  href="/admin"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                >
-                  <Settings className="h-4 w-4 text-surface-400" />
-                  Admin Console
-                </Link>
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  >
+                    <Shield className="h-4 w-4 text-red-500" />
+                    Admin Console
+                  </Link>
+                )}
                 <Link
                   href="#"
                   onClick={() => setMenuOpen(false)}

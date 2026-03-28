@@ -32,6 +32,7 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 
 interface NavItem {
   label: string;
@@ -150,6 +151,9 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const { data: session } = useSession();
+  const role = (session?.user as any)?.role ?? '';
+  const isAdmin = ['super_admin', 'admin', 'org_admin'].includes(role);
 
   return (
     <aside
@@ -207,17 +211,19 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Admin link */}
-      <div className={cn('border-t border-surface-200 dark:border-surface-800 p-2')}>
-        <Link
-          href="/admin"
-          className={cn('nav-link', collapsed && 'justify-center px-2')}
-          title={collapsed ? 'Admin' : undefined}
-        >
-          <Shield className="h-4 w-4 flex-shrink-0 text-surface-500 dark:text-surface-400" />
-          {!collapsed && <span className="flex-1 truncate">Admin</span>}
-        </Link>
-      </div>
+      {/* Admin link — only shown to admins */}
+      {isAdmin && (
+        <div className={cn('border-t border-surface-200 dark:border-surface-800 p-2')}>
+          <Link
+            href="/admin"
+            className={cn('nav-link', collapsed && 'justify-center px-2')}
+            title={collapsed ? 'Admin Console' : undefined}
+          >
+            <Shield className="h-4 w-4 flex-shrink-0 text-red-500" />
+            {!collapsed && <span className="flex-1 truncate text-red-500 font-medium">Admin Console</span>}
+          </Link>
+        </div>
+      )}
 
       {/* Collapse toggle */}
       <button
