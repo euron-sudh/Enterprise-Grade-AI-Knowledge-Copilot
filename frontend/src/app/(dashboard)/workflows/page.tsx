@@ -103,13 +103,16 @@ export default function WorkflowsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: n, description: d, trigger_type: t, steps: [] }),
       }, session?.accessToken, getUser());
-      if (!res.ok) throw new Error('Create failed');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).detail || `HTTP ${res.status}`);
+      }
       setShowCreate(false);
       setNewName('');
       setNewDesc('');
       fetchWorkflows();
-    } catch {
-      setError('Failed to create workflow.');
+    } catch (e: any) {
+      setError(`Failed to create workflow: ${e?.message || 'Unknown error'}`);
     } finally {
       setCreating(false);
     }

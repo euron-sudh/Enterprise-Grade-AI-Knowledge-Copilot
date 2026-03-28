@@ -138,19 +138,10 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user, account }) {
-      // Initial sign-in — store tokens from backend
-      if (user) {
-        token.id = user.id;
-        token.role = (user as { role?: string }).role ?? 'member';
-        token.accessToken = (user as { accessToken?: string }).accessToken;
-        token.refreshToken = (user as { refreshToken?: string }).refreshToken ?? '';
-        token.accessTokenExpiry = Date.now() + 58 * 60 * 1000;
-        token.error = undefined;
-        return token;
-      }
-
-      // OAuth providers (Google, Azure) — exchange for a backend JWT
-      if (account?.access_token && user) {
+      // OAuth sign-in (Google, Azure, etc.) — exchange provider token for backend JWT.
+      // Must be checked BEFORE the `if (user)` block because both are truthy on initial
+      // OAuth sign-in, and `account` is only available on the first callback invocation.
+      if (account && account.provider !== 'credentials' && user) {
         try {
           const res = await fetch(`${API_URL}/auth/oauth-login`, {
             method: 'POST',
@@ -173,8 +164,19 @@ export const authOptions: NextAuthOptions = {
             return token;
           }
         } catch {
-          // fall through — token will be missing and caller will re-auth
+          // fall through — will be retried on next request via authFetch
         }
+      }
+
+      // Credentials sign-in — backend JWT already in the user object
+      if (user) {
+        token.id = user.id;
+        token.role = (user as { role?: string }).role ?? 'member';
+        token.accessToken = (user as { accessToken?: string }).accessToken;
+        token.refreshToken = (user as { refreshToken?: string }).refreshToken ?? '';
+        token.accessTokenExpiry = Date.now() + 58 * 60 * 1000;
+        token.error = undefined;
+        return token;
       }
 
       // Token still valid — return as-is
