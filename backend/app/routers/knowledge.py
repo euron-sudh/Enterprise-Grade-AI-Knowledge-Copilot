@@ -215,6 +215,46 @@ async def download_document(
     )
 
 
+@router.get("/documents/{document_id}/stream")
+async def stream_document(
+    document_id: uuid.UUID,
+    token: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Stream a video/audio file inline with Range request support.
+    Accepts ?token=<jwt> in query params so <video src> can use it directly.
+    """
+    from fastapi.responses import FileResponse
+    import mimetypes
+
+    doc = await _get_user_document(document_id, current_user.id, db)
+
+    if not doc.file_path or not Path(doc.file_path).is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    mime, _ = mimetypes.guess_type(doc.file_path)
+    # Ensure common video types are recognised even if mimetypes DB is sparse
+    ext = Path(doc.file_path).suffix.lower()
+    MIME_OVERRIDES = {
+        ".mp4": "video/mp4", ".m4v": "video/mp4",
+        ".mov": "video/quicktime", ".avi": "video/x-msvideo",
+        ".mkv": "video/x-matroska", ".webm": "video/webm",
+        ".mp3": "audio/mpeg", ".m4a": "audio/mp4",
+        ".wav": "audio/wav", ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
+    }
+    media_type = MIME_OVERRIDES.get(ext) or mime or "application/octet-stream"
+
+    # FileResponse natively handles Range requests (byte serving / seeking)
+    return FileResponse(
+        path=doc.file_path,
+        media_type=media_type,
+        headers={"Content-Disposition": "inline"},
+    )
+
+
 @router.post("/documents/upload")
 async def upload_documents(
     files: List[UploadFile] = File(...),

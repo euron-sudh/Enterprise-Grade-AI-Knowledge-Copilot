@@ -77,36 +77,17 @@ export default function VideoPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
-  const [playingVideo, setPlayingVideo] = useState<{ id: string; title: string; blobUrl: string } | null>(null);
-  const [loadingPlay, setLoadingPlay] = useState<string | null>(null);
+  const [playingVideo, setPlayingVideo] = useState<{ id: string; title: string; streamUrl: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handlePlay = async (v: VideoItem) => {
-    setLoadingPlay(v.id);
-    try {
-      const res = await authFetch(
-        `/api/backend/knowledge/documents/${v.id}/download`,
-        {},
-        session?.accessToken,
-        getUser(),
-      );
-      if (!res.ok) throw new Error('Failed to load video');
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      setPlayingVideo({ id: v.id, title: v.title, blobUrl });
-    } catch (e: any) {
-      setError(`Failed to play video: ${e?.message}`);
-    } finally {
-      setLoadingPlay(null);
-    }
+  const handlePlay = (v: VideoItem) => {
+    // Pass the JWT as a query param so <video src> can authenticate without custom headers
+    const token = (session as any)?.accessToken ?? '';
+    const streamUrl = `/api/backend/knowledge/documents/${v.id}/stream?token=${encodeURIComponent(token)}`;
+    setPlayingVideo({ id: v.id, title: v.title, streamUrl });
   };
 
-  const closePlayer = () => {
-    if (playingVideo) {
-      URL.revokeObjectURL(playingVideo.blobUrl);
-      setPlayingVideo(null);
-    }
-  };
+  const closePlayer = () => setPlayingVideo(null);
 
   const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
@@ -237,7 +218,7 @@ export default function VideoPage() {
             </button>
             <p className="mb-2 text-sm font-medium text-white truncate">{playingVideo.title}</p>
             <video
-              src={playingVideo.blobUrl}
+              src={playingVideo.streamUrl}
               controls
               autoPlay
               className="w-full rounded-xl max-h-[70vh] bg-black"

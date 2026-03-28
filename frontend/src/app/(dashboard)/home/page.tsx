@@ -56,7 +56,7 @@ const ACTIVITY_ICONS: Record<string, { icon: React.ElementType; color: string }>
 };
 
 export default function HomePage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [stats, setStats] = useState<HomeStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -65,8 +65,12 @@ export default function HomePage() {
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   useEffect(() => {
+    if (status === 'loading') return; // session not resolved yet
     const token = (session as any)?.accessToken;
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     fetch('/api/backend/analytics/home-stats', {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -74,7 +78,7 @@ export default function HomePage() {
       .then(data => { if (data) setStats(data); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [session]);
+  }, [session, status]);
 
   const statCards = [
     {

@@ -1,6 +1,6 @@
 from typing import AsyncGenerator, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy import select
@@ -69,9 +69,16 @@ async def _get_user_from_token(
 
 
 async def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    # Allow JWT passed as ?token= query param (for <video src> streaming URLs)
+    if credentials is None:
+        token_param = request.query_params.get("token")
+        if token_param:
+            from fastapi.security import HTTPAuthorizationCredentials as Creds
+            credentials = Creds(scheme="Bearer", credentials=token_param)
     user = await _get_user_from_token(credentials, db, required=True)
     return user  # type: ignore[return-value]
 
