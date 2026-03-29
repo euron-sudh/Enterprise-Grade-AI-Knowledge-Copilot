@@ -214,6 +214,94 @@ async def password_reset_confirm(
         await r.aclose()
 
 
+# ── MFA ───────────────────────────────────────────────────────────────────────
+
+import uuid as _uuid
+from pydantic import BaseModel as _BaseModel
+
+class MFASetupResponse(_BaseModel):
+    secret: str
+    qr_code_uri: str
+    backup_codes: list[str]
+
+class MFAVerifyRequest(_BaseModel):
+    code: str
+
+class MFAStatusResponse(_BaseModel):
+    enabled: bool
+
+
+@router.post("/mfa/setup", response_model=MFASetupResponse)
+async def mfa_setup(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a new TOTP secret. Does NOT enable MFA until /mfa/verify is called."""
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(status_code=503, detail="pyotp not installed. Run: pip install pyotp")
+    import secrets as _sec
+    secret = pyotp.random_base32()
+    totp = pyotp.TOTP(secret)
+    uri = totp.provisioning_uri(name=current_user.email, issuer_name="KnowledgeForge")
+    backup_codes = [_sec.token_hex(4).upper() for _ in range(8)]
+    current_user.mfa_secret = secret
+    current_user.mfa_backup_codes = backup_codes
+    await db.flush()
+    return MFASetupResponse(secret=secret, qr_code_uri=uri, backup_codes=backup_codes)
+
+
+@router.post("/mfa/verify")
+async def mfa_verify(
+    payload: MFAVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify TOTP code and enable MFA on the account."""
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(status_code=503, detail="pyotp not installed.")
+    if not current_user.mfa_secret:
+        raise HTTPException(status_code=400, detail="Call /mfa/setup first.")
+    totp = pyotp.TOTP(current_user.mfa_secret)
+    if not totp.verify(payload.code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Invalid or expired TOTP code.")
+    current_user.mfa_enabled = True
+    await db.flush()
+    return {"message": "MFA enabled successfully."}
+
+
+@router.post("/mfa/disable")
+async def mfa_disable(
+    payload: MFAVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Disable MFA after confirming with a valid TOTP code."""
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(status_code=503, detail="pyotp not installed.")
+    if not current_user.mfa_enabled or not current_user.mfa_secret:
+        raise HTTPException(status_code=400, detail="MFA is not enabled.")
+    totp = pyotp.TOTP(current_user.mfa_secret)
+    if not totp.verify(payload.code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Invalid or expired TOTP code.")
+    current_user.mfa_enabled = False
+    current_user.mfa_secret = None
+    current_user.mfa_backup_codes = None
+    await db.flush()
+    return {"message": "MFA disabled."}
+
+
+@router.get("/mfa/status", response_model=MFAStatusResponse)
+async def mfa_status(current_user: User = Depends(get_current_user)):
+    """Return whether MFA is currently enabled for the logged-in user."""
+    return MFAStatusResponse(enabled=bool(current_user.mfa_enabled))
+
+
 def _user_to_out(user: User) -> UserOut:
     role_map = {
         "super_admin": "Admin",

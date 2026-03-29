@@ -240,8 +240,10 @@ export default function ProfilePage() {
               </div>
               <div className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-gray-800 rounded-xl p-6">
                 <h2 className="text-lg font-semibold text-surface-900 dark:text-white mb-1">Two-Factor Authentication</h2>
-                <p className="text-sm text-surface-400 dark:text-gray-500 mb-4">Add an extra layer of security to your account.</p>
-                <button className="px-4 py-2 border border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/10 text-sm font-medium rounded-lg transition-colors">Enable 2FA</button>
+                <p className="text-sm text-surface-400 dark:text-gray-500 mb-4">Add an extra layer of security with an authenticator app (TOTP).</p>
+                <a href="/profile/mfa" className="inline-flex items-center gap-2 px-4 py-2 border border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/10 text-sm font-medium rounded-lg transition-colors">
+                  <Shield className="w-4 h-4" /> Set up Authenticator App
+                </a>
               </div>
             </div>
           )}

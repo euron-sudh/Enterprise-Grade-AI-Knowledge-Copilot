@@ -9,6 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from app.config import settings
 from app.database import init_db
 from app.routers import auth, conversations, knowledge, search, analytics, voice, meetings, agents, workflows, admin, teams
+from app.routers import billing, websocket, video, connectors_oauth
 
 # Configure logging
 logging.basicConfig(
@@ -112,6 +113,10 @@ app.include_router(agents.router, prefix="/agents", tags=["Agents"])
 app.include_router(workflows.router, prefix="/workflows", tags=["Workflows"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(teams.router, prefix="/teams", tags=["Teams"])
+app.include_router(billing.router, tags=["Billing"])
+app.include_router(websocket.router, tags=["WebSocket"])
+app.include_router(video.router, tags=["Video"])
+app.include_router(connectors_oauth.router, tags=["Connectors OAuth"])
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────

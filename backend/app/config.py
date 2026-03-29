@@ -34,6 +34,21 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str = ""
     GOOGLE_API_KEY: str = ""
 
+    # Stripe billing
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_STARTER_PRICE_ID: str = ""
+    STRIPE_PRO_PRICE_ID: str = ""
+
+    # Connector OAuth
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    SLACK_CLIENT_ID: str = ""
+    SLACK_CLIENT_SECRET: str = ""
+    NOTION_CLIENT_ID: str = ""
+    NOTION_CLIENT_SECRET: str = ""
+    CONNECTOR_OAUTH_REDIRECT_BASE: str = "http://localhost:3000"
+
     # File uploads
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
@@ -54,6 +69,10 @@ class Settings(BaseSettings):
                 "WARNING: Using default SECRET_KEY. Set a strong random key in production!"
             )
         return v
+
+    @property
+    def has_stripe(self) -> bool:
+        return bool(self.STRIPE_SECRET_KEY and self.STRIPE_SECRET_KEY.startswith("sk_"))
 
     @property
     def has_anthropic_key(self) -> bool:
