@@ -1,47 +1,56 @@
 # KnowledgeForge — Enterprise AI Knowledge Copilot
 
-> The enterprise-grade AI knowledge copilot that eliminates information silos and gives your entire organization instant, cited answers from its collective intelligence.
+An enterprise-grade AI Knowledge Copilot that serves as a company-wide AI brain. Employees interact with it via **chat**, **voice**, and **video/meetings**. It ingests, indexes, and reasons over organizational knowledge — documents, PDFs, videos, and more — then provides instant, cited, context-aware answers.
 
 ---
 
 ## Overview
 
-KnowledgeForge is a full-stack enterprise SaaS platform that indexes every piece of organizational knowledge — documents, wikis, Slack threads, emails, meeting recordings, codebases — and surfaces it through an AI-powered chat, voice, and video intelligence layer. Built for teams of 50 to 50,000+.
+- **AI Chat** — Multi-turn RAG conversations over your knowledge base with real-time SSE streaming, source citations, conversation branching, and sharing
+- **Voice Assistant** — Speak naturally and get spoken answers (Web Speech API + TTS)
+- **Meeting Intelligence** — Transcribe meetings, extract action items, search past meetings by spoken content
+- **Knowledge Base** — Ingest PDFs, DOCX, and more. Semantic chunking, full-text search, and 8 built-in data connectors (Google Drive, Confluence, Slack, GitHub, Notion, Jira, Salesforce, Gmail) with step-by-step connection guides
+- **Video Library** — Upload videos up to 100 MB; AI-powered analysis using **Gemini 2.0 Flash** (transcript + visual descriptions + key topics + summary). Falls back to OpenAI Whisper for audio-only transcription
+- **Enterprise Search** — Hybrid semantic + BM25 full-text search with reranking
+- **AI Agents** — Research Agent (live web search via Tavily/DuckDuckGo + KB RAG), Writing Agent, Data Analyst, Support Agent, Compliance Agent, Onboarding Agent — all with file/image/document attachment support
+- **Workflow Automation** — Visual drag-and-drop builder with event triggers and human-in-the-loop steps
+- **Analytics Dashboard** — Usage metrics, AI performance scores, knowledge gap analysis
+- **API Keys** — Generate multi-model API keys scoped to Claude, OpenAI, Gemini, Mistral, or Llama with per-key permissions and rate limits
+- **OAuth Authentication** — Google and Microsoft sign-in via NextAuth.js with automatic JWT refresh
+- **Admin Panel** — User management, connectors, and system health
 
 ---
 
 ## Tech Stack
 
-### Frontend
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 14+ (App Router) |
-| Language | TypeScript (strict mode) |
-| Styling | Tailwind CSS 3.x |
-| State | Zustand + TanStack Query |
-| Real-time | Socket.IO / WebSocket |
-| Voice | Web Speech API + WebRTC |
-| Charts | Recharts + D3.js |
-| Auth | NextAuth.js |
-| Build | Turbopack |
-
 ### Backend
 | Layer | Technology |
-|-------|-----------|
-| Framework | Python 3.12+ / FastAPI |
-| AI/LLM | LangChain + LlamaIndex + Anthropic SDK |
-| Vector DB | Pinecone (primary) + pgvector (fallback) |
-| Database | PostgreSQL 16 (SQLAlchemy + Alembic) |
+|---|---|
+| Framework | FastAPI 0.111 + Uvicorn (async) |
+| Database | PostgreSQL (Supabase) via SQLAlchemy 2.0 async + asyncpg |
+| Migrations | Alembic |
 | Cache | Redis 7 |
-| Search | Elasticsearch 8 |
-| Queue | Apache Kafka + Celery |
-| Storage | AWS S3 |
-| Voice | Deepgram (STT) + ElevenLabs (TTS) |
-| Auth | FastAPI-Users + OAuth2 + SAML 2.0 |
+| AI / LLM | Anthropic Claude (`claude-sonnet-4-6`) |
+| Video AI | Google Gemini 2.0 Flash (`gemini-2.0-flash`) via `google-generativeai` |
+| Audio Transcription | OpenAI Whisper (fallback when no Google key) |
+| Web Search | Tavily API (primary) + DuckDuckGo (free fallback) |
+| Auth | JWT (python-jose) + bcrypt + automatic refresh token rotation |
+| File Parsing | PyPDF2, python-docx |
+
+### Frontend
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 14 (App Router, standalone output) |
+| Language | TypeScript 5 |
+| Styling | Tailwind CSS 3 |
+| Auth | NextAuth.js (credentials + Google OAuth + Microsoft OAuth) |
+| State | Zustand + TanStack React Query 5 |
+| Charts | Recharts |
+| Animations | Framer Motion |
 
 ### Infrastructure (AWS)
 | Layer | Technology |
-|-------|-----------|
+|---|---|
 | Orchestration | Amazon EKS (Kubernetes) |
 | CI/CD | GitHub Actions → ArgoCD (GitOps) |
 | IaC | Terraform + Terragrunt |
@@ -220,18 +229,35 @@ Enterprise-Grade-AI-Knowledge-Copilot/
 │   └── Dockerfile
 ├── backend/                           # FastAPI Python backend
 │   ├── app/
-│   │   ├── main.py                    # FastAPI app entry point
-│   │   ├── config.py                  # Settings (pydantic-settings)
-│   │   ├── dependencies.py            # Dependency injection
-│   │   ├── routers/                   # API route handlers (10 routers)
-│   │   ├── schemas/                   # Pydantic request/response schemas
-│   │   ├── services/                  # Business logic services
-│   │   ├── models/                    # SQLAlchemy ORM models
-│   │   └── core/security.py           # JWT + auth helpers
-│   ├── alembic/                       # Database migrations
+│   │   ├── main.py              # FastAPI entry point
+│   │   ├── config.py            # Settings (pydantic-settings)
+│   │   │                        # Includes: GOOGLE_API_KEY, TAVILY_API_KEY
+│   │   ├── database.py          # SQLAlchemy engine + indexes
+│   │   ├── dependencies.py      # Auth + DB dependency injection
+│   │   ├── models/              # SQLAlchemy ORM models
+│   │   ├── routers/
+│   │   │   ├── auth.py
+│   │   │   ├── conversations.py
+│   │   │   ├── knowledge.py     # Document upload + Gemini 2.0 video processing
+│   │   │   ├── analytics.py
+│   │   │   ├── search.py
+│   │   │   ├── voice.py
+│   │   │   ├── meetings.py
+│   │   │   ├── agents.py        # Research agent with live web search
+│   │   │   ├── workflows.py
+│   │   │   ├── admin.py
+│   │   │   └── api_keys.py
+│   │   ├── schemas/             # Pydantic request/response schemas
+│   │   ├── services/
+│   │   │   ├── ai_service.py    # Claude streaming + RAG
+│   │   │   └── document_service.py
+│   │   └── core/
+│   │       └── security.py      # JWT + password hashing
+│   ├── alembic/                 # Database migrations
+│   ├── uploads/                 # Uploaded file storage
 │   ├── requirements.txt
-│   └── Dockerfile
-└── docker-compose.yml                 # Local development orchestration
+│   └── .env                     # Environment variables
+└── docker-compose.yml           # Local development orchestration
 ```
 
 ---
@@ -239,13 +265,22 @@ Enterprise-Grade-AI-Knowledge-Copilot/
 ## Getting Started
 
 ### Prerequisites
-- Node.js 20+
-- Python 3.12+
-- Docker & Docker Compose
+- Python 3.12
+- Node.js 18+
+- Docker Desktop (for Redis)
+- Supabase project (PostgreSQL database)
+- Anthropic API key
+- Google AI Studio API key (Gemini 2.0 video processing)
+- OpenAI API key (Whisper fallback, optional if Google key set)
+- Tavily API key (web search in Research Agent, optional — falls back to DuckDuckGo)
+- Google OAuth credentials (for Google sign-in, optional)
+- Microsoft Azure AD credentials (for Microsoft sign-in, optional)
 
 ### Quick Start with Docker
 
 ```bash
+git clone <repo-url>
+cd Enterprise-Grade-AI-Knowledge-Copilot
 docker-compose up -d
 ```
 
@@ -259,9 +294,17 @@ Services:
 ```bash
 cd frontend
 cp .env.example .env.local
-# Fill in your API keys in .env.local
-npm install
-npm run dev -- --port 3001
+# Edit .env.local with your credentials (see Environment Variables section)
+
+# Build (required for standalone output)
+npm run build
+
+# Copy static assets (required after every build)
+cp -r .next/static .next/standalone/.next/static
+cp -r public .next/standalone/public
+
+# Start (loads env vars at runtime)
+export $(cat .env.local | grep -v '^#' | grep '=' | xargs) && PORT=3001 node .next/standalone/server.js
 ```
 
 ### Backend Development
@@ -281,55 +324,50 @@ uvicorn app.main:app --reload --port 8010
 
 ## Environment Variables
 
-### Frontend (`.env.local`)
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8010
-NEXT_PUBLIC_APP_URL=http://localhost:3001
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_supabase_anon_key
-NEXTAUTH_URL=http://localhost:3001
-NEXTAUTH_SECRET=your_nextauth_secret_min_32_chars
-GOOGLE_CLIENT_ID=your_google_oauth_client_id
-GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
-MICROSOFT_CLIENT_ID=your_microsoft_app_client_id
-MICROSOFT_CLIENT_SECRET=your_microsoft_app_client_secret
-```
+### Backend (`backend/.env`)
 
-### Backend (`.env`)
 ```env
-# Database
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/knowledgeforge
-REDIS_URL=redis://localhost:6379/0
+# Database (Supabase PostgreSQL)
+DATABASE_URL=postgresql+asyncpg://user:password@host:5432/dbname
+
+# Redis
+REDIS_URL=redis://localhost:6379
 
 # Security
-SECRET_KEY=your_jwt_secret_key_min_32_chars
+SECRET_KEY=your-secret-key-here   # Generate: openssl rand -hex 32
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+REFRESH_TOKEN_EXPIRE_DAYS=30
 
-# AI Providers
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-DEFAULT_LLM_MODEL=claude-sonnet-4-6
+# AI APIs
+ANTHROPIC_API_KEY=sk-ant-...                # Claude (chat + agents)
+OPENAI_API_KEY=sk-...                       # Whisper transcription fallback
+GOOGLE_API_KEY=AIza...                      # Gemini 2.0 Flash (video processing)
+TAVILY_API_KEY=tvly-...                     # Web search (optional, DuckDuckGo fallback)
 
-# Video Analysis (Google Gemini — required for visual video understanding)
-GOOGLE_API_KEY=your_google_ai_studio_key
+# App
+CORS_ORIGINS=["http://localhost:3001"]
+MAX_UPLOAD_SIZE_MB=50
+```
 
-# Vector Database
-PINECONE_API_KEY=your_pinecone_key
-PINECONE_ENVIRONMENT=us-east-1
-PINECONE_INDEX_NAME=knowledgeforge
+### Frontend (`frontend/.env.local`)
 
-# Storage
-AWS_S3_BUCKET=knowledgeforge-documents
-AWS_S3_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your_aws_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8010
+NEXT_PUBLIC_WS_URL=ws://localhost:8010
+NEXTAUTH_URL=http://localhost:3001
+NEXTAUTH_SECRET=your-nextauth-secret        # Generate: openssl rand -hex 32
 
-# Voice
-DEEPGRAM_API_KEY=your_deepgram_key
-ELEVENLABS_API_KEY=your_elevenlabs_key
+# Google OAuth (optional — https://console.cloud.google.com)
+# Redirect URI: http://localhost:3001/api/auth/callback/google
+# Set OAuth consent screen to "External" to allow any Google account
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 
-# Payments
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+# Microsoft OAuth (optional — https://portal.azure.com)
+# Redirect URI: http://localhost:3001/api/auth/callback/azure-ad
+AZURE_AD_CLIENT_ID=
+AZURE_AD_CLIENT_SECRET=
+AZURE_AD_TENANT_ID=common
 ```
 
 ---
@@ -339,48 +377,128 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 The backend auto-seeds two accounts on first startup:
 
 | Role | Email | Password |
-|------|-------|----------|
-| Super Admin | `admin@knowledgeforge.ai` | `Admin@123` |
-| Admin (Demo) | `demo@knowledgeforge.ai` | `Demo@123` |
+|---|---|---|
+| Demo User | `demo@knowledgeforge.ai` | `demo12345` |
+| Super Admin | `admin@knowledgeforge.ai` | `Admin1234!` |
 
 Quick login buttons for both accounts are available directly on the login page.
 
 ---
 
+## Video Processing
+
+Videos are processed with **Gemini 2.0 Flash** when `GOOGLE_API_KEY` is set. Gemini understands the full video — audio, visuals, slides, and diagrams — and returns:
+
+1. Timestamped verbatim transcript
+2. Visual content descriptions (slides, on-screen text, diagrams)
+3. Key topics bullet list
+4. Executive summary
+
+All content is chunked and indexed into the RAG pipeline for instant retrieval in chat.
+
+If `GOOGLE_API_KEY` is not set, the system falls back to **OpenAI Whisper** (audio-only transcription).
+
+---
+
+## AI Agents
+
+### Research Agent
+Combines live web search with internal knowledge base RAG:
+1. Searches the internal knowledge base (vector + full-text)
+2. Runs live web search via Tavily (or DuckDuckGo if no Tavily key)
+3. Synthesizes both into a cited report with web and internal source tabs
+
+Supports file/image/document attachments — drag-and-drop or click to attach PDFs, DOCX, CSVs, images, and more. Text is extracted client-side and appended to the query context.
+
+### Other Agents
+- **Writing Agent** — Draft documents, emails, and reports using org context
+- **Data Analyst** — Query data, generate analysis from CSV/Excel attachments
+- **Support Agent** — Answer employee questions with KB citations
+- **Compliance Agent** — Check documents against policy with PDF/DOCX support
+- **Onboarding Agent** — Guide new employees through company knowledge
+
+---
+
+## API Keys
+
+Generate multi-model API keys at `/api-keys` to access KnowledgeForge programmatically:
+
+- Select one or more providers: **Claude**, **OpenAI**, **Gemini**, **Mistral**, **Llama**
+- Scope to specific models (e.g. only `claude-sonnet-4-6` and `gpt-4o`)
+- Set granular permissions (chat, search, agents, knowledge, analytics, admin)
+- Configure rate limits and expiration
+- Switch models by changing the `model` field — same key works across all providers
+
+```bash
+curl -X POST https://api.knowledgeforge.ai/v1/chat \
+  -H "Authorization: Bearer kf_YOUR_API_KEY" \
+  -d '{"model": "claude-sonnet-4-6", "messages": [...]}'
+```
+
+---
+
+## OAuth Setup
+
+### Google Sign-In
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials
+2. Create OAuth 2.0 Client ID (Web Application)
+3. Add authorized redirect URI: `http://localhost:3001/api/auth/callback/google`
+4. Set OAuth consent screen to **External**
+5. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `frontend/.env.local`
+6. Rebuild the frontend
+
+### Microsoft Sign-In
+1. Go to [portal.azure.com](https://portal.azure.com) → App registrations → New registration
+2. Add redirect URI: `http://localhost:3001/api/auth/callback/azure-ad`
+3. Create a client secret under Certificates & Secrets
+4. Add `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET`, `AZURE_AD_TENANT_ID=common` to `frontend/.env.local`
+5. Rebuild the frontend
+
+---
+
 ## API Reference
 
-The REST API is organized under `/api/v1/`. Interactive docs available at `/docs` (Swagger UI).
+Interactive docs available at:
+- **Swagger UI**: `http://localhost:8010/docs`
+- **ReDoc**: `http://localhost:8010/redoc`
 
-| Prefix | Methods | Description |
-|--------|---------|-------------|
-| `/api/v1/auth/` | POST | Register, login, OAuth, SAML SSO, MFA |
-| `/api/v1/chat/conversations` | GET, POST, DELETE | Manage conversations |
-| `/api/v1/chat/conversations/{id}/messages` | GET, POST | Streaming messages (SSE) |
-| `/api/v1/voice/sessions` | POST | Voice session management |
-| `/ws/v1/voice/{session_id}` | WebSocket | Real-time STT + TTS |
-| `/api/v1/meetings/` | GET, POST, PUT, DELETE | Meeting CRUD |
-| `/ws/v1/meetings/{id}` | WebSocket | Real-time meeting signaling |
-| `/api/v1/knowledge/documents` | GET, POST, DELETE | Document management |
-| `/api/v1/knowledge/collections` | GET, POST, PUT | Collections |
-| `/api/v1/knowledge/connectors` | GET, POST, PUT | Data source connectors |
-| `/api/v1/knowledge/crawlers` | GET, POST | Web crawlers |
-| `/api/v1/search` | POST | Hybrid search |
-| `/api/v1/agents/` | GET, POST, PUT, DELETE | Agent management + execution |
-| `/api/v1/workflows/` | GET, POST, PUT | Workflow builder + execution |
-| `/api/v1/analytics/usage` | GET | Usage metrics |
-| `/api/v1/analytics/knowledge-gaps` | GET | Gap analysis |
-| `/api/v1/analytics/reports` | GET, POST | Reports |
-| `/api/v1/admin/users` | GET, POST | User management |
-| `/api/v1/admin/audit-logs` | GET | Audit log viewer |
-| `/api/v1/admin/roles` | GET, POST, PUT | RBAC roles |
-| `/api/v1/billing/subscription` | GET, POST | Subscription management |
-| `/api/v1/notifications/` | GET, PUT | Notification center |
+| Prefix | Description |
+|---|---|
+| `/auth` | Login, register, token refresh, OAuth |
+| `/conversations` | Chat conversations + SSE streaming |
+| `/knowledge` | Document upload, collections, connectors, video upload |
+| `/analytics` | Usage stats, AI performance, dashboard |
+| `/search` | Full-text + semantic search |
+| `/voice` | Voice session management |
+| `/meetings` | Meeting rooms and transcripts |
+| `/agents` | AI agent execution (research, writing, analysis) |
+| `/workflows` | Workflow automation |
+| `/admin` | User and system administration |
+
+---
+
+## Architecture Notes
+
+### RAG Pipeline
+1. **Ingest** — Documents are uploaded, parsed (PDF/DOCX/video), chunked, and stored in `document_chunks`
+2. **Retrieve** — On each chat message: vector search (pgvector) + full-text search (PostgreSQL GIN index) run in parallel
+3. **Generate** — Claude `claude-sonnet-4-6` streams the response via SSE with cited sources
+
+### Authentication Flow
+- JWT access tokens (60-min expiry) + refresh tokens (30-day expiry)
+- NextAuth automatically refreshes the backend JWT 2 minutes before expiry using the stored refresh token — no re-login required
+- Supports credentials, Google OAuth, and Microsoft Azure AD
+- Passwords hashed with bcrypt; user records cached in Redis (5 min)
+
+### Performance
+- Redis caching — analytics dashboard (120s), home stats (60s), sessions (5 min)
+- Connection pooling — SQLAlchemy pool_size=20, max_overflow=40
+- SSE streaming — chat responses stream token-by-token
+- DB indexes — GIN full-text, vector, conversation, message indexes
 
 ---
 
 ## Pending Implementation
-
-The following items from the PRD are not yet fully implemented:
 
 ### High Priority
 - **Backend API restructure** — organize into `app/api/v1/` per spec with full middleware layer
@@ -392,28 +510,18 @@ The following items from the PRD are not yet fully implemented:
 - **WebSocket handlers** — real-time chat streaming, voice STT, meeting signaling
 
 ### Medium Priority
-- **Meeting detail pages** — transcript viewer (`/meetings/[id]/transcript`), recap page (`/meetings/[id]/recap`)
-- **Workflow detail editor** — `/workflows/[id]` with node editing and execution history
-- **Agent detail page** — `/agents/[id]` with config, logs, and chat interface
-- **Video upload** — `/video/upload` with chunked upload and processing queue
-- **UI component library** — toast system, dialog, dropdown-menu, command palette (Cmd+K), data-table, skeleton loaders
-- **Shared chat view** — `/chat/shared/[shareId]` for public conversation links
-- **Notification service** — email (AWS SES), push (FCM/APNs), Slack, Teams delivery
+- **Meeting detail pages** — transcript viewer, recap page
+- **Workflow detail editor** — node editing and execution history
+- **Agent detail page** — config, logs, and chat interface
+- **Video upload** — chunked upload with processing queue
+- **UI component library** — toast system, dialog, command palette (Cmd+K), data-table, skeleton loaders
 
 ### Recently Fixed
-- ✅ Analytics dashboard HTTP 500 — replaced concurrent `asyncio.gather()` with sequential queries (SQLAlchemy `AsyncSession` does not support concurrent operations)
-- ✅ AI chat document awareness — injected full knowledge base inventory into system prompt; added per-doc chunk cap (2 max) in RAG retrieval
+- ✅ Analytics dashboard HTTP 500 — replaced concurrent `asyncio.gather()` with sequential queries
+- ✅ AI chat document awareness — injected full knowledge base inventory into system prompt; added per-doc chunk cap (2 max)
 - ✅ Teams CRUD — fully functional create/delete with owner authorization
 - ✅ Login quick-access — demo credential buttons on login page
-- ✅ Sidebar cleanup — removed unused "Usage" and "Knowledge Gaps" nav items
 - ✅ Global document list — knowledge base documents shown regardless of uploader
-
-### Infrastructure (Future)
-- **Terraform modules** — all AWS services (VPC, EKS, RDS, ElastiCache, S3, CloudFront, WAF, MSK)
-- **Kubernetes manifests** — deployments, services, HPA, ingress, ArgoCD GitOps config
-- **GitHub Actions pipelines** — frontend CI, backend CI, security scanning, e2e tests, prod deploy
-- **Monitoring stack** — Prometheus metrics, Grafana dashboards, PagerDuty alerting rules
-- **Makefile** — standardized dev commands
 
 ---
 
