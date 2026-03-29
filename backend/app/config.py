@@ -32,13 +32,29 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
+
+    # Stripe billing
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_STARTER_PRICE_ID: str = ""
+    STRIPE_PRO_PRICE_ID: str = ""
+
+    # Connector OAuth
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    SLACK_CLIENT_ID: str = ""
+    SLACK_CLIENT_SECRET: str = ""
+    NOTION_CLIENT_ID: str = ""
+    NOTION_CLIENT_SECRET: str = ""
+    CONNECTOR_OAUTH_REDIRECT_BASE: str = "http://localhost:3000"
 
     # File uploads
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
 
     # App
     APP_VERSION: str = "1.0.0"
@@ -55,12 +71,20 @@ class Settings(BaseSettings):
         return v
 
     @property
+    def has_stripe(self) -> bool:
+        return bool(self.STRIPE_SECRET_KEY and self.STRIPE_SECRET_KEY.startswith("sk_"))
+
+    @property
     def has_anthropic_key(self) -> bool:
         return bool(self.ANTHROPIC_API_KEY and self.ANTHROPIC_API_KEY.strip())
 
     @property
     def has_tavily_key(self) -> bool:
         return bool(self.TAVILY_API_KEY and self.TAVILY_API_KEY.strip())
+
+    @property
+    def has_google_key(self) -> bool:
+        return bool(self.GOOGLE_API_KEY and self.GOOGLE_API_KEY.strip())
 
     @property
     def max_upload_size_bytes(self) -> int:

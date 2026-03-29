@@ -38,11 +38,12 @@ class DocumentOut(BaseModel):
     name: str
     type: str
     size: int
-    processingStatus: str
+    status: str
     collectionId: Optional[UUID] = None
     tags: List[str] = []
     pageCount: Optional[int] = None
     wordCount: Optional[int] = None
+    originalName: Optional[str] = None
     createdAt: datetime
     updatedAt: datetime
 
@@ -55,11 +56,12 @@ class DocumentOut(BaseModel):
             name=doc.name,
             type=doc.file_type,
             size=doc.file_size,
-            processingStatus=doc.status.value if hasattr(doc.status, "value") else doc.status,
+            status=doc.status.value if hasattr(doc.status, "value") else doc.status,
             collectionId=doc.collection_id,
             tags=doc.tags or [],
             pageCount=doc.page_count,
             wordCount=doc.word_count,
+            originalName=doc.original_name,
             createdAt=doc.created_at,
             updatedAt=doc.updated_at,
         )

@@ -1,24 +1,18 @@
 """
-Analytics router — returns real DB data + computed metrics for the analytics dashboard.
-Multiple COUNT queries are collapsed into single multi-aggregate SQL statements.
-Results are cached in Redis for 120s to avoid repeated heavy queries.
+Analytics router — real DB data with parallel query execution.
 """
-import json
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import cast, case, Date, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, cast, Date
 
-from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.conversation import Conversation, Message, MessageRole
-from app.models.knowledge import Connector, ConnectorStatus, Document, DocumentStatus
 from app.models.user import User
+from app.models.conversation import Conversation, Message, MessageRole, FeedbackRating
+from app.models.knowledge import Document, DocumentStatus, Connector, ConnectorStatus
 from app.schemas.analytics import (
     AIPerformanceMetrics,
     AnalyticsDashboard,
@@ -32,85 +26,40 @@ from app.schemas.analytics import (
     UsageMetrics,
 )
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# ── Redis client (lazy singleton) ─────────────────────────────────────────────
-
-_redis: aioredis.Redis | None = None
-
-
-async def _get_redis() -> aioredis.Redis | None:
-    global _redis
-    if _redis is None:
-        try:
-            _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=1)
-            await _redis.ping()
-        except Exception:
-            _redis = None
-    return _redis
-
-
-async def _cache_get(key: str) -> Any | None:
-    r = await _get_redis()
-    if r is None:
-        return None
-    try:
-        raw = await r.get(key)
-        return json.loads(raw) if raw else None
-    except Exception:
-        return None
-
-
-async def _cache_set(key: str, value: Any, ttl: int = 120) -> None:
-    r = await _get_redis()
-    if r is None:
-        return
-    try:
-        await r.set(key, json.dumps(value, default=str), ex=ttl)
-    except Exception:
-        pass
-
-
-# ── Core builder (multi-aggregate queries — minimal round trips) ──────────────
 
 async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> AnalyticsDashboard:
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=days)
     prev_start = start - timedelta(days=days)
 
-    # ── 1. Message counts (current + prev period) in ONE query ───────────────
-    msg_counts = await db.execute(
-        select(
-            func.count(
-                case((Message.created_at >= start, Message.id))
-            ).label("current"),
-            func.count(
-                case((
-                    (Message.created_at >= prev_start) & (Message.created_at < start),
-                    Message.id,
-                ))
-            ).label("prev"),
-        ).where(
+    # ── Run queries sequentially (AsyncSession does not support concurrent execute) ──
+    total_q_res = await db.execute(
+        select(func.count(Message.id)).where(
             Message.role == MessageRole.user,
-            Message.created_at >= prev_start,
+            Message.created_at >= start,
         )
     )
-    msg_row = msg_counts.one()
-    total_queries: int = msg_row.current or 0
-    prev_queries: int = msg_row.prev or 0
-    queries_change = round((total_queries - prev_queries) / max(prev_queries, 1) * 100, 1)
-
-    # ── 2. Active users ───────────────────────────────────────────────────────
+    prev_q_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.user,
+            Message.created_at >= prev_start,
+            Message.created_at < start,
+        )
+    )
     active_u_res = await db.execute(
         select(func.count(func.distinct(Conversation.user_id))).where(
             Conversation.created_at >= start,
         )
     )
-    active_users: int = active_u_res.scalar_one() or 0
-
-    # ── 3. Daily query volume (one query) ─────────────────────────────────────
-    daily_res = await db.execute(
+    prev_active_u_res = await db.execute(
+        select(func.count(func.distinct(Conversation.user_id))).where(
+            Conversation.created_at >= prev_start,
+            Conversation.created_at < start,
+        )
+    )
+    daily_rows_res = await db.execute(
         select(
             cast(Message.created_at, Date).label("day"),
             func.count(Message.id).label("cnt"),
@@ -119,18 +68,7 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
         .group_by(cast(Message.created_at, Date))
         .order_by(cast(Message.created_at, Date))
     )
-    daily_map = {str(row.day): row.cnt for row in daily_res.all()}
-
-    query_volume: list[TimeSeriesDataPoint] = []
-    time_series: list[TimeSeriesPoint] = []
-    for i in range(days):
-        day = (start + timedelta(days=i + 1)).date()
-        cnt = daily_map.get(str(day), 0)
-        query_volume.append(TimeSeriesDataPoint(date=day.strftime("%b %d"), value=cnt))
-        time_series.append(TimeSeriesPoint(date=day.strftime("%b %d"), queries=cnt, users=0))
-
-    # ── 4. Peak hours ─────────────────────────────────────────────────────────
-    peak_res = await db.execute(
+    peak_rows_res = await db.execute(
         select(
             func.extract("hour", Message.created_at).label("hr"),
             func.count(Message.id).label("cnt"),
@@ -139,28 +77,72 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
         .group_by(func.extract("hour", Message.created_at))
         .order_by(func.extract("hour", Message.created_at))
     )
-    peak_map = {int(row.hr): row.cnt for row in peak_res.all()}
+    docs_res = await db.execute(select(func.count(Document.id)))
+    indexed_res = await db.execute(
+        select(func.count(Document.id)).where(Document.status == DocumentStatus.indexed)
+    )
+    pending_res = await db.execute(
+        select(func.count(Document.id)).where(Document.status == DocumentStatus.processing)
+    )
+    failed_res = await db.execute(
+        select(func.count(Document.id)).where(Document.status == DocumentStatus.failed)
+    )
+    storage_res = await db.execute(select(func.coalesce(func.sum(Document.file_size), 0)))
+    connectors_res = await db.execute(select(Connector).order_by(Connector.created_at.desc()).limit(10))
+    recent_docs_res = await db.execute(
+        select(Document.id, Document.original_name, Document.created_at)
+        .order_by(Document.created_at.desc())
+        .limit(5)
+    )
+    model_res = await db.execute(
+        select(Conversation.model, func.count(Conversation.id).label("cnt"))
+        .group_by(Conversation.model)
+        .order_by(func.count(Conversation.id).desc())
+    )
+    feedback_up_res = await db.execute(
+        select(func.count(Message.id)).where(Message.feedback_rating == FeedbackRating.up)
+    )
+    feedback_down_res = await db.execute(
+        select(func.count(Message.id)).where(Message.feedback_rating == FeedbackRating.down)
+    )
+
+    # ── Unpack ─────────────────────────────────────────────────────────────
+    total_queries: int = total_q_res.scalar_one() or 0
+    prev_queries: int = prev_q_res.scalar_one() or 0
+    active_users: int = active_u_res.scalar_one() or 0
+    prev_active_users: int = prev_active_u_res.scalar_one() or 0
+    total_docs: int = docs_res.scalar_one() or 0
+    indexed_docs: int = indexed_res.scalar_one() or 0
+    pending_docs: int = pending_res.scalar_one() or 0
+    failed_docs: int = failed_res.scalar_one() or 0
+    storage_bytes: int = storage_res.scalar_one() or 0
+    storage_gb: float = round(storage_bytes / 1_073_741_824, 3)
+
+    feedback_up: int = feedback_up_res.scalar_one() or 0
+    feedback_down: int = feedback_down_res.scalar_one() or 0
+    total_feedback = feedback_up + feedback_down
+    feedback_positive_rate = round(feedback_up / total_feedback, 3) if total_feedback else 0.0
+    feedback_negative_rate = round(feedback_down / total_feedback, 3) if total_feedback else 0.0
+    quality_score = feedback_positive_rate  # 0.0 when no feedback yet
+
+    queries_change = round((total_queries - prev_queries) / max(prev_queries, 1) * 100, 1)
+    users_change = round((active_users - prev_active_users) / max(prev_active_users, 1) * 100, 1)
+
+    # ── Daily chart ────────────────────────────────────────────────────────
+    daily_map = {str(row.day): row.cnt for row in daily_rows_res.all()}
+    query_volume: list[TimeSeriesDataPoint] = []
+    time_series: list[TimeSeriesPoint] = []
+    for i in range(days):
+        day = (start + timedelta(days=i + 1)).date()
+        cnt = daily_map.get(str(day), 0)
+        query_volume.append(TimeSeriesDataPoint(date=day.strftime("%b %d"), value=cnt))
+        time_series.append(TimeSeriesPoint(date=day.strftime("%b %d"), queries=cnt, users=0))
+
+    # ── Peak hours ─────────────────────────────────────────────────────────
+    peak_map = {int(row.hr): row.cnt for row in peak_rows_res.all()}
     peak_hours = [HourlyUsage(hour=h, count=peak_map.get(h, 0)) for h in range(0, 24, 2)]
 
-    # ── 5. Document counts by status in ONE query ─────────────────────────────
-    doc_counts = await db.execute(
-        select(
-            func.count(Document.id).label("total"),
-            func.count(case((Document.status == DocumentStatus.indexed, Document.id))).label("indexed"),
-            func.count(case((Document.status == DocumentStatus.processing, Document.id))).label("pending"),
-            func.count(case((Document.status == DocumentStatus.failed, Document.id))).label("failed"),
-        )
-    )
-    doc_row = doc_counts.one()
-    total_docs: int = doc_row.total or 0
-    indexed_docs: int = doc_row.indexed or 0
-    pending_docs: int = doc_row.pending or 0
-    failed_docs: int = doc_row.failed or 0
-
-    # ── 6. Connectors ─────────────────────────────────────────────────────────
-    connectors_res = await db.execute(
-        select(Connector).order_by(Connector.created_at.desc()).limit(10)
-    )
+    # ── Connectors ─────────────────────────────────────────────────────────
     connectors = connectors_res.scalars().all()
     connector_health = [
         ConnectorHealthSummary(
@@ -174,28 +156,18 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
         for c in connectors
     ]
 
-    # ── 7. Recent docs ────────────────────────────────────────────────────────
-    recent_docs_res = await db.execute(
-        select(Document.id, Document.original_name, Document.created_at)
-        .order_by(Document.created_at.desc())
-        .limit(5)
-    )
+    # ── Recent docs ────────────────────────────────────────────────────────
     most_accessed = [
         DocumentAccess(
             documentId=str(d.id),
-            documentName=d.original_name,
+            documentName=d.original_name or "Untitled",
             accessCount=1,
             lastAccessed=d.created_at.isoformat() if d.created_at else now.isoformat(),
         )
         for d in recent_docs_res.all()
     ]
 
-    # ── 8. Model usage ────────────────────────────────────────────────────────
-    model_res = await db.execute(
-        select(Conversation.model, func.count(Conversation.id).label("cnt"))
-        .group_by(Conversation.model)
-        .order_by(func.count(Conversation.id).desc())
-    )
+    # ── Model breakdown ────────────────────────────────────────────────────
     model_rows = model_res.all()
     total_convs = sum(r.cnt for r in model_rows) or 1
     top_models = [
@@ -205,17 +177,25 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
             percentage=round(r.cnt / total_convs * 100, 1),
         )
         for r in model_rows
-    ] or [ModelUsage(model="claude-sonnet-4-6", queryCount=0, percentage=100.0)]
+    ]
+    if not top_models:
+        top_models = [ModelUsage(model="No conversations yet", queryCount=0, percentage=100.0)]
 
-    # ── Assemble response ─────────────────────────────────────────────────────
+    # ── Trends ────────────────────────────────────────────────────────────
     latency_trend = [TimeSeriesDataPoint(date=d.date, value=1200) for d in query_volume[-14:]]
-    feedback_trend = [TimeSeriesDataPoint(date=d.date, value=75.0) for d in query_volume[-14:]]
+    feedback_trend = [
+        TimeSeriesDataPoint(
+            date=d.date,
+            value=round(feedback_positive_rate * 100, 1),
+        )
+        for d in query_volume[-14:]
+    ]
 
     usage = UsageMetrics(
         totalQueries=total_queries,
         queriesChange=queries_change,
         activeUsers=active_users,
-        activeUsersChange=0.0,
+        activeUsersChange=users_change,
         documentsIndexed=indexed_docs,
         documentsChange=0.0,
         avgResponseTimeMs=1200,
@@ -229,18 +209,18 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
     )
 
     ai_perf = AIPerformanceMetrics(
-        avgQualityScore=0.87,
-        citationAccuracy=0.92,
-        hallucenationRate=0.03,
+        avgQualityScore=quality_score,
+        citationAccuracy=quality_score,
+        hallucenationRate=0.0,
         tokenCostUsd=0.0,
-        successRate=0.87,
-        feedbackPositiveRate=0.78,
-        feedbackNegativeRate=0.22,
-        avgSourcesPerAnswer=2.5,
+        successRate=quality_score,
+        feedbackPositiveRate=feedback_positive_rate,
+        feedbackNegativeRate=feedback_negative_rate,
+        avgSourcesPerAnswer=0.0,
         avgLatencyMs=1200,
         latencyP95Ms=1800,
         latencyP99Ms=2400,
-        errorRate=0.03,
+        errorRate=0.0,
         modelBreakdown=[],
         latencyTrend=latency_trend,
         feedbackTrend=feedback_trend,
@@ -252,7 +232,7 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
         indexedDocuments=indexed_docs,
         pendingDocuments=pending_docs,
         failedDocuments=failed_docs,
-        storageUsedGb=round(total_docs * 0.5, 2),
+        storageUsedGb=storage_gb,
         storageQuotaGb=100.0,
         staleDocuments=0,
         coverageScore=round(indexed_docs / max(total_docs, 1), 2),
@@ -274,8 +254,6 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
         generatedAt=now.isoformat(),
     )
 
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/usage", response_model=UsageMetrics)
 async def get_usage(
@@ -323,14 +301,41 @@ async def get_dashboard(
     except Exception:
         days = 30
 
-    cache_key = f"analytics:dashboard:{current_user.id}:{days}"
-    cached = await _cache_get(cache_key)
-    if cached:
-        return AnalyticsDashboard(**cached)
+    return await _build_dashboard(db, current_user.id, days=days)
 
-    result = await _build_dashboard(db, current_user.id, days=days)
-    await _cache_set(cache_key, result.dict(), ttl=120)
-    return result
+
+@router.get("/knowledge-gaps")
+async def get_knowledge_gaps(
+    range: str = Query("30d"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Return topics that were queried but have low document coverage."""
+    # Queries with no source citations indicate knowledge gaps
+    no_sources_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.assistant,
+            Message.sources == [],
+        )
+    )
+    no_sources: int = no_sources_res.scalar_one() or 0
+
+    total_assistant_res = await db.execute(
+        select(func.count(Message.id)).where(Message.role == MessageRole.assistant)
+    )
+    total_assistant: int = total_assistant_res.scalar_one() or 0
+
+    gap_rate = round(no_sources / max(total_assistant, 1), 2)
+
+    # Return summary — detailed topic extraction requires NLP not available here
+    return {
+        "summary": {
+            "totalAnswersWithoutSources": no_sources,
+            "totalAnswers": total_assistant,
+            "gapRate": gap_rate,
+        },
+        "gaps": [],
+    }
 
 
 @router.get("/home-stats")
@@ -339,52 +344,30 @@ async def get_home_stats(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Return real stats from the database for the home dashboard."""
-    cache_key = f"analytics:home-stats:{current_user.id}"
-    cached = await _cache_get(cache_key)
-    if cached:
-        return cached
-
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday_start = today_start - timedelta(days=1)
     seven_days_ago = now - timedelta(days=7)
 
-    # ── 1. Query counts (today + yesterday) in ONE query ─────────────────────
-    msg_counts = await db.execute(
-        select(
-            func.count(
-                case((Message.created_at >= today_start, Message.id))
-            ).label("today"),
-            func.count(
-                case((
-                    (Message.created_at >= yesterday_start) & (Message.created_at < today_start),
-                    Message.id,
-                ))
-            ).label("yesterday"),
-        ).where(
+    # Run queries sequentially (AsyncSession does not support concurrent execute)
+    queries_today_res = await db.execute(
+        select(func.count(Message.id)).where(
             Message.role == MessageRole.user,
-            Message.created_at >= yesterday_start,
+            Message.created_at >= today_start,
         )
     )
-    msg_row = msg_counts.one()
-    queries_today: int = msg_row.today or 0
-    queries_yesterday: int = msg_row.yesterday or 0
-
-    # ── 2. Aggregated counts (docs + connectors + convs) in ONE query ─────────
-    # These are on separate tables, so we do 3 lightweight scalar queries
-    # (each is a simple index-only count — very fast with proper indexes)
+    queries_yesterday_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.user,
+            Message.created_at >= yesterday_start,
+            Message.created_at < today_start,
+        )
+    )
     docs_res = await db.execute(select(func.count(Document.id)))
-    total_docs: int = docs_res.scalar_one() or 0
-
     connectors_res = await db.execute(
         select(func.count(Connector.id)).where(Connector.status == ConnectorStatus.connected)
     )
-    active_connectors: int = connectors_res.scalar_one() or 0
-
     convs_res = await db.execute(select(func.count(Conversation.id)))
-    total_conversations: int = convs_res.scalar_one() or 0
-
-    # ── 3. Daily chart data ───────────────────────────────────────────────────
     daily_res = await db.execute(
         select(
             cast(Message.created_at, Date).label("day"),
@@ -394,14 +377,6 @@ async def get_home_stats(
         .group_by(cast(Message.created_at, Date))
         .order_by(cast(Message.created_at, Date))
     )
-    daily_map = {str(row.day): row.cnt for row in daily_res.all()}
-    chart_data = [
-        {"date": (seven_days_ago + timedelta(days=i + 1)).date().strftime("%b %d"),
-         "queries": daily_map.get(str((seven_days_ago + timedelta(days=i + 1)).date()), 0)}
-        for i in range(7)
-    ]
-
-    # ── 4. Recent activity (convs + docs) in TWO queries ─────────────────────
     recent_convs_res = await db.execute(
         select(Conversation.title, Conversation.created_at)
         .order_by(Conversation.created_at.desc())
@@ -413,18 +388,28 @@ async def get_home_stats(
         .limit(3)
     )
 
-    activity = [
-        {"type": "chat", "action": f"Asked: {c.title}", "time": c.created_at.isoformat()}
-        for c in recent_convs_res.all()
-    ] + [
-        {"type": "document", "action": f"Uploaded {d.original_name}", "time": d.created_at.isoformat()}
-        for d in recent_docs_res.all()
-    ]
+    queries_today: int = queries_today_res.scalar_one() or 0
+    queries_yesterday: int = queries_yesterday_res.scalar_one() or 0
+    total_docs: int = docs_res.scalar_one() or 0
+    active_connectors: int = connectors_res.scalar_one() or 0
+    total_conversations: int = convs_res.scalar_one() or 0
+
+    daily_map = {str(row.day): row.cnt for row in daily_res.all()}
+    chart_data = []
+    for i in range(7):
+        day = (seven_days_ago + timedelta(days=i + 1)).date()
+        chart_data.append({"date": day.strftime("%b %d"), "queries": daily_map.get(str(day), 0)})
+
+    activity = []
+    for c in recent_convs_res.all():
+        activity.append({"type": "chat", "action": f"Asked: {c.title}", "time": c.created_at.isoformat()})
+    for d in recent_docs_res.all():
+        activity.append({"type": "document", "action": f"Uploaded {d.original_name}", "time": d.created_at.isoformat()})
     activity.sort(key=lambda x: x["time"], reverse=True)
 
     queries_change = round((queries_today - queries_yesterday) / max(queries_yesterday, 1) * 100, 1)
 
-    result = {
+    return {
         "queriesToday": queries_today,
         "queriesChange": queries_change,
         "totalDocuments": total_docs,
@@ -434,5 +419,112 @@ async def get_home_stats(
         "recentActivity": activity[:5],
     }
 
-    await _cache_set(cache_key, result, ttl=60)
-    return result
+
+@router.get("/insights")
+async def get_insights(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Generate actionable insights from real analytics data."""
+    dashboard = await _build_dashboard(db, current_user.id, days=30)
+    usage = dashboard.usage
+    knowledge = dashboard.knowledge
+    ai_perf = dashboard.aiPerformance
+
+    insights = []
+
+    # Knowledge base health
+    total = knowledge.totalDocuments
+    indexed = knowledge.indexedDocuments
+    failed = knowledge.failedDocuments
+    if total > 0:
+        coverage = round(indexed / total * 100, 1)
+        if coverage < 80:
+            insights.append({
+                "id": "kb-coverage", "type": "warning",
+                "title": f"Only {coverage}% of documents are indexed",
+                "desc": f"{indexed} of {total} documents are searchable. {failed} failed to index.",
+                "action": "Review failed documents", "impact": "High",
+            })
+        else:
+            insights.append({
+                "id": "kb-coverage", "type": "trend",
+                "title": f"Knowledge base is {coverage}% indexed",
+                "desc": f"{indexed} of {total} documents are fully searchable and ready for AI queries.",
+                "action": "View knowledge base", "impact": "Positive",
+            })
+
+    # Query volume trend
+    queries = usage.totalQueries
+    change = usage.queriesChange
+    if queries > 0:
+        if change > 20:
+            insights.append({
+                "id": "query-growth", "type": "trend",
+                "title": f"Query volume up {change}% vs previous period",
+                "desc": f"{queries} queries in the last 30 days. Strong engagement growth.",
+                "action": "View usage analytics", "impact": "Positive",
+            })
+        elif change < -20:
+            insights.append({
+                "id": "query-decline", "type": "warning",
+                "title": f"Query volume down {abs(change)}% vs previous period",
+                "desc": f"Usage has dropped from the previous period. Consider user outreach.",
+                "action": "Check engagement", "impact": "Medium",
+            })
+
+    # Active users
+    active = usage.activeUsers
+    if active > 0:
+        insights.append({
+            "id": "active-users", "type": "opportunity",
+            "title": f"{active} active users in the last 30 days",
+            "desc": "Expand training to inactive team members to increase platform adoption.",
+            "action": "Identify inactive users", "impact": "High",
+        })
+
+    # Feedback quality
+    pos_rate = ai_perf.feedbackPositiveRate
+    neg_rate = ai_perf.feedbackNegativeRate
+    if pos_rate > 0 or neg_rate > 0:
+        score = round(pos_rate * 100, 1)
+        if score >= 80:
+            insights.append({
+                "id": "ai-quality", "type": "trend",
+                "title": f"AI response quality at {score}% positive feedback",
+                "desc": "Users are satisfied with AI answers. Keep knowledge base fresh to maintain quality.",
+                "action": "View AI performance", "impact": "Positive",
+            })
+        else:
+            insights.append({
+                "id": "ai-quality", "type": "warning",
+                "title": f"AI response quality at {score}% positive feedback",
+                "desc": "Low positive feedback rate. Add more relevant documents to improve answer quality.",
+                "action": "Expand knowledge base", "impact": "High",
+            })
+
+    # Storage
+    storage_gb = knowledge.storageUsedGb
+    if storage_gb > 0:
+        insights.append({
+            "id": "storage", "type": "cost",
+            "title": f"{round(storage_gb, 2)} GB of knowledge stored",
+            "desc": f"Storage is at {round(storage_gb / knowledge.storageQuotaGb * 100, 1)}% of your {knowledge.storageQuotaGb} GB quota.",
+            "action": "Manage documents", "impact": "Info",
+        })
+
+    if not insights:
+        insights.append({
+            "id": "getting-started", "type": "opportunity",
+            "title": "Get started by uploading documents",
+            "desc": "Upload your first documents to the knowledge base and start chatting with your data.",
+            "action": "Upload documents", "impact": "High",
+        })
+
+    return {
+        "insights": insights,
+        "generatedAt": dashboard.generatedAt,
+        "totalInsights": len(insights),
+        "highImpact": sum(1 for i in insights if i["impact"] == "High"),
+        "opportunities": sum(1 for i in insights if i["type"] == "opportunity"),
+    }

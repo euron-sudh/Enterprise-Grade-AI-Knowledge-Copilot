@@ -193,15 +193,16 @@ async def stream_messages(
 
     await db.flush()
 
-    # Fetch last 20 messages using DESC + reverse — leverages the created_at index
+    # Fetch conversation history
     history_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
-        .where(Message.id != user_msg.id)
-        .order_by(Message.created_at.desc())
-        .limit(20)
+        .where(Message.id != user_msg.id)  # exclude the just-added user message
+        .order_by(Message.created_at.asc())
+        .limit(20)  # last 20 messages for context
     )
-    history = list(reversed(history_result.scalars().all()))
+    history = history_result.scalars().all()
+    # Append user message at end
     history.append(user_msg)
 
     model = body.model or conv.model or "claude-sonnet-4-6"
@@ -216,6 +217,7 @@ async def stream_messages(
                 user_message_content=body.content,
                 system_prompt=body.systemPrompt,
                 images=body.images,
+                user_id=current_user.id,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

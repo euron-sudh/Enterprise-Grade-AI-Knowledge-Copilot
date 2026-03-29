@@ -143,8 +143,15 @@ class AskRequest(BaseModel):
     model: str = "gpt-4o-mini"
 
 
+class AskSource(BaseModel):
+    documentName: str
+    documentType: str
+    chunkText: str
+
+
 class AskResponse(BaseModel):
     answer: str
+    sources: list[AskSource] = []
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -153,23 +160,52 @@ async def voice_ask(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Answer a voice question using RAG + AI, returns plain text for TTS."""
+    """Answer a voice question using RAG + AI, returns plain text for TTS plus cited sources."""
     from app.config import settings
-    from app.services.ai_service import _search_relevant_chunks
+    from app.services.ai_service import _search_relevant_chunks, _list_user_documents
 
-    # 1. Search relevant document chunks
-    sources = await _search_relevant_chunks(body.question, db)
+    # 1. Search relevant document chunks (scoped to this user) + inventory
+    sources = await _search_relevant_chunks(body.question, db, user_id=current_user.id)
+    doc_inventory = await _list_user_documents(current_user.id, db)
 
     system_prompt = (
-        "You are KnowledgeForge Voice Assistant. Answer the user's question clearly and concisely "
-        "in 2-3 sentences — your response will be read aloud by text-to-speech. "
-        "Do not use markdown, bullet points, or special characters."
+        "You are KnowledgeForge Voice Assistant. Answer the user's question clearly "
+        "using the provided knowledge base context. "
+        "Your response will be read aloud by text-to-speech, so avoid markdown, "
+        "bullet points, asterisks, or special symbols. "
+        "If asked what files or documents are available, list them by name. "
+        "Always mention which document(s) your answer comes from."
     )
+
+    if doc_inventory:
+        inv_lines = []
+        for d in doc_inventory:
+            parts = [d["name"]]
+            if d["wordCount"]:
+                parts.append(f"{d['wordCount']} words")
+            if d["pageCount"]:
+                parts.append(f"{d['pageCount']} pages")
+            if d["uploadedAt"]:
+                parts.append(f"uploaded {d['uploadedAt']}")
+            if d["type"] == "video" and d["wordCount"] < 5:
+                parts.append("no transcript available")
+            inv_lines.append(f"{d['type'].upper()}: {'; '.join(parts)}")
+        system_prompt += (
+            f"\n\nKnowledge base ({len(doc_inventory)} file(s)):\n"
+            + "\n".join(f"- {l}" for l in inv_lines)
+        )
+    else:
+        system_prompt += (
+            "\n\nThe user has no documents uploaded yet. "
+            "Let them know they can upload files in the Knowledge Base section."
+        )
+
     if sources:
         context = "\n\n".join(
-            f"[{s['documentName']}]: {s['chunkText']}" for s in sources
+            f"[{s['documentName']} ({s['documentType'].upper()})]:\n{s['chunkText']}"
+            for s in sources
         )
-        system_prompt += f"\n\nContext from knowledge base:\n{context}\n\nUse this context to answer."
+        system_prompt += f"\n\nRelevant content from knowledge base:\n{context}\n\nBase your answer on this content."
 
     messages = [{"role": "user", "content": body.question}]
 
@@ -180,8 +216,8 @@ async def voice_ask(
             import anthropic
             client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
             response = await client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=300,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=500,
                 system=system_prompt,
                 messages=messages,
             )
@@ -195,7 +231,7 @@ async def voice_ask(
             client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
-                max_tokens=300,
+                max_tokens=500,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
             )
             answer = response.choices[0].message.content or ""
@@ -203,19 +239,33 @@ async def voice_ask(
             logger.warning(f"OpenAI voice ask failed: {e}")
 
     if not answer:
-        # Fallback: answer from context chunks if available, else generic
         if sources:
             answer = (
-                f"Based on your knowledge base, here is what I found: "
-                f"{sources[0]['chunkText'][:200]}."
+                f"Based on your document {sources[0]['documentName']}, here is what I found: "
+                f"{sources[0]['chunkText'][:250]}."
+            )
+        elif doc_inventory:
+            names = ", ".join(d["name"] for d in doc_inventory[:5])
+            answer = (
+                f"Your knowledge base contains {len(doc_inventory)} document(s): {names}. "
+                "Ask me anything about them."
             )
         else:
             answer = (
-                "I'm KnowledgeForge Voice Assistant. I can answer questions about your documents. "
-                "Please upload documents to your knowledge base and ask me anything about them."
+                "I'm KnowledgeForge Voice Assistant. You have no documents uploaded yet. "
+                "Upload files in the Knowledge Base section and I can answer questions about them."
             )
 
-    return AskResponse(answer=answer)
+    cited_sources = [
+        AskSource(
+            documentName=s["documentName"],
+            documentType=s["documentType"],
+            chunkText=s["chunkText"],
+        )
+        for s in sources
+    ]
+
+    return AskResponse(answer=answer, sources=cited_sources)
 
 
 @router.post("/sessions", response_model=VoiceSessionResponse)

@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -30,6 +31,32 @@ logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mpeg", ".mpga"}
 WHISPER_SIZE_LIMIT = 25 * 1024 * 1024   # 25 MB — OpenAI Whisper hard limit
 MAX_VIDEO_UPLOAD   = 100 * 1024 * 1024  # 100 MB — user-facing limit
+GEMINI_VIDEO_MODEL = "gemini-2.0-flash-lite"
+
+# MIME types accepted by the Gemini Files API
+GEMINI_VIDEO_MIME = {
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".webm": "video/webm",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+    ".mpeg": "video/mpeg",
+    ".mpga": "audio/mpeg",
+}
+
+GEMINI_VIDEO_PROMPT = (
+    "Analyze this video/audio comprehensively and return a structured response with:\n"
+    "1. TRANSCRIPT: Full verbatim transcript with approximate timestamps (e.g. [0:00], [1:30]).\n"
+    "2. VISUAL SUMMARY: Describe key visual elements, slides, diagrams, or on-screen text.\n"
+    "3. KEY TOPICS: Bullet list of main topics and concepts discussed.\n"
+    "4. SUMMARY: A concise 3-5 sentence executive summary.\n"
+    "Be thorough — this will be used for enterprise knowledge retrieval."
+)
 
 router = APIRouter()
 
@@ -46,7 +73,7 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Document).where(Document.user_id == current_user.id)
+    q = select(Document)
 
     if search:
         q = q.where(Document.name.ilike(f"%{search}%"))
@@ -135,6 +162,99 @@ async def list_document_chunks(
     )
 
 
+@router.get("/documents/{document_id}/download")
+async def download_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Download a document.
+    - Uploaded files (pdf, docx, txt, etc.): served directly from disk.
+    - Web/crawler/connector docs: chunks are assembled into a .txt export.
+    """
+    from fastapi.responses import FileResponse, PlainTextResponse
+    import mimetypes
+
+    doc = await _get_user_document(document_id, current_user.id, db)
+
+    WEB_TYPES = {"web", "google_drive", "github", "figma", "web_crawler"}
+
+    if doc.file_type not in WEB_TYPES and doc.file_path and Path(doc.file_path).is_file():
+        mime, _ = mimetypes.guess_type(doc.file_path)
+        return FileResponse(
+            path=doc.file_path,
+            filename=doc.original_name or doc.name,
+            media_type=mime or "application/octet-stream",
+        )
+
+    # For web/connector docs, assemble chunks into a text file
+    result = await db.execute(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id)
+        .order_by(DocumentChunk.chunk_index.asc())
+    )
+    chunks = result.scalars().all()
+
+    source_url = doc.original_name or doc.file_path or ""
+    lines = [f"# {doc.name}"]
+    if source_url.startswith("http"):
+        lines.append(f"Source: {source_url}")
+    lines.append(f"Type: {doc.file_type}")
+    lines.append(f"Words: {doc.word_count or 0}")
+    lines.append("")
+    for chunk in chunks:
+        lines.append(chunk.content)
+        lines.append("")
+
+    content = "\n".join(lines)
+    safe_name = re.sub(r'[^\w\-.]', '_', doc.name)[:80] + ".txt"
+    return PlainTextResponse(
+        content=content,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
+@router.get("/documents/{document_id}/stream")
+async def stream_document(
+    document_id: uuid.UUID,
+    token: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Stream a video/audio file inline with Range request support.
+    Accepts ?token=<jwt> in query params so <video src> can use it directly.
+    """
+    from fastapi.responses import FileResponse
+    import mimetypes
+
+    doc = await _get_user_document(document_id, current_user.id, db)
+
+    if not doc.file_path or not Path(doc.file_path).is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    mime, _ = mimetypes.guess_type(doc.file_path)
+    # Ensure common video types are recognised even if mimetypes DB is sparse
+    ext = Path(doc.file_path).suffix.lower()
+    MIME_OVERRIDES = {
+        ".mp4": "video/mp4", ".m4v": "video/mp4",
+        ".mov": "video/quicktime", ".avi": "video/x-msvideo",
+        ".mkv": "video/x-matroska", ".webm": "video/webm",
+        ".mp3": "audio/mpeg", ".m4a": "audio/mp4",
+        ".wav": "audio/wav", ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
+    }
+    media_type = MIME_OVERRIDES.get(ext) or mime or "application/octet-stream"
+
+    # FileResponse natively handles Range requests (byte serving / seeking)
+    return FileResponse(
+        path=doc.file_path,
+        media_type=media_type,
+        headers={"Content-Disposition": "inline"},
+    )
+
+
 @router.post("/documents/upload")
 async def upload_documents(
     files: List[UploadFile] = File(...),
@@ -161,12 +281,19 @@ async def upload_video(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a video/audio file, transcribe with OpenAI Whisper, and index for RAG chat."""
+    """
+    Upload a video/audio file and index it for RAG chat.
+
+    Processing priority:
+    1. Gemini 2.0 Flash (multimodal) — full video understanding: transcript +
+       visual descriptions + key topics + summary.
+    2. OpenAI Whisper fallback — audio-only transcription when no Google key.
+    """
     suffix = Path(file.filename or "video.mp4").suffix.lower()
     if suffix not in VIDEO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported format. Supported: mp4, mov, avi, mkv, webm, mp3, wav, m4a, ogg",
+            detail="Unsupported format. Supported: mp4, mov, avi, mkv, webm, mp3, wav, m4a, ogg",
         )
 
     content = await file.read()
@@ -181,22 +308,18 @@ async def upload_video(
             ),
         )
 
-    if not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip()):
-        raise HTTPException(
-            status_code=400,
-            detail="OpenAI API key not configured. Video transcription requires OpenAI Whisper.",
-        )
+    no_ai_key = not settings.has_google_key and not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip())
 
     original_name = file.filename or f"video{suffix}"
 
-    # Save file to disk
+    # ── Save file to disk ──────────────────────────────────────────────────────
     upload_dir = Path(settings.UPLOAD_DIR) / str(current_user.id)
     upload_dir.mkdir(parents=True, exist_ok=True)
     file_path = upload_dir / f"{uuid.uuid4()}{suffix}"
     with open(file_path, "wb") as f:
         f.write(content)
 
-    # Create document record (status=processing so the UI shows a spinner)
+    # ── Create document record (status=processing) ─────────────────────────────
     doc = Document(
         user_id=current_user.id,
         name=original_name,
@@ -209,56 +332,52 @@ async def upload_video(
     db.add(doc)
     await db.flush()
 
-    # Transcribe with OpenAI Whisper
-    # For files > 25 MB (Whisper hard limit) we extract a compressed audio track
-    # with ffmpeg first, then send that smaller file to Whisper.
     audio_tmp_path: Optional[Path] = None
     try:
-        import subprocess
-        from openai import OpenAI as SyncOpenAI
-        client = SyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-        whisper_input = file_path
-        if file_size > WHISPER_SIZE_LIMIT:
-            # Extract audio as mp3 (typically 1-5 MB for a 100 MB video)
-            audio_tmp_path = upload_dir / f"{file_path.stem}_audio.mp3"
-            ffmpeg_cmd = [
-                "ffmpeg", "-y",
-                "-i", str(file_path),
-                "-vn",           # no video
-                "-q:a", "4",     # ~128 kbps VBR
-                "-map", "a",
-                str(audio_tmp_path),
-            ]
-            proc = subprocess.run(ffmpeg_cmd, capture_output=True, timeout=300)
-            if proc.returncode != 0 or not audio_tmp_path.exists():
-                raise RuntimeError(
-                    f"ffmpeg audio extraction failed: {proc.stderr.decode(errors='replace')[:500]}"
-                )
-            whisper_input = audio_tmp_path
-            logger.info(
-                "Large video '%s' (%d MB): extracted audio to %s (%d KB)",
-                original_name,
-                file_size // 1024 // 1024,
-                audio_tmp_path.name,
-                audio_tmp_path.stat().st_size // 1024,
-            )
-
-        with open(whisper_input, "rb") as audio_file:
-            result = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text",
-            )
-
-        transcript_text = str(result).strip()
-        if not transcript_text:
-            transcript_text = f"[No speech detected in '{original_name}']"
-
-        # Chunk transcript and index as DocumentChunks (reuses existing RAG pipeline)
         from app.services.document_service import _chunk_text
-        raw_chunks = _chunk_text(transcript_text)
 
+        # ── NO AI KEY: store video with placeholder transcript ─────────────────
+        if no_ai_key:
+            transcript_text = f"[Video file '{original_name}' stored. No AI key configured for transcription.]"
+            engine = "none"
+
+        # ── PRIMARY: Gemini 2.0 Flash multimodal embedding ────────────────────
+        elif settings.has_google_key:
+            transcript_text = await _gemini_video_analyze(
+                file_path=file_path,
+                suffix=suffix,
+                original_name=original_name,
+            )
+            engine = f"Gemini {GEMINI_VIDEO_MODEL}"
+        else:
+            # ── FALLBACK: OpenAI Whisper (audio-only) ─────────────────────────
+            from openai import OpenAI as SyncOpenAI
+            client = SyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+            if file_size > WHISPER_SIZE_LIMIT:
+                # File exceeds Whisper's 25 MB limit — truncate to first 25 MB
+                # (ffmpeg is not required; we just slice the raw bytes)
+                logger.warning(
+                    "Video '%s' is %d MB, exceeds Whisper 25 MB limit — truncating to first 25 MB for transcription",
+                    original_name, file_size // (1024 * 1024),
+                )
+                audio_tmp_path = upload_dir / f"{file_path.stem}_truncated{suffix}"
+                audio_tmp_path.write_bytes(content[:WHISPER_SIZE_LIMIT])
+            else:
+                audio_tmp_path = None
+
+            whisper_input = audio_tmp_path if audio_tmp_path else file_path
+            with open(whisper_input, "rb") as af:
+                result = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=af,
+                    response_format="text",
+                )
+            transcript_text = str(result).strip() or f"[No speech detected in '{original_name}']"
+            engine = "OpenAI Whisper"
+
+        # ── Chunk and index ────────────────────────────────────────────────────
+        raw_chunks = _chunk_text(transcript_text)
         for idx, chunk_text in raw_chunks:
             db.add(DocumentChunk(
                 document_id=doc.id,
@@ -272,22 +391,22 @@ async def upload_video(
         await db.flush()
 
         logger.info(
-            "Video '%s' transcribed: %d chars, %d chunks", original_name, len(transcript_text), len(raw_chunks)
+            "Video '%s' indexed via %s: %d chars, %d chunks",
+            original_name, engine, len(transcript_text), len(raw_chunks),
         )
 
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Video transcription failed for '%s': %s", original_name, exc)
+        logger.error("Video processing failed for '%s': %s", original_name, exc)
         doc.status = "failed"
         await db.flush()
         try:
             os.remove(str(file_path))
         except Exception:
             pass
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Video processing failed: {exc}")
     finally:
-        # Clean up temp audio file if one was created
         if audio_tmp_path and audio_tmp_path.exists():
             try:
                 os.remove(str(audio_tmp_path))
@@ -297,6 +416,68 @@ async def upload_video(
     return DocumentOut.from_orm(doc)
 
 
+async def _gemini_video_analyze(file_path: Path, suffix: str, original_name: str) -> str:
+    """
+    Upload the video/audio to the Gemini Files API and use Gemini 2.0 Flash
+    to produce a rich multimodal analysis: transcript + visual descriptions +
+    key topics + executive summary.
+
+    Returns the combined analysis text ready for chunking and RAG indexing.
+    """
+    import asyncio
+    import time
+
+    def _run_sync() -> str:
+        import google.generativeai as genai  # type: ignore
+
+        genai.configure(api_key=settings.GOOGLE_API_KEY)
+
+        mime = GEMINI_VIDEO_MIME.get(suffix, "video/mp4")
+        logger.info("Uploading '%s' to Gemini Files API (mime=%s)…", original_name, mime)
+
+        uploaded = genai.upload_file(path=str(file_path), mime_type=mime)
+
+        # Poll until processing is complete (Gemini processes server-side)
+        deadline = time.time() + 600  # 10-minute timeout
+        while uploaded.state.name == "PROCESSING":
+            if time.time() > deadline:
+                raise TimeoutError("Gemini file processing timed out after 10 minutes")
+            time.sleep(5)
+            uploaded = genai.get_file(uploaded.name)
+
+        if uploaded.state.name == "FAILED":
+            raise RuntimeError(f"Gemini file processing failed for '{original_name}'")
+
+        logger.info("Gemini file ready: %s — running %s analysis…", uploaded.name, GEMINI_VIDEO_MODEL)
+
+        model = genai.GenerativeModel(GEMINI_VIDEO_MODEL)
+        response = model.generate_content(
+            [uploaded, GEMINI_VIDEO_PROMPT],
+            generation_config=genai.GenerationConfig(
+                temperature=0.2,
+                max_output_tokens=8192,
+            ),
+        )
+
+        # Clean up remote file to avoid storage accumulation
+        try:
+            genai.delete_file(uploaded.name)
+        except Exception:
+            pass
+
+        analysis = response.text.strip()
+        if not analysis:
+            analysis = f"[No content extracted from '{original_name}' via Gemini 2.0]"
+
+        logger.info(
+            "Gemini 2.0 analysis for '%s': %d chars", original_name, len(analysis)
+        )
+        return analysis
+
+    # Run the blocking SDK calls in a thread pool so we don't block the event loop
+    return await asyncio.get_event_loop().run_in_executor(None, _run_sync)
+
+
 # ── Collections ───────────────────────────────────────────────────────────────
 
 @router.get("/collections")
@@ -304,26 +485,31 @@ async def list_collections(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Single query with LEFT JOIN + GROUP BY to avoid N+1
     result = await db.execute(
-        select(Collection, func.count(Document.id).label("doc_count"))
-        .outerjoin(Document, Document.collection_id == Collection.id)
+        select(Collection)
         .where(Collection.user_id == current_user.id)
-        .group_by(Collection.id)
         .order_by(Collection.created_at.desc())
     )
-    rows = result.all()
-    return [
-        CollectionOut(
-            id=col.id,
-            name=col.name,
-            description=col.description,
-            color=col.color,
-            documentCount=doc_count,
-            createdAt=col.created_at,
+    collections = result.scalars().all()
+
+    # Load document counts
+    out = []
+    for col in collections:
+        count_result = await db.execute(
+            select(func.count(Document.id)).where(Document.collection_id == col.id)
         )
-        for col, doc_count in rows
-    ]
+        doc_count = count_result.scalar() or 0
+        out.append(
+            CollectionOut(
+                id=col.id,
+                name=col.name,
+                description=col.description,
+                color=col.color,
+                documentCount=doc_count,
+                createdAt=col.created_at,
+            )
+        )
+    return out
 
 
 @router.post("/collections", response_model=CollectionOut, status_code=status.HTTP_201_CREATED)
@@ -414,6 +600,13 @@ async def sync_connector(
             connector.status = ConnectorStatus.connected
             await db.flush()
             return {"message": f"Google Drive sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
+
+        if connector.type == "web_crawler":
+            chunks_created = await _sync_web_crawler(connector, current_user.id, db)
+            connector.status = ConnectorStatus.connected
+            connector.document_count = chunks_created
+            await db.flush()
+            return {"message": f"Web crawl complete: {chunks_created} pages indexed", "connectorId": str(connector_id)}
 
         # Generic / unimplemented connector types — mark connected without real sync
         connector.status = ConnectorStatus.connected
@@ -780,6 +973,276 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
 
     await db.flush()
     return len(chunks_text)
+
+
+async def _sync_web_crawler(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
+    """
+    Crawl a website starting from the configured URL, extract text from each page,
+    and store it as DocumentChunks so it becomes searchable via RAG.
+
+    Strategy:
+    1. Try trafilatura (best-in-class main-content extractor, strips nav/ads/footer).
+    2. Fall back to BeautifulSoup targeting semantic content tags.
+    3. If a page looks JS-only (<500 chars extracted), retry with a Googlebot UA
+       — many Next.js/React sites SSR their content for crawlers.
+    4. Discover extra URLs from sitemap.xml in addition to link-following.
+
+    Returns the number of pages indexed.
+    """
+    import httpx
+    import re
+    from urllib.parse import urljoin, urlparse
+
+    try:
+        import trafilatura
+        HAS_TRAFILATURA = True
+    except ImportError:
+        HAS_TRAFILATURA = False
+
+    try:
+        from bs4 import BeautifulSoup
+        HAS_BS4 = True
+    except ImportError:
+        HAS_BS4 = False
+
+    cfg: Dict[str, Any] = connector.config or {}
+    start_url: str = cfg.get("url", "")
+    max_depth: int = min(int(cfg.get("depth", 2)), 4)
+    max_pages: int = 50
+
+    if not start_url:
+        raise ValueError("Web crawler URL missing in connector config")
+
+    base_domain = urlparse(start_url).netloc
+
+    _UA_BOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+    _UA_BROWSER = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+
+    def _bs4_extract(html: str) -> str:
+        """BeautifulSoup content extraction targeting semantic tags."""
+        if not HAS_BS4:
+            return ""
+        soup = BeautifulSoup(html, "lxml")
+        # Remove noise tags
+        for tag in soup(["script", "style", "nav", "header", "footer",
+                          "aside", "noscript", "svg", "form", "iframe"]):
+            tag.decompose()
+        # Try semantic content containers first
+        for selector in ["main", "article", '[role="main"]',
+                          ".content", "#content", ".main", "#main",
+                          ".post-body", ".entry-content", ".page-content"]:
+            el = soup.select_one(selector)
+            if el:
+                text = el.get_text(separator="\n", strip=True)
+                if len(text) > 200:
+                    return text
+        # Fall back to body
+        body = soup.find("body")
+        return body.get_text(separator="\n", strip=True) if body else ""
+
+    def _extract_text(html: str) -> str:
+        """Try trafilatura first, then BS4, then regex fallback."""
+        # trafilatura: specifically designed to extract main article/page text
+        if HAS_TRAFILATURA:
+            extracted = trafilatura.extract(
+                html,
+                include_tables=True,
+                include_links=False,
+                no_fallback=False,
+                favor_precision=False,
+            )
+            if extracted and len(extracted.strip()) > 150:
+                return extracted.strip()
+
+        # BS4: targets semantic content selectors
+        bs_text = _bs4_extract(html)
+        if len(bs_text) > 150:
+            return bs_text
+
+        # Last resort: regex strip
+        clean = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+        clean = re.sub(r'<[^>]+>', ' ', clean)
+        clean = re.sub(r'[ \t]+', ' ', clean)
+        return re.sub(r'\n{3,}', '\n\n', clean).strip()
+
+    def _extract_title(html: str, url: str) -> str:
+        if HAS_BS4:
+            soup = BeautifulSoup(html, "lxml")
+            og = soup.find("meta", property="og:title")
+            if og and og.get("content"):
+                return og["content"].strip()
+            if soup.title and soup.title.string:
+                return soup.title.string.strip()
+        m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+        return re.sub(r'<[^>]+>', '', m.group(1)).strip() if m else url
+
+    def _extract_links(html: str, current_url: str) -> List[str]:
+        links = []
+        if HAS_BS4:
+            soup = BeautifulSoup(html, "lxml")
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if not href or href.startswith(("mailto:", "tel:", "javascript:")):
+                    continue
+                full = urljoin(current_url, href)
+                parsed = urlparse(full)
+                if parsed.netloc == base_domain and parsed.scheme in ("http", "https"):
+                    clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+                    links.append(clean)
+        else:
+            hrefs = re.findall(r'<a[^>]+href=["\']([^"\'#?][^"\']*)["\']', html, re.IGNORECASE)
+            for href in hrefs:
+                full = urljoin(current_url, href)
+                parsed = urlparse(full)
+                if parsed.netloc == base_domain and parsed.scheme in ("http", "https"):
+                    links.append(f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/"))
+        return links
+
+    async def _fetch_sitemap_urls(client: httpx.AsyncClient) -> List[str]:
+        """Try to discover pages from sitemap.xml / sitemap_index.xml."""
+        urls: List[str] = []
+        for sitemap_path in ["/sitemap.xml", "/sitemap_index.xml", "/sitemap/sitemap.xml"]:
+            sitemap_url = f"https://{base_domain}{sitemap_path}"
+            try:
+                r = await client.get(sitemap_url, timeout=8.0)
+                if r.status_code == 200 and "xml" in r.headers.get("content-type", ""):
+                    found = re.findall(r'<loc>\s*(https?://[^<]+)\s*</loc>', r.text)
+                    same_domain = [
+                        u.strip() for u in found
+                        if urlparse(u.strip()).netloc == base_domain
+                    ]
+                    urls.extend(same_domain[:40])
+                    if urls:
+                        break
+            except Exception:
+                pass
+        return urls
+
+    async def _fetch_page(client: httpx.AsyncClient, url: str, ua: str) -> str | None:
+        """Fetch a URL with a given User-Agent, return HTML or None."""
+        try:
+            resp = await client.get(
+                url,
+                headers={"User-Agent": ua,
+                         "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+                         "Accept-Language": "en-US,en;q=0.9"},
+                timeout=20.0,
+                follow_redirects=True,
+            )
+            if resp.status_code != 200:
+                return None
+            ct = resp.headers.get("content-type", "")
+            if "text/html" not in ct:
+                return None
+            return resp.text
+        except Exception as exc:
+            logger.warning("Crawler fetch failed %s: %s", url, exc)
+            return None
+
+    # BFS crawl
+    visited: set = set()
+    queue: List[tuple] = [(start_url.rstrip("/"), 0)]
+    pages: List[Dict[str, str]] = []
+
+    async with httpx.AsyncClient() as client:
+        # Pre-seed queue from sitemap
+        sitemap_urls = await _fetch_sitemap_urls(client)
+        for su in sitemap_urls:
+            clean = su.rstrip("/")
+            if clean not in visited:
+                queue.append((clean, 1))
+
+        while queue and len(pages) < max_pages:
+            url, depth = queue.pop(0)
+            if url in visited:
+                continue
+            visited.add(url)
+
+            # First try browser-like UA
+            html = await _fetch_page(client, url, _UA_BROWSER)
+            if not html:
+                continue
+
+            text = _extract_text(html)
+
+            # If JS-rendered (very little text extracted), retry with Googlebot UA
+            # — many Next.js/React sites SSR content for Googlebot
+            if len(text) < 300:
+                html_bot = await _fetch_page(client, url, _UA_BOT)
+                if html_bot:
+                    text_bot = _extract_text(html_bot)
+                    if len(text_bot) > len(text):
+                        html = html_bot
+                        text = text_bot
+
+            # Clean up text
+            text = re.sub(r'\n{4,}', '\n\n', text).strip()
+
+            if len(text) > 80:
+                title = _extract_title(html, url)
+                pages.append({"url": url, "title": title, "text": text})
+
+            if depth < max_depth:
+                for link in _extract_links(html, url):
+                    if link not in visited:
+                        queue.append((link, depth + 1))
+
+    if not pages:
+        pages = [{
+            "url": start_url,
+            "title": connector.name,
+            "text": (
+                f"The website {start_url} was crawled but no readable text content could be "
+                "extracted. The site may require JavaScript execution to render its content. "
+                "Consider uploading specific pages or documents manually instead."
+            ),
+        }]
+
+    # Remove previous documents from this connector
+    doc_name_prefix = f"[Crawler] {connector.name}"
+    existing = await db.execute(
+        select(Document).where(
+            Document.user_id == user_id,
+            Document.name.like(f"{doc_name_prefix}%"),
+        )
+    )
+    for old_doc in existing.scalars().all():
+        await db.delete(old_doc)
+    await db.flush()
+
+    # Store each page as a Document with chunks
+    total_chunks = 0
+    from app.services.document_service import _chunk_text
+    for page in pages:
+        doc = Document(
+            user_id=user_id,
+            name=f"{doc_name_prefix}: {page['title'][:80]}",
+            original_name=page["url"],
+            file_path=page["url"],
+            file_type="web",
+            file_size=len(page["text"].encode()),
+            status="indexed",
+            word_count=len(page["text"].split()),
+            page_count=1,
+        )
+        db.add(doc)
+        await db.flush()
+
+        for chunk_idx, chunk_text in _chunk_text(page["text"]):
+            db.add(DocumentChunk(
+                document_id=doc.id,
+                content=chunk_text,
+                chunk_index=chunk_idx,
+                token_count=len(chunk_text.split()),
+            ))
+            total_chunks += 1
+
+    await db.flush()
+    return len(pages)
 
 
 @router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)

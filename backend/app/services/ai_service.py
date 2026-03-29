@@ -86,14 +86,17 @@ _WEB_SEARCH_KEYWORDS = {
     "2025", "2026", "real-time", "just announced", "new release",
 }
 
-# Cache: set to False once we confirm the embedding column is missing
-_vector_search_available: Optional[bool] = None
 
+def _needs_web_search(query: str, kb_sources: list) -> bool:
+    """Return True when the query should trigger a Tavily web search.
 
-def _needs_web_search(query: str) -> bool:
-    """Return True only when the query contains time-sensitive keywords."""
+    Rules (in priority order):
+    1. If the query contains time-sensitive keywords → always search the web.
+    2. If the knowledge base returned no results → fall back to web search.
+    """
     query_lower = query.lower()
-    return any(kw in query_lower for kw in _WEB_SEARCH_KEYWORDS)
+    is_time_sensitive = any(kw in query_lower for kw in _WEB_SEARCH_KEYWORDS)
+    return is_time_sensitive or len(kb_sources) == 0
 
 
 async def _tavily_web_search(query: str, max_results: int = 5) -> list:
@@ -136,122 +139,129 @@ async def _tavily_web_search(query: str, max_results: int = 5) -> list:
     return sources
 
 
+_STOP_WORDS = {
+    "what", "which", "where", "when", "who", "how", "why", "the", "are",
+    "was", "were", "has", "have", "had", "this", "that", "these", "those",
+    "can", "does", "did", "will", "would", "could", "should", "may", "might",
+    "and", "but", "for", "with", "about", "from", "into", "more", "than",
+    "its", "their", "your", "our", "his", "her", "any", "all", "not", "you",
+    "tell", "give", "show", "find", "get", "make", "just", "like", "some",
+    "there", "also", "well", "then", "say", "ask", "want", "need", "use",
+    "please", "help", "know", "does", "she", "they", "them", "him", "her",
+}
+
+
 async def _search_relevant_chunks(
-    query: str, db: AsyncSession, limit: int = 5
+    query: str, db: AsyncSession, limit: int = 5, user_id: Optional[uuid.UUID] = None
 ) -> list:
-    """
-    Retrieve relevant document chunks for RAG context.
-    Strategy: semantic vector search (Supabase pgvector) → keyword fallback.
-    """
-    # 1. Try semantic vector search via Supabase pgvector
-    vector_results = await _vector_search_chunks(query, db, limit)
-    if vector_results:
-        return vector_results
-
-    # 2. Fallback: keyword (ILIKE) search
-    return await _keyword_search_chunks(query, db, limit)
-
-
-async def _vector_search_chunks(query: str, db: AsyncSession, limit: int = 5) -> list:
-    """Semantic search using pgvector cosine similarity in Supabase."""
-    global _vector_search_available
-    if _vector_search_available is False:
-        return []  # Skip — confirmed unavailable on a previous call
-
-    from sqlalchemy import text as sa_text
-    from app.services.embedding_service import generate_embedding
-
-    query_embedding = await generate_embedding(query)
-    if not query_embedding:
-        return []
-
-    vec_str = "[" + ",".join(f"{v:.8f}" for v in query_embedding) + "]"
+    """Full-text search over document chunks owned by the user.
+    Returns up to 2 chunks per document so a single large document cannot
+    crowd out other sources (e.g. videos).
+    Only matches on meaningful (non-stop-word) query terms to avoid
+    returning irrelevant documents that happen to contain common words."""
+    from sqlalchemy import or_
 
     try:
-        async with db.begin_nested():
-            result = await db.execute(
-                sa_text("""
-                    SELECT dc.id, dc.document_id, dc.content, dc.chunk_index,
-                           d.name AS doc_name, d.file_type,
-                           (1 - (dc.embedding <=> CAST(:emb AS vector))) AS similarity
-                    FROM document_chunks dc
-                    JOIN documents d ON dc.document_id = d.id
-                    WHERE dc.embedding IS NOT NULL
-                      AND (1 - (dc.embedding <=> CAST(:emb AS vector))) > 0.2
-                    ORDER BY dc.embedding <=> CAST(:emb AS vector)
-                    LIMIT :limit
-                """),
-                {"emb": vec_str, "limit": limit},
-            )
-            rows = result.mappings().all()
-
-        sources = []
-        for row in rows:
-            sources.append({
-                "id": str(uuid.uuid4()),
-                "documentId": str(row["document_id"]),
-                "documentName": row["doc_name"],
-                "documentType": row["file_type"],
-                "pageNumber": None,
-                "chunkText": row["content"][:300],
-                "relevanceScore": round(float(row["similarity"]), 3),
-                "url": None,
-                "connectorType": None,
-                "sourceType": "knowledge_base",
-            })
-        _vector_search_available = True
-        return sources
-    except Exception as e:
-        _vector_search_available = False  # Don't retry on every request
-        logger.warning(f"Vector search unavailable (using keyword search): {e}")
-        return []
-
-
-async def _keyword_search_chunks(query: str, db: AsyncSession, limit: int = 5) -> list:
-    """Full-text search using GIN index — fast fallback when embeddings are unavailable."""
-    from sqlalchemy import text as sa_text
-
-    try:
-        # Use PostgreSQL full-text search with GIN index (much faster than ILIKE)
-        tsquery = " & ".join(
-            w.strip() for w in query.split() if len(w.strip()) > 2
-        )
-        if not tsquery:
+        # Strip stop words and short words — only search on meaningful terms
+        words = [
+            w.strip().lower() for w in query.split()
+            if len(w.strip()) > 3 and w.strip().lower() not in _STOP_WORDS
+        ]
+        if not words:
             return []
 
-        async with db.begin_nested():
-            result = await db.execute(
-                sa_text("""
-                    SELECT dc.id, dc.document_id, dc.content, dc.chunk_index,
-                           d.name AS doc_name, d.file_type,
-                           ts_rank(to_tsvector('english', dc.content), to_tsquery('english', :tsq)) AS rank
-                    FROM document_chunks dc
-                    JOIN documents d ON dc.document_id = d.id
-                    WHERE to_tsvector('english', dc.content) @@ to_tsquery('english', :tsq)
-                    ORDER BY rank DESC, dc.chunk_index ASC
-                    LIMIT :limit
-                """),
-                {"tsq": tsquery, "limit": limit},
-            )
-            rows = result.mappings().all()
+        # Build OR filter across meaningful query words only
+        filters = [DocumentChunk.content.ilike(f"%{w}%") for w in words[:6]]
+        q = (
+            select(DocumentChunk, Document)
+            .join(Document, DocumentChunk.document_id == Document.id)
+            .where(or_(*filters))
+        )
+        # Restrict to current user's documents only
+        if user_id:
+            q = q.where(Document.user_id == user_id)
+        q = q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
+        q = q.limit(limit * 8)  # fetch more then de-duplicate per doc below
 
+        result = await db.execute(q)
+        rows = result.all()
+
+        # Cap at 2 chunks per document so diverse sources are represented
+        seen_doc: dict[str, int] = {}
         sources = []
-        for row in rows:
+        for chunk, doc in rows:
+            doc_id = str(doc.id)
+            if seen_doc.get(doc_id, 0) >= 2:
+                continue
+
+            # Relevance guard: chunk must contain at least one meaningful query word
+            chunk_lower = chunk.content.lower()
+            matched_words = [w for w in words if w in chunk_lower]
+            if not matched_words:
+                continue
+
+            # Score by fraction of query words matched
+            relevance_score = round(len(matched_words) / max(len(words), 1), 3)
+            # Require at least 30% of meaningful words to match
+            if relevance_score < 0.3 and len(words) > 1:
+                continue
+
+            seen_doc[doc_id] = seen_doc.get(doc_id, 0) + 1
+            display_name = doc.original_name or doc.name
             sources.append({
                 "id": str(uuid.uuid4()),
-                "documentId": str(row["document_id"]),
-                "documentName": row["doc_name"],
-                "documentType": row["file_type"],
+                "documentId": doc_id,
+                "documentName": display_name,
+                "documentType": doc.file_type,
                 "pageNumber": None,
-                "chunkText": row["content"][:300],
-                "relevanceScore": round(min(float(row["rank"]), 1.0), 3),
+                "chunkText": chunk.content[:400],
+                "relevanceScore": min(0.95, round(0.5 + relevance_score * 0.5, 3)),
                 "url": None,
                 "connectorType": None,
                 "sourceType": "knowledge_base",
             })
+            if len(sources) >= limit:
+                break
+
         return sources
     except Exception as e:
-        logger.warning(f"Keyword search failed: {e}")
+        logger.warning(f"Chunk search failed: {e}")
+        return []
+
+
+async def _list_user_documents(user_id: uuid.UUID, db: AsyncSession) -> list:
+    """Return a detailed inventory of all indexed documents for a specific user."""
+    try:
+        result = await db.execute(
+            select(Document)
+            .where(Document.user_id == user_id, Document.status == "indexed")
+            .order_by(Document.created_at.desc())
+            .limit(200)
+        )
+        docs = result.scalars().all()
+        inventory = []
+        for doc in docs:
+            size_note = ""
+            if doc.file_size:
+                if doc.file_size >= 1_048_576:
+                    size_note = f"{doc.file_size / 1_048_576:.1f} MB"
+                else:
+                    size_note = f"{doc.file_size // 1024} KB"
+            entry = {
+                "id": str(doc.id),
+                "name": doc.original_name or doc.name,
+                "type": doc.file_type,
+                "status": doc.status,
+                "wordCount": doc.word_count or 0,
+                "pageCount": doc.page_count or 0,
+                "fileSize": size_note,
+                "uploadedAt": doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "",
+                "tags": doc.tags or [],
+            }
+            inventory.append(entry)
+        return inventory
+    except Exception as e:
+        logger.warning(f"Document inventory query failed: {e}")
         return []
 
 
@@ -291,18 +301,8 @@ async def _claude_stream(
 
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
-    # Map OpenAI model names to Claude equivalents
-    _openai_to_claude = {
-        "gpt-4o": "claude-sonnet-4-6",
-        "gpt-4o-mini": "claude-haiku-4-5-20251001",
-        "gpt-4": "claude-sonnet-4-6",
-        "gpt-4-turbo": "claude-sonnet-4-6",
-        "gpt-3.5-turbo": "claude-haiku-4-5-20251001",
-    }
-    claude_model = _openai_to_claude.get(model, model)
-
     kwargs = {
-        "model": claude_model,
+        "model": model,
         "max_tokens": 2048,
         "messages": messages_payload,
     }
@@ -386,6 +386,7 @@ async def stream_chat_response(
     user_message_content: str,
     system_prompt: Optional[str] = None,
     images: Optional[List[str]] = None,
+    user_id: Optional[uuid.UUID] = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Main streaming generator. Yields dicts that will be serialized to SSE frames.
@@ -397,18 +398,21 @@ async def stream_chat_response(
     """
     start_time = time.time()
 
-    # --- 1. Search knowledge base + web in parallel ---
-    needs_web = settings.has_tavily_key and _needs_web_search(user_message_content)
+    # --- 0. Fetch document inventory so Claude knows what's in the KB ------
+    doc_inventory: list = []
+    if user_id:
+        doc_inventory = await _list_user_documents(user_id, db)
 
-    if needs_web:
+    # --- 1. Search knowledge base (scoped to this user) ---
+    kb_sources = await _search_relevant_chunks(user_message_content, db, user_id=user_id)
+
+    # --- 1b. Decide whether to also query the web ---
+    web_sources: list = []
+    used_web_search = False
+    if settings.has_tavily_key and _needs_web_search(user_message_content, kb_sources):
         logger.info("Web search triggered for query: %s", user_message_content[:80])
-        kb_sources, web_sources = await asyncio.gather(
-            _search_relevant_chunks(user_message_content, db),
-            _tavily_web_search(user_message_content),
-        )
-    else:
-        kb_sources = await _search_relevant_chunks(user_message_content, db)
-        web_sources = []
+        web_sources = await _tavily_web_search(user_message_content)
+        used_web_search = True
 
     sources = kb_sources + web_sources
     yield {"type": "sources", "sources": sources}
@@ -431,15 +435,52 @@ async def stream_chat_response(
     effective_system = system_prompt or (
         "You are KnowledgeForge AI, an intelligent knowledge management assistant. "
         "You help users search, analyze, and extract insights from their document library. "
-        "Be concise, accurate, and helpful."
+        "Be concise, accurate, and professional. "
+        "Do not use emojis in your responses. "
+        "Do not use informal language or filler phrases."
     )
+
+    # Include document inventory so the AI knows ALL files in the user's KB
+    if doc_inventory:
+        lines = []
+        for d in doc_inventory:
+            meta_parts = []
+            if d["wordCount"]:
+                meta_parts.append(f"{d['wordCount']} words")
+            if d["pageCount"]:
+                meta_parts.append(f"{d['pageCount']} pages")
+            if d["fileSize"]:
+                meta_parts.append(d["fileSize"])
+            if d["uploadedAt"]:
+                meta_parts.append(f"uploaded {d['uploadedAt']}")
+            if d["tags"]:
+                meta_parts.append(f"tags: {', '.join(d['tags'])}")
+            if d["type"] == "video" and d["wordCount"] < 5:
+                meta_parts.append("no transcript — visual analysis requires Google Gemini key")
+            meta = f" ({'; '.join(meta_parts)})" if meta_parts else ""
+            lines.append(f"- [{d['type'].upper()}] {d['name']}{meta}")
+        inventory_text = "\n".join(lines)
+        effective_system += (
+            f"\n\n## User's Knowledge Base ({len(doc_inventory)} document(s)):\n{inventory_text}\n\n"
+            "When the user asks 'what files do I have', 'list my documents', or asks about a specific "
+            "document by name or type, refer to this inventory. "
+            "If a video has no transcript, explain that audio/visual transcription requires an AI key."
+        )
+    else:
+        effective_system += (
+            "\n\nThe user has no documents uploaded yet. "
+            "Encourage them to upload files via the Knowledge Base section."
+        )
+
     if kb_sources:
         context_text = "\n\n".join(
-            f"[Knowledge Base — {s['documentName']}]\n{s['chunkText']}" for s in kb_sources
+            f"[Source: {s['documentName']} ({s['documentType'].upper()})]\n{s['chunkText']}"
+            for s in kb_sources
         )
         effective_system += (
-            f"\n\nRelevant context from the knowledge base:\n{context_text}\n\n"
-            "Use this context to answer the user's question when relevant. Cite the document names."
+            f"\n\n## Relevant content retrieved from the knowledge base:\n{context_text}\n\n"
+            "Base your answer primarily on the above context. "
+            "Always cite which document(s) the information comes from."
         )
     if web_sources:
         web_context = "\n\n".join(
@@ -457,7 +498,9 @@ async def stream_chat_response(
 
     try:
         if settings.has_anthropic_key:
-            ai_gen = _claude_stream(messages_payload, model, effective_system)
+            # Normalize to a valid Claude model if the user picked an OpenAI model
+            claude_model = model if model.startswith("claude") else "claude-sonnet-4-6"
+            ai_gen = _claude_stream(messages_payload, claude_model, effective_system)
         elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
             ai_gen = _openai_stream(messages_payload, model, effective_system)
         else:

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +43,15 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    mfa_backup_codes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    subscription_plan: Mapped[str] = mapped_column(String(32), default="free", server_default="free", nullable=False)
+    subscription_status: Mapped[str] = mapped_column(String(32), default="active", server_default="active", nullable=False)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    subscription_period_end: Mapped[int | None] = mapped_column(nullable=True)
 
     # Relationships
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
@@ -68,9 +77,6 @@ class User(Base):
     )
     meetings: Mapped[list] = relationship(
         "Meeting", back_populates="user", cascade="all, delete-orphan"
-    )
-    api_keys: Mapped[list] = relationship(
-        "ApiKey", back_populates="user", cascade="all, delete-orphan"
     )
 
 

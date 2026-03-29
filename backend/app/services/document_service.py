@@ -1,7 +1,5 @@
 """
-Document service — handles file upload, text extraction, chunking, and embedding.
-Embeddings are generated via OpenAI and stored in Supabase's pgvector column.
-Falls back gracefully to keyword-only search when the OpenAI key is not set.
+Document service — handles file upload, text extraction, and chunking.
 """
 import logging
 import os
@@ -10,7 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -130,14 +127,21 @@ def _extract_text_plain(file_path: str) -> Tuple[str, int]:
         return "", 0
 
 
+def _sanitize_text(text: str) -> str:
+    """Remove characters PostgreSQL UTF8 can't store (null bytes, etc.)."""
+    # Remove null bytes — PostgreSQL VARCHAR rejects \x00
+    return text.replace('\x00', '').replace('\x0b', ' ').replace('\x0c', ' ')
+
+
 def extract_text(file_path: str, file_ext: str) -> Tuple[str, int]:
     """Dispatch extraction based on file extension."""
     if file_ext == ".pdf":
-        return _extract_text_pdf(file_path)
+        text, pages = _extract_text_pdf(file_path)
     elif file_ext in (".docx", ".doc"):
-        return _extract_text_docx(file_path)
+        text, pages = _extract_text_docx(file_path)
     else:
-        return _extract_text_plain(file_path)
+        text, pages = _extract_text_plain(file_path)
+    return _sanitize_text(text), pages
 
 
 async def save_uploaded_file(
@@ -171,19 +175,16 @@ async def process_document(
     db: AsyncSession,
 ) -> None:
     """
-    Extract text from a document, create chunks, store embeddings in Supabase
-    pgvector, and mark the document as indexed.
-    Embeddings are generated via OpenAI; if the key is absent the document is
-    still fully indexed with keyword-only search support.
+    Extract text from a document, create chunks, and mark it as indexed.
+    This runs synchronously within the request for simplicity.
     """
     try:
-        text_content, page_count = extract_text(file_path, file_ext)
+        text, page_count = extract_text(file_path, file_ext)
 
-        word_count = len(text_content.split()) if text_content else 0
-        chunks = _chunk_text(text_content) if text_content else []
+        word_count = len(text.split()) if text else 0
+        chunks = _chunk_text(text) if text else []
 
-        # Create chunk records and track them for embedding generation
-        chunk_records: List[Tuple[int, str, DocumentChunk]] = []
+        # Create chunk records
         for chunk_idx, chunk_content in chunks:
             token_count = _estimate_tokens(chunk_content)
             chunk_record = DocumentChunk(
@@ -193,7 +194,6 @@ async def process_document(
                 token_count=token_count,
             )
             db.add(chunk_record)
-            chunk_records.append((chunk_idx, chunk_content, chunk_record))
 
         # Update document metadata
         document.status = DocumentStatus.indexed
@@ -201,11 +201,7 @@ async def process_document(
         document.word_count = word_count
         document.updated_at = datetime.now(timezone.utc)
 
-        await db.flush()  # Assigns IDs to chunk records
-
-        # Generate and store vector embeddings (Supabase pgvector)
-        await _store_embeddings(chunk_records, db)
-
+        await db.flush()
         logger.info(
             f"Document {document.id} indexed: {len(chunks)} chunks, "
             f"{word_count} words, {page_count} pages"
@@ -216,50 +212,6 @@ async def process_document(
         document.status = DocumentStatus.failed
         document.updated_at = datetime.now(timezone.utc)
         await db.flush()
-
-
-async def _store_embeddings(
-    chunk_records: List[Tuple[int, str, DocumentChunk]],
-    db: AsyncSession,
-) -> None:
-    """
-    Generate embeddings in batch and write them to the Supabase pgvector column.
-    Failures are logged but never propagate — keyword search still works.
-    """
-    if not chunk_records:
-        return
-
-    try:
-        from app.services.embedding_service import generate_embeddings_batch
-
-        chunk_texts = [chunk_content for _, chunk_content, _ in chunk_records]
-        embeddings = await generate_embeddings_batch(chunk_texts)
-
-        stored = 0
-        for (_, _, chunk_record), embedding in zip(chunk_records, embeddings):
-            if embedding is None:
-                continue
-            # Format as PostgreSQL vector literal and cast server-side
-            vec_str = "[" + ",".join(f"{v:.8f}" for v in embedding) + "]"
-            try:
-                async with db.begin_nested():
-                    await db.execute(
-                        text(
-                            "UPDATE document_chunks SET embedding = CAST(:emb AS vector) WHERE id = :id"
-                        ),
-                        {"emb": vec_str, "id": str(chunk_record.id)},
-                    )
-                stored += 1
-            except Exception as emb_err:
-                logger.debug(f"Skipping embedding for chunk {chunk_record.id}: {emb_err}")
-
-        if stored:
-            logger.info(f"Stored {stored}/{len(chunk_records)} embeddings via Supabase pgvector")
-        else:
-            logger.debug("No embeddings stored (OpenAI key not set — keyword search active)")
-
-    except Exception as e:
-        logger.warning(f"Embedding storage failed (non-fatal): {e}")
 
 
 async def upload_documents(

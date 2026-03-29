@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, conversations, knowledge, search, analytics, voice, meetings, agents, workflows, admin, api_keys
+from app.routers import auth, conversations, knowledge, search, analytics, voice, meetings, agents, workflows, admin, teams
+from app.routers import billing, websocket, video, connectors_oauth
 
 # Configure logging
 logging.basicConfig(
@@ -37,13 +39,13 @@ async def lifespan(app: FastAPI):
                 await session.execute(text(
                     "INSERT INTO users (id, email, name, hashed_password, role, is_active, created_at, updated_at) "
                     "VALUES (gen_random_uuid(), 'demo@knowledgeforge.ai', 'Demo User', :pw, 'admin', true, now(), now())"
-                ), {"pw": hash_password("demo12345")})
+                ), {"pw": hash_password("Demo@123")})
                 logger.info("Seed: demo user created.")
             else:
                 await session.execute(text(
                     "UPDATE users SET hashed_password=:pw, role='admin' "
                     "WHERE email='demo@knowledgeforge.ai'"
-                ), {"pw": hash_password("demo12345")})
+                ), {"pw": hash_password("Demo@123")})
                 logger.info("Seed: demo user password/role verified.")
 
             r2 = await session.execute(
@@ -53,8 +55,14 @@ async def lifespan(app: FastAPI):
                 await session.execute(text(
                     "INSERT INTO users (id, email, name, hashed_password, role, is_active, created_at, updated_at) "
                     "VALUES (gen_random_uuid(), 'admin@knowledgeforge.ai', 'Admin', :pw, 'super_admin', true, now(), now())"
-                ), {"pw": hash_password("Admin1234!")})
+                ), {"pw": hash_password("Admin@123")})
                 logger.info("Seed: admin user created.")
+            else:
+                await session.execute(text(
+                    "UPDATE users SET hashed_password=:pw, role='super_admin' "
+                    "WHERE email='admin@knowledgeforge.ai'"
+                ), {"pw": hash_password("Admin@123")})
+                logger.info("Seed: admin user password/role verified.")
 
             await session.commit()
     except Exception as exc:
@@ -83,6 +91,7 @@ app = FastAPI(
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -103,7 +112,11 @@ app.include_router(meetings.router, prefix="/meetings", tags=["Meetings"])
 app.include_router(agents.router, prefix="/agents", tags=["Agents"])
 app.include_router(workflows.router, prefix="/workflows", tags=["Workflows"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
-app.include_router(api_keys.router, tags=["API Keys"])
+app.include_router(teams.router, prefix="/teams", tags=["Teams"])
+app.include_router(billing.router, tags=["Billing"])
+app.include_router(websocket.router, tags=["WebSocket"])
+app.include_router(video.router, tags=["Video"])
+app.include_router(connectors_oauth.router, tags=["Connectors OAuth"])
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
