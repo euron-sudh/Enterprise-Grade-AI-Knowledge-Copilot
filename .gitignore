@@ -1,3 +1,6 @@
+# Deployment secrets — never commit
+deploy.env
+
 # Node
 node_modules/
 .next/

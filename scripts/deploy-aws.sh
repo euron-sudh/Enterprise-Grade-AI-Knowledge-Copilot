@@ -3,12 +3,14 @@
 # KnowledgeForge — AWS Deployment Script
 # Run this in AWS CloudShell (console.aws.amazon.com → CloudShell icon)
 #
-# Usage:
-#   chmod +x deploy-aws.sh
-#   ./deploy-aws.sh
+# RECOMMENDED USAGE (no interactive prompts):
+#   1. Copy deploy.env.template → deploy.env and fill in your values
+#   2. source deploy.env && ./scripts/deploy-aws.sh
+#
+# OR source inline then run:
+#   source deploy.env && ./scripts/deploy-aws.sh
 #
 # The script is IDEMPOTENT — safe to re-run if it fails partway through.
-# Each section checks if the resource already exists before creating it.
 # =============================================================================
 
 set -euo pipefail
@@ -24,9 +26,19 @@ err()  { echo -e "${RED}[✗]${NC} $*" >&2; }
 section() { echo -e "\n${BOLD}${BLUE}━━━ $* ━━━${NC}\n"; }
 
 # =============================================================================
-# SECTION 0 — Configuration (edit these or export before running)
+# SECTION 0 — Configuration
+# Load from deploy.env if it exists, otherwise check env vars, otherwise error.
 # =============================================================================
 section "0 · Configuration"
+
+# Auto-load deploy.env from current directory or script directory
+for cfg in "./deploy.env" "$(dirname "$0")/deploy.env" "$HOME/deploy.env"; do
+  if [ -f "$cfg" ]; then
+    info "Loading config from: ${cfg}"
+    set -a; source "$cfg"; set +a
+    break
+  fi
+done
 
 : "${AWS_REGION:=us-east-1}"
 : "${PROJECT:=knowledgeforge}"
@@ -34,30 +46,32 @@ section "0 · Configuration"
 : "${GITHUB_ORG:=euron-sudh}"
 : "${GITHUB_REPO:=Enterprise-Grade-AI-Knowledge-Copilot}"
 
-# Collect missing required values interactively
-require_var() {
-  local var_name="$1" prompt="$2" secret="${3:-no}"
+# Validate required variables — fail fast with clear message
+check_required() {
+  local var_name="$1" hint="$2"
   if [ -z "${!var_name:-}" ]; then
-    if [ "$secret" = "yes" ]; then
-      read -s -p "  $prompt: " val && echo
-    else
-      read -p "  $prompt: " val
-    fi
-    export "$var_name"="$val"
+    err "Missing required variable: ${var_name}"
+    err "  ${hint}"
+    err "  Set it in deploy.env or: export ${var_name}=your-value"
+    exit 1
   fi
 }
 
-echo "Using region: ${AWS_REGION}, project: ${PROJECT}, env: ${ENV}"
-echo ""
+check_required ANTHROPIC_API_KEY   "Your Anthropic API key (sk-ant-...)"
+check_required DB_PASSWORD         "RDS master password — no @ or \" characters"
+check_required REDIS_AUTH_TOKEN    "Redis auth token — min 16 chars, no @ character"
+check_required NOTIFICATION_EMAIL  "Email address for CloudWatch alerts"
 
-require_var ANTHROPIC_API_KEY   "Anthropic API key (sk-ant-...)" yes
-require_var OPENAI_API_KEY      "OpenAI API key (sk-..., or press Enter to skip)" yes
-require_var STRIPE_SECRET_KEY   "Stripe secret key (sk_test_..., or Enter to skip)" yes
-require_var DB_PASSWORD         "RDS master password (min 8 chars, no @/\")" yes
-require_var REDIS_AUTH_TOKEN    "Redis auth token (min 16 chars, no @)" yes
-require_var JWT_SECRET          "JWT secret (or press Enter to auto-generate)" yes
-require_var APP_SECRET          "App secret key (or press Enter to auto-generate)" yes
-require_var NOTIFICATION_EMAIL  "Alert notification email address"
+# Optional — set placeholders if not provided
+: "${OPENAI_API_KEY:=sk-placeholder}"
+: "${STRIPE_SECRET_KEY:=sk_test_placeholder}"
+
+# Auto-generate secrets if blank
+[ -z "${JWT_SECRET:-}"  ] && JWT_SECRET=$(openssl rand -hex 32)  && warn "Auto-generated JWT_SECRET"
+[ -z "${APP_SECRET:-}"  ] && APP_SECRET=$(openssl rand -hex 32)  && warn "Auto-generated APP_SECRET"
+
+echo ""
+log "Region: ${AWS_REGION} | Project: ${PROJECT} | Env: ${ENV}"
 
 # Auto-generate secrets if blank
 [ -z "$JWT_SECRET"  ] && JWT_SECRET=$(openssl rand -hex 32)  && warn "Auto-generated JWT secret"
