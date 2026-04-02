@@ -1,0 +1,125 @@
+name: Frontend — Deploy to AWS Amplify
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/cd-frontend-amplify.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, prod]
+
+jobs:
+  # ── 1. Resolve environment ────────────────────────────────────────────────────
+  setup:
+    name: Resolve Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      amplify_branch: ${{ steps.resolve.outputs.amplify_branch }}
+    steps:
+      - id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            ENV="prod"
+          else
+            ENV="dev"
+          fi
+          # Branch mapping: dev env → develop branch in Amplify, prod → main
+          if [ "$ENV" = "prod" ]; then
+            BRANCH="main"
+          else
+            BRANCH="dev"
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "amplify_branch=$BRANCH" >> $GITHUB_OUTPUT
+
+  # ── 2. Trigger Amplify build ──────────────────────────────────────────────────
+  deploy:
+    name: Trigger Amplify Build (${{ needs.setup.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: setup
+    environment: ${{ needs.setup.outputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Trigger Amplify build
+        id: trigger
+        run: |
+          JOB=$(aws amplify start-job \
+            --app-id ${{ secrets.AMPLIFY_APP_ID }} \
+            --branch-name ${{ needs.setup.outputs.amplify_branch }} \
+            --job-type RELEASE \
+            --query 'jobSummary.jobId' \
+            --output text)
+          echo "job_id=$JOB" >> $GITHUB_OUTPUT
+          echo "Amplify build triggered: job $JOB"
+
+      - name: Wait for Amplify build to complete
+        run: |
+          APP_ID=${{ secrets.AMPLIFY_APP_ID }}
+          BRANCH=${{ needs.setup.outputs.amplify_branch }}
+          JOB_ID=${{ steps.trigger.outputs.job_id }}
+          echo "Waiting for Amplify job $JOB_ID on branch $BRANCH..."
+
+          for i in $(seq 1 30); do
+            STATUS=$(aws amplify get-job \
+              --app-id $APP_ID \
+              --branch-name $BRANCH \
+              --job-id $JOB_ID \
+              --query 'job.summary.status' \
+              --output text)
+            echo "[$i/30] Status: $STATUS"
+
+            if [ "$STATUS" = "SUCCEED" ]; then
+              echo "Amplify build succeeded."
+              exit 0
+            elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+              echo "Amplify build $STATUS."
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for Amplify build."
+          exit 1
+
+  # ── 3. Notify on failure ──────────────────────────────────────────────────────
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: failure()
+    steps:
+      - name: Slack alert
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": ":x: KnowledgeForge frontend (Amplify) deployment failed",
+              "blocks": [{
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*:x: Frontend Deploy Failed*\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                }
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
