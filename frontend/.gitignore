@@ -48,5 +48,5 @@ next-env.d.ts
 *.swp
 *.swo
 
-# Docker
-.dockerignore
+# Docker (keep .dockerignore tracked — it belongs in the repo)
+# .dockerignore

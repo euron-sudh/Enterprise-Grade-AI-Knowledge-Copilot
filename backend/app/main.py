@@ -19,10 +19,34 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _run_migrations() -> None:
+    """Run Alembic migrations synchronously inside a thread so async loop is not blocked."""
+    import asyncio
+    from alembic.config import Config
+    from alembic import command
+
+    def _upgrade():
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _upgrade)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Starting KnowledgeForge API...")
+
+    # Run Alembic migrations before creating tables (idempotent)
+    try:
+        await _run_migrations()
+        logger.info("Alembic migrations applied successfully.")
+    except Exception as exc:
+        logger.warning(f"Alembic migration failed (falling back to create_all): {exc}")
+        await init_db()
+
+    # Ensure tables exist even if migrations are not configured
     await init_db()
 
     # ── Auto-seed demo + admin users (idempotent) ──────────────────────────
@@ -94,7 +118,7 @@ app = FastAPI(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.effective_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -128,6 +152,59 @@ async def health():
         "version": settings.APP_VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/health/ready", tags=["Health"])
+async def health_ready():
+    """Readiness probe — checks database and Redis connectivity.
+    Returns 200 only when the app is ready to serve traffic.
+    Used by ECS health checks and load balancer target group probes.
+    """
+    from fastapi import HTTPException
+    from sqlalchemy import text
+    from app.database import AsyncSessionLocal
+
+    checks: dict = {}
+    healthy = True
+
+    # ── PostgreSQL check ───────────────────────────────────────────────────────
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = f"error: {exc}"
+        healthy = False
+
+    # ── Redis check ────────────────────────────────────────────────────────────
+    try:
+        import redis.asyncio as aioredis
+        client = aioredis.from_url(settings.REDIS_URL, socket_connect_timeout=2)
+        await client.ping()
+        await client.aclose()
+        checks["redis"] = "ok"
+    except Exception as exc:
+        checks["redis"] = f"error: {exc}"
+        # Redis is non-critical — degrade gracefully but still report
+        checks["redis_required"] = False
+
+    status_code = 200 if healthy else 503
+    body = {
+        "status": "ready" if healthy else "degraded",
+        "version": settings.APP_VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": checks,
+    }
+
+    if not healthy:
+        raise HTTPException(status_code=503, detail=body)
+    return body
+
+
+@app.get("/health/live", tags=["Health"])
+async def health_live():
+    """Liveness probe — lightweight check that the process is alive."""
+    return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/", tags=["Health"])

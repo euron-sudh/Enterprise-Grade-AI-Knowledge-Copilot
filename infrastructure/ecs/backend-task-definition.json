@@ -22,11 +22,15 @@
       ],
 
       "environment": [
-        { "name": "APP_ENV",       "value": "production" },
-        { "name": "APP_NAME",      "value": "KnowledgeForge" },
-        { "name": "DEBUG",         "value": "false" },
-        { "name": "AWS_REGION",    "value": "us-east-1" },
-        { "name": "AWS_S3_BUCKET", "value": "knowledgeforge-documents-prod" }
+        { "name": "APP_ENV",          "value": "production" },
+        { "name": "APP_NAME",         "value": "KnowledgeForge" },
+        { "name": "DEBUG",            "value": "false" },
+        { "name": "DATABASE_SSL",     "value": "true" },
+        { "name": "AWS_REGION",       "value": "us-east-1" },
+        { "name": "AWS_S3_BUCKET",    "value": "knowledgeforge-documents-prod" },
+        { "name": "AWS_S3_REGION",    "value": "us-east-1" },
+        { "name": "FRONTEND_URL",     "value": "https://app.knowledgeforge.ai" },
+        { "name": "CONNECTOR_OAUTH_REDIRECT_BASE", "value": "https://app.knowledgeforge.ai" }
       ],
 
       "secrets": [

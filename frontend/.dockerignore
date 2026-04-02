@@ -1,0 +1,46 @@
+# Dependencies — installed fresh in Docker
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js build output — rebuilt in Docker
+.next
+out
+
+# Environment files — NEVER bake secrets into the image
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Tests
+tests/
+**/*.test.ts
+**/*.spec.ts
+playwright-report/
+test-results/
+
+# Dev tools
+.vscode/
+.idea/
+*.sublime-*
+
+# Docs
+docs/
+*.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbopack / build cache
+.turbo

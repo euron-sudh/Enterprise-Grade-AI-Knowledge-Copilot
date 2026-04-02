@@ -1,11 +1,11 @@
 name: Backend — Build & Deploy to ECS
 
 on:
-  push:
+  # Gate: only deploy after CI passes on the same push
+  workflow_run:
+    workflows: ["Backend CI"]
+    types: [completed]
     branches: [main, dev]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/cd-backend.yml'
   workflow_dispatch:
     inputs:
       environment:
@@ -22,10 +22,22 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
+  # ── 0. Gate: abort if CI failed ───────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: CI passed
+        run: echo "CI passed — proceeding with deployment."
+
   # ── 1. Resolve environment ────────────────────────────────────────────────────
   setup:
     name: Resolve Environment
     runs-on: ubuntu-latest
+    needs: ci-gate
     outputs:
       environment: ${{ steps.resolve.outputs.environment }}
       ecs_cluster: ${{ steps.resolve.outputs.ecs_cluster }}

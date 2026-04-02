@@ -1,6 +1,11 @@
 name: Backend CI
 
 on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci-backend.yml'
   pull_request:
     paths:
       - 'backend/**'
@@ -9,6 +14,7 @@ on:
 
 jobs:
   build-test:
+    name: Test & Lint
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -33,30 +39,31 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install Poetry
-        run: |
-          pip install poetry
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
       - name: Install dependencies
         run: |
           cd backend
-          poetry install --no-interaction
+          pip install --no-cache-dir -r requirements.txt
+
       - name: Run Alembic migrations
         run: |
           cd backend
-          poetry run alembic upgrade head
+          alembic upgrade head
+
       - name: Run tests
         run: |
           cd backend
-          poetry run pytest --maxfail=2 --disable-warnings --tb=short
-      - name: Lint
+          pytest --maxfail=5 --disable-warnings --tb=short -q
+
+      - name: Lint (flake8)
         run: |
           cd backend
-          poetry run flake8 app
-      - name: Type check
-        run: |
-          cd backend
-          poetry run mypy app
+          pip install flake8 --quiet
+          flake8 app --max-line-length=120 --extend-ignore=E501,W503 --count

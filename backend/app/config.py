@@ -53,8 +53,17 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
 
-    # CORS
+    # AWS S3 (optional — falls back to local disk if not set)
+    AWS_S3_BUCKET: str = ""
+    AWS_S3_REGION: str = "us-east-1"
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+
+    # CORS — comma-separated list of allowed origins, or JSON array string
+    # In production set: CORS_ORIGINS=https://app.knowledgeforge.ai
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
+    # Convenience: add a single frontend URL without overriding the full list
+    FRONTEND_URL: str = ""
 
     # App
     APP_VERSION: str = "1.0.0"
@@ -69,6 +78,18 @@ class Settings(BaseSettings):
                 "WARNING: Using default SECRET_KEY. Set a strong random key in production!"
             )
         return v
+
+    @property
+    def effective_cors_origins(self) -> List[str]:
+        """Merge CORS_ORIGINS list with FRONTEND_URL if set."""
+        origins = list(self.CORS_ORIGINS)
+        if self.FRONTEND_URL and self.FRONTEND_URL not in origins:
+            origins.append(self.FRONTEND_URL)
+        return origins
+
+    @property
+    def has_s3(self) -> bool:
+        return bool(self.AWS_S3_BUCKET and self.AWS_ACCESS_KEY_ID)
 
     @property
     def has_stripe(self) -> bool:
