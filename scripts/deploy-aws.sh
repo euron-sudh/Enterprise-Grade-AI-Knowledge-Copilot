@@ -141,7 +141,7 @@ TRUST
   aws iam attach-role-policy --role-name "$DEPLOY_ROLE" \
     --policy-arn arn:aws:iam::aws:policy/AmazonECS_FullAccess
   aws iam attach-role-policy --role-name "$DEPLOY_ROLE" \
-    --policy-arn arn:aws:iam::aws:policy/AWSAmplifyFullAccess
+    --policy-arn arn:aws:iam::aws:policy/AdministratorAccess-Amplify
   log "Deploy role created"
 fi
 
