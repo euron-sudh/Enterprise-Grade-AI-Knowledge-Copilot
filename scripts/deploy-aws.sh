@@ -512,7 +512,7 @@ if [ "$REDIS_STATE" = "missing" ] || [ "$REDIS_STATE" = "None" ]; then
   info "Creating ElastiCache Redis cluster (takes ~5 minutes)..."
   aws elasticache create-replication-group \
     --replication-group-id "$REDIS_ID" \
-    --description "KnowledgeForge Redis ${ENV}" \
+    --replication-group-description "KnowledgeForge Redis ${ENV}" \
     --num-cache-clusters 1 \
     --cache-node-type cache.t3.micro \
     --engine redis \
