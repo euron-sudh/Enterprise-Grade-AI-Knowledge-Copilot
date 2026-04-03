@@ -6,18 +6,16 @@ applications:
           commands:
             - node --version
             - npm --version
-            - cd frontend
             - npm ci
         build:
           commands:
-            - cd frontend
             - npm run build
       artifacts:
-        baseDirectory: frontend/.next
+        baseDirectory: .next
         files:
           - '**/*'
       cache:
         paths:
-          - frontend/node_modules/**/*
-          - frontend/.next/cache/**/*
+          - node_modules/**/*
+          - .next/cache/**/*
     appRoot: frontend
