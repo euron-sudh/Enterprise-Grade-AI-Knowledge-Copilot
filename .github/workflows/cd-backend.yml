@@ -86,8 +86,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Check if image already exists in ECR
+        id: image-check
+        run: |
+          if aws ecr describe-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-ids imageTag=${{ env.IMAGE_TAG }} \
+            --query 'imageDetails[0].imageTags' \
+            --output text 2>/dev/null | grep -q "${{ env.IMAGE_TAG }}"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Image already exists in ECR, skipping build."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push
         id: push
+        if: steps.image-check.outputs.exists != 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./backend
