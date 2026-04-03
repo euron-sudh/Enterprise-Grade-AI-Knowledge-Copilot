@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = '004_add_mfa_billing_fields'
-down_revision = None  # set to your previous revision id
+down_revision = "003"
 branch_labels = None
 depends_on = None
 
