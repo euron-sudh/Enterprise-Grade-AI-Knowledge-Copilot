@@ -590,7 +590,7 @@ else
 fi
 
 # HTTP listener (port 80 → forward to target group)
-# If a domain + HTTPS cert is added later, swap this to a redirect and add port 443
+# Always ensure the action is forward (not a stale redirect from a previous run)
 HTTP_LISTENER=$(aws elbv2 describe-listeners \
   --load-balancer-arn "$ALB_ARN" \
   --query 'Listeners[?Port==`80`].ListenerArn' --output text 2>/dev/null || true)
@@ -601,7 +601,11 @@ if [ -z "$HTTP_LISTENER" ] || [ "$HTTP_LISTENER" = "None" ]; then
     --default-actions "Type=forward,TargetGroupArn=${TG_ARN}" > /dev/null
   log "HTTP listener created (port 80 → target group)"
 else
-  log "HTTP listener exists"
+  # Update existing listener to ensure it forwards (not redirects)
+  aws elbv2 modify-listener \
+    --listener-arn "$HTTP_LISTENER" \
+    --default-actions "Type=forward,TargetGroupArn=${TG_ARN}" > /dev/null
+  log "HTTP listener updated (port 80 → target group)"
 fi
 
 # =============================================================================
