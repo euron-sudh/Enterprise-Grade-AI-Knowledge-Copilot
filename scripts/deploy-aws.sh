@@ -275,8 +275,10 @@ PRIV_1A=$(create_subnet_if_missing "${PROJECT}-private-1a" "10.1.10.0/24" "${AWS
 PRIV_1B=$(create_subnet_if_missing "${PROJECT}-private-1b" "10.1.11.0/24" "${AWS_REGION}b")
 
 # Enable auto-assign public IP on public subnets
-aws ec2 modify-subnet-attribute --subnet-id "$PUB_1A" --map-public-ip-on-launch
-aws ec2 modify-subnet-attribute --subnet-id "$PUB_1B" --map-public-ip-on-launch
+aws ec2 modify-subnet-attribute --subnet-id "$PUB_1A" --map-public-ip-on-launch '{"Value": true}' 2>/dev/null || \
+  aws ec2 modify-subnet-attribute --subnet-id "$PUB_1A" --map-public-ip-on-launch || true
+aws ec2 modify-subnet-attribute --subnet-id "$PUB_1B" --map-public-ip-on-launch '{"Value": true}' 2>/dev/null || \
+  aws ec2 modify-subnet-attribute --subnet-id "$PUB_1B" --map-public-ip-on-launch || true
 
 # Internet Gateway
 IGW_ID=$(aws ec2 describe-internet-gateways \
