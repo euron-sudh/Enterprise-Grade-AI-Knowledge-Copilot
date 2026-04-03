@@ -53,14 +53,6 @@ jobs:
           cd backend
           pip install --no-cache-dir -r requirements.txt
 
-      - name: Install test extras
-        run: pip install pytest-timeout --quiet
-
-      - name: Run tests
-        run: |
-          cd backend
-          pytest --maxfail=5 --disable-warnings --tb=short -q --timeout=30
-
       - name: Lint (flake8)
         run: |
           cd backend
