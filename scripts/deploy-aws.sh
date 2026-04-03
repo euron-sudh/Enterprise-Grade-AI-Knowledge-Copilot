@@ -457,20 +457,20 @@ if [ "$DB_STATE" = "missing" ] || [ "$DB_STATE" = "None" ]; then
   info "Creating RDS instance (takes 5-10 minutes)..."
   aws rds create-db-instance \
     --db-instance-identifier "$DB_IDENTIFIER" \
-    --db-instance-class db.t3.medium \
+    --db-instance-class db.t3.micro \
     --engine postgres \
-    --engine-version "16.1" \
+    --engine-version "16" \
     --master-username kfuser \
     --master-user-password "$DB_PASSWORD" \
     --db-name knowledgeforge \
     --db-subnet-group-name "${PROJECT}-db-subnet" \
     --vpc-security-group-ids "$DB_SG" \
     --no-publicly-accessible \
-    --backup-retention-period 7 \
-    --deletion-protection \
-    --storage-encrypted \
-    --allocated-storage 100 \
-    --storage-type gp3 \
+    --backup-retention-period 0 \
+    --no-deletion-protection \
+    --no-storage-encrypted \
+    --allocated-storage 20 \
+    --storage-type gp2 \
     --tags Key=Project,Value="${PROJECT}" > /dev/null
 
   info "Waiting for RDS (this takes ~5 minutes)..."
@@ -521,7 +521,6 @@ if [ "$REDIS_STATE" = "missing" ] || [ "$REDIS_STATE" = "None" ]; then
     --security-group-ids "$REDIS_SG" \
     --auth-token "$REDIS_AUTH_TOKEN" \
     --transit-encryption-enabled \
-    --at-rest-encryption-enabled \
     --tags Key=Project,Value="${PROJECT}" > /dev/null
 
   info "Waiting for Redis (this takes ~5 minutes)..."
