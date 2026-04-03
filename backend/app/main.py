@@ -38,16 +38,16 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Starting KnowledgeForge API...")
 
-    # Run Alembic migrations before creating tables (idempotent)
+    # Run Alembic migrations — non-fatal if DB is unreachable at startup
     try:
         await _run_migrations()
         logger.info("Alembic migrations applied successfully.")
     except Exception as exc:
-        logger.warning(f"Alembic migration failed (falling back to create_all): {exc}")
-        await init_db()
-
-    # Ensure tables exist even if migrations are not configured
-    await init_db()
+        logger.warning(f"Alembic migration failed: {exc}")
+        try:
+            await init_db()
+        except Exception as exc2:
+            logger.warning(f"init_db also failed (DB may be unreachable): {exc2}")
 
     # ── Auto-seed demo + admin users (idempotent) ──────────────────────────
     try:
