@@ -14,10 +14,24 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ADD VALUE IF NOT EXISTS is safe to run multiple times
-    op.execute("ALTER TYPE workflowtrigger ADD VALUE IF NOT EXISTS 'schedule'")
-    op.execute("ALTER TYPE workflowtrigger ADD VALUE IF NOT EXISTS 'event'")
-    op.execute("ALTER TYPE workflowtrigger ADD VALUE IF NOT EXISTS 'webhook'")
+    # Create the enum type if it doesn't exist (001 is a placeholder, no tables created)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE workflowtrigger AS ENUM ('manual', 'schedule', 'event', 'webhook');
+        EXCEPTION
+            WHEN duplicate_object THEN
+                -- Type exists; add missing values safely
+                BEGIN
+                    ALTER TYPE workflowtrigger ADD VALUE IF NOT EXISTS 'schedule';
+                EXCEPTION WHEN others THEN NULL; END;
+                BEGIN
+                    ALTER TYPE workflowtrigger ADD VALUE IF NOT EXISTS 'event';
+                EXCEPTION WHEN others THEN NULL; END;
+                BEGIN
+                    ALTER TYPE workflowtrigger ADD VALUE IF NOT EXISTS 'webhook';
+                EXCEPTION WHEN others THEN NULL; END;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
