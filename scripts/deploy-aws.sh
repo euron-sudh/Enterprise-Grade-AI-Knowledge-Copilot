@@ -589,7 +589,8 @@ else
   log "Target group exists"
 fi
 
-# HTTP listener (port 80 → redirect to HTTPS)
+# HTTP listener (port 80 → forward to target group)
+# If a domain + HTTPS cert is added later, swap this to a redirect and add port 443
 HTTP_LISTENER=$(aws elbv2 describe-listeners \
   --load-balancer-arn "$ALB_ARN" \
   --query 'Listeners[?Port==`80`].ListenerArn' --output text 2>/dev/null || true)
@@ -597,17 +598,8 @@ if [ -z "$HTTP_LISTENER" ] || [ "$HTTP_LISTENER" = "None" ]; then
   aws elbv2 create-listener \
     --load-balancer-arn "$ALB_ARN" \
     --protocol HTTP --port 80 \
-    --default-actions '[{"Type":"redirect","RedirectConfig":{"Protocol":"HTTPS","Port":"443","StatusCode":"HTTP_301"}}]' > /dev/null
-  log "HTTP→HTTPS redirect listener created"
-
-  # HTTPS listener — placeholder (needs ACM cert; updated after cert issuance)
-  warn "HTTPS listener needs ACM certificate — see Section 8"
-  warn "Run this after cert is issued:"
-  warn "  aws elbv2 create-listener \\"
-  warn "    --load-balancer-arn ${ALB_ARN} \\"
-  warn "    --protocol HTTPS --port 443 \\"
-  warn "    --certificates CertificateArn=YOUR_ACM_CERT_ARN \\"
-  warn "    --default-actions Type=forward,TargetGroupArn=${TG_ARN}"
+    --default-actions "Type=forward,TargetGroupArn=${TG_ARN}" > /dev/null
+  log "HTTP listener created (port 80 → target group)"
 else
   log "HTTP listener exists"
 fi
