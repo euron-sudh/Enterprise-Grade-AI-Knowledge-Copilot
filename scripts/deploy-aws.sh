@@ -241,8 +241,8 @@ VPC_ID=$(aws ec2 describe-vpcs \
 if [ "$VPC_ID" = "None" ] || [ -z "$VPC_ID" ]; then
   info "Creating VPC..."
   VPC_ID=$(aws ec2 create-vpc --cidr-block 10.1.0.0/16 \
-    --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${PROJECT}-${ENV}}]" \
     --query Vpc.VpcId --output text)
+  aws ec2 create-tags --resources "$VPC_ID" --tags Key=Name,Value="${PROJECT}-${ENV}"
   aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-hostnames
   aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-support
   log "VPC created: ${VPC_ID}"
@@ -260,8 +260,8 @@ create_subnet_if_missing() {
   if [ "$id" = "None" ] || [ -z "$id" ]; then
     id=$(aws ec2 create-subnet \
       --vpc-id "$VPC_ID" --cidr-block "$cidr" --availability-zone "$az" \
-      --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${name}}]" \
       --query Subnet.SubnetId --output text)
+    aws ec2 create-tags --resources "$id" --tags Key=Name,Value="${name}"
     log "Subnet created: ${name} (${id})"
   else
     log "Subnet exists: ${name} (${id})"
@@ -274,12 +274,6 @@ PUB_1B=$(create_subnet_if_missing "${PROJECT}-public-1b"  "10.1.2.0/24"  "${AWS_
 PRIV_1A=$(create_subnet_if_missing "${PROJECT}-private-1a" "10.1.10.0/24" "${AWS_REGION}a")
 PRIV_1B=$(create_subnet_if_missing "${PROJECT}-private-1b" "10.1.11.0/24" "${AWS_REGION}b")
 
-# Enable auto-assign public IP on public subnets
-aws ec2 modify-subnet-attribute --subnet-id "$PUB_1A" --map-public-ip-on-launch '{"Value": true}' 2>/dev/null || \
-  aws ec2 modify-subnet-attribute --subnet-id "$PUB_1A" --map-public-ip-on-launch || true
-aws ec2 modify-subnet-attribute --subnet-id "$PUB_1B" --map-public-ip-on-launch '{"Value": true}' 2>/dev/null || \
-  aws ec2 modify-subnet-attribute --subnet-id "$PUB_1B" --map-public-ip-on-launch || true
-
 # Internet Gateway
 IGW_ID=$(aws ec2 describe-internet-gateways \
   --filters "Name=tag:Name,Values=${PROJECT}-igw" "Name=attachment.vpc-id,Values=${VPC_ID}" \
@@ -287,8 +281,8 @@ IGW_ID=$(aws ec2 describe-internet-gateways \
 if [ "$IGW_ID" = "None" ] || [ -z "$IGW_ID" ]; then
   info "Creating Internet Gateway..."
   IGW_ID=$(aws ec2 create-internet-gateway \
-    --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${PROJECT}-igw}]" \
     --query InternetGateway.InternetGatewayId --output text)
+  aws ec2 create-tags --resources "$IGW_ID" --tags Key=Name,Value="${PROJECT}-igw"
   aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID"
   log "IGW created: ${IGW_ID}"
 else
@@ -304,8 +298,8 @@ if [ "$NAT_ID" = "None" ] || [ -z "$NAT_ID" ]; then
   EIP_ALLOC=$(aws ec2 allocate-address --domain vpc --query AllocationId --output text)
   NAT_ID=$(aws ec2 create-nat-gateway \
     --subnet-id "$PUB_1A" --allocation-id "$EIP_ALLOC" \
-    --tag-specifications "ResourceType=natgateway,Tags=[{Key=Name,Value=${PROJECT}-nat}]" \
     --query NatGateway.NatGatewayId --output text)
+  aws ec2 create-tags --resources "$NAT_ID" --tags Key=Name,Value="${PROJECT}-nat" 2>/dev/null || true
   info "Waiting for NAT Gateway to be available..."
   aws ec2 wait nat-gateway-available --nat-gateway-ids "$NAT_ID"
   log "NAT Gateway created: ${NAT_ID}"
@@ -322,8 +316,8 @@ setup_route_table() {
     --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || true)
   if [ "$rtb_id" = "None" ] || [ -z "$rtb_id" ]; then
     rtb_id=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
-      --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${name}}]" \
       --query RouteTable.RouteTableId --output text)
+    aws ec2 create-tags --resources "$rtb_id" --tags Key=Name,Value="${name}"
     if [ "$route_type" = "igw" ]; then
       aws ec2 create-route --route-table-id "$rtb_id" \
         --destination-cidr-block 0.0.0.0/0 --gateway-id "$gateway_id" > /dev/null
@@ -336,10 +330,10 @@ setup_route_table() {
   echo "$rtb_id"
 }
 
-setup_route_table "${PROJECT}-public-rt"   "$PUB_1A"  igw "$IGW_ID" > /dev/null
-setup_route_table "${PROJECT}-public-rt-b" "$PUB_1B"  igw "$IGW_ID" > /dev/null
-setup_route_table "${PROJECT}-private-rt"  "$PRIV_1A" nat "$NAT_ID"  > /dev/null
-setup_route_table "${PROJECT}-private-rt-b" "$PRIV_1B" nat "$NAT_ID" > /dev/null
+setup_route_table "${PROJECT}-public-rt"    "$PUB_1A"  igw "$IGW_ID" > /dev/null
+setup_route_table "${PROJECT}-public-rt-b"  "$PUB_1B"  igw "$IGW_ID" > /dev/null
+setup_route_table "${PROJECT}-private-rt"   "$PRIV_1A" nat "$NAT_ID"  > /dev/null
+setup_route_table "${PROJECT}-private-rt-b" "$PRIV_1B" nat "$NAT_ID"  > /dev/null
 log "Route tables configured"
 
 # Security Groups
@@ -352,8 +346,8 @@ create_sg_if_missing() {
   if [ "$sg_id" = "None" ] || [ -z "$sg_id" ]; then
     sg_id=$(aws ec2 create-security-group \
       --group-name "$name" --description "$desc" --vpc-id "$VPC_ID" \
-      --tag-specifications "ResourceType=security-group,Tags=[{Key=Name,Value=${name}}]" \
       --query GroupId --output text)
+    aws ec2 create-tags --resources "$sg_id" --tags Key=Name,Value="${name}"
     log "Security group created: ${name} (${sg_id})"
   else
     log "Security group exists: ${name} (${sg_id})"
