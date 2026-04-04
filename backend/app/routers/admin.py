@@ -1,7 +1,10 @@
 """Admin router — user management, roles, and system administration."""
 import logging
+import smtplib
 import uuid
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -9,6 +12,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.security import hash_password
 from app.dependencies import get_current_user, get_db
 from app.models.user import Invite, User, UserRole
@@ -16,6 +20,29 @@ from app.models.user import Invite, User, UserRole
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _send_email(to: str, subject: str, html: str) -> bool:
+    """Send an email via SMTP. Returns True on success, False if SMTP not configured or fails."""
+    if not settings.has_smtp:
+        logger.info("SMTP not configured — skipping email to %s: %s", to, subject)
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"{settings.FROM_NAME} <{settings.FROM_EMAIL}>"
+        msg["To"] = to
+        msg.attach(MIMEText(html, "html"))
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.FROM_EMAIL, [to], msg.as_string())
+        logger.info("Email sent to %s: %s", to, subject)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to send email to %s: %s", to, exc)
+        return False
 
 ADMIN_ROLES = {UserRole.super_admin, UserRole.admin}
 
@@ -453,6 +480,184 @@ async def delete_team(
     if not row:
         raise HTTPException(status_code=404, detail="Team not found")
     await db.execute(_text("DELETE FROM teams WHERE id = :id"), {"id": team_id})
+    await db.commit()
+
+
+class AddMemberBody(_BaseModel):
+    email: str
+    role: str = "member"  # owner | admin | member | viewer
+
+
+@router.get("/teams/{team_id}/members")
+async def list_team_members(
+    team_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _ensure_team_tables(db)
+    result = await db.execute(_text("""
+        SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
+               u.name, u.email
+        FROM team_members tm
+        LEFT JOIN users u ON u.id = tm.user_id
+        WHERE tm.team_id = :tid
+        ORDER BY tm.joined_at ASC
+    """), {"tid": team_id})
+    rows = result.fetchall()
+    return [
+        {
+            "id": str(r[0]),
+            "userId": str(r[1]),
+            "role": r[2],
+            "joinedAt": r[3].isoformat() if r[3] else None,
+            "name": r[4] or "",
+            "email": r[5] or "",
+        }
+        for r in rows
+    ]
+
+
+@router.post("/teams/{team_id}/members", status_code=201)
+async def add_team_member(
+    team_id: str,
+    body: AddMemberBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a user to a team by email and send them an invitation email."""
+    await _ensure_team_tables(db)
+
+    # Verify team exists and get its name
+    team_row = await db.execute(_text("SELECT name, description FROM teams WHERE id = :id"), {"id": team_id})
+    team = team_row.fetchone()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    team_name, team_description = team[0], team[1]
+
+    # Look up user by email
+    user_result = await db.execute(select(User).where(User.email == body.email.strip().lower()))
+    target_user = user_result.scalar_one_or_none()
+
+    if not target_user:
+        # Create an invite token so they can register
+        invite_token = str(uuid.uuid4()).replace("-", "")
+        invite_role = _parse_role(body.role) if body.role in ("member", "viewer", "admin", "super_admin") else UserRole.member
+        invite = Invite(
+            id=uuid.uuid4(),
+            token=invite_token,
+            email=body.email.strip().lower(),
+            role=invite_role,
+            created_by_id=current_user.id,
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(invite)
+        await db.flush()
+        frontend_url = settings.FRONTEND_URL or "https://app.knowledgeforge.ai"
+        invite_url = f"{frontend_url}/register?invite={invite_token}"
+        _send_email(
+            to=body.email.strip(),
+            subject=f"You've been invited to join the {team_name} team on KnowledgeForge",
+            html=f"""
+            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;">
+              <div style="margin-bottom:24px;text-align:center;">
+                <div style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);margin-bottom:16px;">
+                  <span style="font-size:24px;">🧠</span>
+                </div>
+                <h1 style="font-size:22px;font-weight:700;color:#111827;margin:0;">You're invited to KnowledgeForge</h1>
+              </div>
+              <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+                <strong>{current_user.name or current_user.email}</strong> has invited you to join the
+                <strong>{team_name}</strong> team on <strong>KnowledgeForge AI</strong>.
+              </p>
+              {f'<p style="color:#6b7280;font-size:14px;font-style:italic;margin:0 0 20px;">{team_description}</p>' if team_description else ''}
+              <div style="background:#f3f4f6;border-radius:8px;padding:16px;margin:20px 0;font-size:14px;color:#374151;">
+                <strong>Your role:</strong> {body.role.capitalize()}<br>
+                <strong>Team:</strong> {team_name}
+              </div>
+              <a href="{invite_url}" style="display:block;text-align:center;padding:14px 24px;background:#6366f1;color:#fff;font-weight:600;font-size:15px;text-decoration:none;border-radius:8px;margin:24px 0;">
+                Accept Invitation &amp; Join Team
+              </a>
+              <p style="color:#9ca3af;font-size:12px;text-align:center;margin:16px 0 0;">
+                This invitation link expires in 7 days. If you didn't expect this email, you can safely ignore it.
+              </p>
+            </div>
+            """,
+        )
+        await db.commit()
+        return {
+            "status": "invited",
+            "message": f"Invitation email sent to {body.email}",
+            "email": body.email,
+            "role": body.role,
+        }
+
+    # User exists — add to team (or update role if already member)
+    existing = await db.execute(_text(
+        "SELECT id FROM team_members WHERE team_id = :tid AND user_id = :uid"
+    ), {"tid": team_id, "uid": str(target_user.id)})
+    if existing.fetchone():
+        raise HTTPException(status_code=409, detail="User is already a member of this team")
+
+    await db.execute(_text("""
+        INSERT INTO team_members (id, team_id, user_id, role, joined_at)
+        VALUES (:id, :tid, :uid, :role, :now)
+    """), {"id": str(uuid.uuid4()), "tid": team_id, "uid": str(target_user.id),
+           "role": body.role, "now": datetime.now(timezone.utc)})
+    await db.commit()
+
+    frontend_url = settings.FRONTEND_URL or "https://app.knowledgeforge.ai"
+    _send_email(
+        to=target_user.email,
+        subject=f"You've been added to the {team_name} team on KnowledgeForge",
+        html=f"""
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;">
+          <div style="margin-bottom:24px;text-align:center;">
+            <div style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);margin-bottom:16px;">
+              <span style="font-size:24px;">🧠</span>
+            </div>
+            <h1 style="font-size:22px;font-weight:700;color:#111827;margin:0;">You've been added to a team</h1>
+          </div>
+          <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+            Hi <strong>{target_user.name or target_user.email}</strong>!<br><br>
+            <strong>{current_user.name or current_user.email}</strong> has added you to the
+            <strong>{team_name}</strong> team on <strong>KnowledgeForge AI</strong>.
+          </p>
+          {f'<p style="color:#6b7280;font-size:14px;font-style:italic;margin:0 0 20px;">{team_description}</p>' if team_description else ''}
+          <div style="background:#f3f4f6;border-radius:8px;padding:16px;margin:20px 0;font-size:14px;color:#374151;">
+            <strong>Your role:</strong> {body.role.capitalize()}<br>
+            <strong>Team:</strong> {team_name}
+          </div>
+          <a href="{frontend_url}/teams" style="display:block;text-align:center;padding:14px 24px;background:#6366f1;color:#fff;font-weight:600;font-size:15px;text-decoration:none;border-radius:8px;margin:24px 0;">
+            View Team on KnowledgeForge
+          </a>
+          <p style="color:#9ca3af;font-size:12px;text-align:center;margin:16px 0 0;">
+            You can manage your team membership from your profile settings.
+          </p>
+        </div>
+        """,
+    )
+
+    return {
+        "status": "added",
+        "message": f"{target_user.name or target_user.email} added to {team_name}",
+        "userId": str(target_user.id),
+        "name": target_user.name,
+        "email": target_user.email,
+        "role": body.role,
+    }
+
+
+@router.delete("/teams/{team_id}/members/{user_id}", status_code=204)
+async def remove_team_member(
+    team_id: str,
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _ensure_team_tables(db)
+    await db.execute(_text(
+        "DELETE FROM team_members WHERE team_id = :tid AND user_id = :uid"
+    ), {"tid": team_id, "uid": user_id})
     await db.commit()
 
 

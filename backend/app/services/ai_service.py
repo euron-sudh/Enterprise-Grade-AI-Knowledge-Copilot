@@ -154,110 +154,106 @@ _STOP_WORDS = {
 async def _search_relevant_chunks(
     query: str, db: AsyncSession, limit: int = 8, user_id: Optional[uuid.UUID] = None
 ) -> list:
-    """Full-text search over document chunks owned by the user.
-    Returns all chunks for matched documents so the AI has full document content.
-    Uses broad keyword matching to maximise recall."""
+    """Retrieve document chunks for RAG context.
+
+    Strategy:
+    1. Always load the first 3 chunks of EVERY indexed document so the AI has
+       full knowledge base coverage regardless of query keywords.
+    2. Boost keyword-matched chunks to the front (higher relevance score).
+    This ensures no document is invisible to the AI.
+    """
     from sqlalchemy import or_
 
     try:
-        # Strip stop words and short words — only search on meaningful terms
         words = [
             w.strip().lower() for w in query.split()
             if len(w.strip()) > 2 and w.strip().lower() not in _STOP_WORDS
         ]
 
-        # If no meaningful words, fall back to fetching all recent docs
-        if not words:
-            q = (
-                select(DocumentChunk, Document)
-                .join(Document, DocumentChunk.document_id == Document.id)
-            )
-            if user_id:
-                q = q.where(Document.user_id == user_id)
-            q = q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
-            q = q.limit(limit * 4)
-        else:
-            # Build OR filter — match any word (broad recall)
+        # ── Step 1: Keyword-matched chunks (boosted relevance) ──────────────
+        matched_sources: list = []
+        covered_docs: set = set()
+
+        if words:
             filters = [DocumentChunk.content.ilike(f"%{w}%") for w in words[:8]]
-            # Also try document name match
             name_filters = [Document.name.ilike(f"%{w}%") for w in words[:4]]
-            q = (
+            kw_q = (
                 select(DocumentChunk, Document)
                 .join(Document, DocumentChunk.document_id == Document.id)
                 .where(or_(*filters, *name_filters))
             )
             if user_id:
-                q = q.where(Document.user_id == user_id)
-            q = q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
-            q = q.limit(limit * 6)
+                kw_q = kw_q.where(Document.user_id == user_id, Document.status == "indexed")
+            kw_q = kw_q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
+            kw_q = kw_q.limit(limit * 6)
 
-        result = await db.execute(q)
-        rows = result.all()
-
-        # Allow up to 5 chunks per document to capture full content
-        seen_doc: dict[str, int] = {}
-        sources = []
-        for chunk, doc in rows:
-            doc_id = str(doc.id)
-            if seen_doc.get(doc_id, 0) >= 5:
-                continue
-
-            seen_doc[doc_id] = seen_doc.get(doc_id, 0) + 1
-            display_name = doc.original_name or doc.name
-
-            # Score: prefer chunks that match more words
-            chunk_lower = chunk.content.lower()
-            matched = [w for w in words if w in chunk_lower] if words else []
-            relevance_score = round(len(matched) / max(len(words), 1), 3) if words else 0.5
-
-            sources.append({
-                "id": str(uuid.uuid4()),
-                "documentId": doc_id,
-                "documentName": display_name,
-                "documentType": doc.file_type,
-                "pageNumber": None,
-                "chunkText": chunk.content,  # full chunk — no truncation
-                "relevanceScore": min(0.95, round(0.5 + relevance_score * 0.5, 3)),
-                "url": None,
-                "connectorType": None,
-                "sourceType": "knowledge_base",
-            })
-            if len(sources) >= limit * 3:
-                break
-
-        # Fallback: if keyword search found nothing, fetch chunks from ALL indexed docs
-        # so the AI always has document content to reason over (not just metadata)
-        if not sources and words and user_id:
-            fallback_q = (
-                select(DocumentChunk, Document)
-                .join(Document, DocumentChunk.document_id == Document.id)
-                .where(Document.user_id == user_id, Document.status == "indexed")
-                .order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
-                .limit(limit * 5)
-            )
-            fallback_result = await db.execute(fallback_q)
-            fallback_rows = fallback_result.all()
-            seen_doc2: dict[str, int] = {}
-            for chunk, doc in fallback_rows:
+            kw_result = await db.execute(kw_q)
+            seen_kw: dict[str, int] = {}
+            for chunk, doc in kw_result.all():
                 doc_id = str(doc.id)
-                if seen_doc2.get(doc_id, 0) >= 5:
+                if seen_kw.get(doc_id, 0) >= 5:
                     continue
-                seen_doc2[doc_id] = seen_doc2.get(doc_id, 0) + 1
-                display_name = doc.original_name or doc.name
-                sources.append({
+                seen_kw[doc_id] = seen_kw.get(doc_id, 0) + 1
+                covered_docs.add(doc_id)
+                chunk_lower = chunk.content.lower()
+                matched = [w for w in words if w in chunk_lower]
+                rel = round(len(matched) / max(len(words), 1), 3)
+                matched_sources.append({
                     "id": str(uuid.uuid4()),
                     "documentId": doc_id,
-                    "documentName": display_name,
+                    "documentName": doc.original_name or doc.name,
                     "documentType": doc.file_type,
                     "pageNumber": None,
                     "chunkText": chunk.content,
-                    "relevanceScore": 0.5,
+                    "relevanceScore": min(0.95, round(0.5 + rel * 0.5, 3)),
                     "url": None,
                     "connectorType": None,
                     "sourceType": "knowledge_base",
                 })
 
-        return sources
+        # ── Step 2: Fill in uncovered docs (up to 5 extra docs, 2 chunks each) ──
+        # Only run if keyword search didn't cover many documents already
+        fill_sources: list = []
+        if len(covered_docs) < 8:
+            fill_q = (
+                select(DocumentChunk, Document)
+                .join(Document, DocumentChunk.document_id == Document.id)
+            )
+            if user_id:
+                fill_q = fill_q.where(Document.user_id == user_id, Document.status == "indexed")
+            fill_q = fill_q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
+            fill_q = fill_q.limit(60)  # bounded — max 30 docs × 2 chunks
+
+            fill_result = await db.execute(fill_q)
+            seen_fill: dict[str, int] = {}
+            extra_docs = 0
+            for chunk, doc in fill_result.all():
+                doc_id = str(doc.id)
+                if doc_id in covered_docs:
+                    continue
+                if extra_docs >= 5 and doc_id not in seen_fill:
+                    continue  # cap at 5 extra docs
+                if seen_fill.get(doc_id, 0) >= 2:
+                    continue
+                if doc_id not in seen_fill:
+                    extra_docs += 1
+                seen_fill[doc_id] = seen_fill.get(doc_id, 0) + 1
+                fill_sources.append({
+                    "id": str(uuid.uuid4()),
+                    "documentId": doc_id,
+                    "documentName": doc.original_name or doc.name,
+                    "documentType": doc.file_type,
+                    "pageNumber": None,
+                    "chunkText": chunk.content,
+                    "relevanceScore": 0.4,
+                    "url": None,
+                    "connectorType": None,
+                    "sourceType": "knowledge_base",
+                })
+
+        # Keyword-matched first (high relevance), then fill (coverage)
+        return matched_sources + fill_sources
+
     except Exception as e:
         logger.warning(f"Chunk search failed: {e}")
         return []
@@ -421,6 +417,7 @@ async def stream_chat_response(
     system_prompt: Optional[str] = None,
     images: Optional[List[str]] = None,
     user_id: Optional[uuid.UUID] = None,
+    use_web_search: bool = False,
 ) -> AsyncGenerator[dict, None]:
     """
     Main streaming generator. Yields dicts that will be serialized to SSE frames.
@@ -442,11 +439,11 @@ async def stream_chat_response(
 
     # --- 1b. Decide whether to also query the web ---
     web_sources: list = []
-    used_web_search = False
-    if settings.has_tavily_key and _needs_web_search(user_message_content, kb_sources):
-        logger.info("Web search triggered for query: %s", user_message_content[:80])
+    if settings.has_tavily_key and (use_web_search or _needs_web_search(user_message_content, kb_sources)):
+        logger.info("Web search triggered (forced=%s) for query: %s", use_web_search, user_message_content[:80])
         web_sources = await _tavily_web_search(user_message_content)
-        used_web_search = True
+    elif use_web_search and not settings.has_tavily_key:
+        logger.info("Web search requested but TAVILY_API_KEY not configured")
 
     sources = kb_sources + web_sources
     yield {"type": "sources", "sources": sources}
@@ -467,11 +464,19 @@ async def stream_chat_response(
 
     # Build system prompt with RAG context from both KB and web sources
     effective_system = system_prompt or (
-        "You are KnowledgeForge AI, an intelligent knowledge management assistant. "
-        "You help users search, analyze, and extract insights from their document library. "
+        "You are KnowledgeForge AI, an intelligent knowledge assistant. "
+        "You help users search, analyze, and extract insights from their document library, "
+        "and you can also answer general knowledge questions from your training data. "
         "Be concise, accurate, and professional. "
         "Do not use emojis in your responses. "
-        "Do not use informal language or filler phrases."
+        "Do not use informal language or filler phrases.\n\n"
+        "## Answering guidelines:\n"
+        "- If relevant documents are found in the knowledge base, prioritize that content and cite the source.\n"
+        "- If the question is not covered by the knowledge base, answer from your general training knowledge "
+        "and clearly state that the answer is from general knowledge, not from uploaded documents.\n"
+        "- NEVER refuse to answer a question simply because it is not in the knowledge base. "
+        "Always try to be helpful using your general knowledge as a fallback.\n"
+        "- For current events or real-time information, use any web search results provided."
     )
 
     # Include document inventory so the AI knows ALL files in the user's KB
@@ -500,29 +505,27 @@ async def stream_chat_response(
             "document by name or type, refer to this inventory. "
             "If a video has no transcript, explain that audio/visual transcription requires an AI key."
         )
-    else:
-        effective_system += (
-            "\n\nThe user has no documents uploaded yet. "
-            "Encourage them to upload files via the Knowledge Base section."
-        )
 
     if kb_sources:
+        # Cap context at 20 chunks to avoid oversized prompts
+        capped = kb_sources[:20]
         context_text = "\n\n".join(
             f"[Source: {s['documentName']} ({s['documentType'].upper()})]\n{s['chunkText']}"
-            for s in kb_sources
+            for s in capped
         )
         effective_system += (
-            f"\n\n## Relevant content retrieved from the knowledge base:\n{context_text}\n\n"
-            "Base your answer primarily on the above context. "
-            "Always cite which document(s) the information comes from."
+            f"\n\n## Relevant content from the knowledge base ({len(capped)} excerpt(s)):\n"
+            f"{context_text}\n\n"
+            "When the user's question relates to the above content, base your answer on it "
+            "and cite which document(s) the information comes from."
         )
     if web_sources:
         web_context = "\n\n".join(
             f"[Web — {s['documentName']}]({s['url']})\n{s['chunkText']}" for s in web_sources
         )
         effective_system += (
-            f"\n\nReal-time web search results:\n{web_context}\n\n"
-            "Use the web results to provide up-to-date information. "
+            f"\n\n## Real-time web search results:\n{web_context}\n\n"
+            "Use these results for up-to-date information. "
             "Always mention when information comes from a web source and include the URL."
         )
 

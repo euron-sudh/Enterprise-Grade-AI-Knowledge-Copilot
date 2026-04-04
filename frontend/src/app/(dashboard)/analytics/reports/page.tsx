@@ -33,13 +33,6 @@ const ICON_MAP: Record<string, React.ElementType> = {
   BarChart3, Zap, Users, TrendingUp, FileText,
 };
 
-const COLORS = [
-  'from-indigo-500 to-violet-600',
-  'from-amber-500 to-orange-600',
-  'from-green-500 to-emerald-600',
-  'from-cyan-500 to-blue-600',
-  'from-pink-500 to-rose-600',
-];
 
 const SCHEDULES = [
   'Every Monday 9am', 'Every Friday 5pm', '1st of month',
@@ -94,7 +87,7 @@ interface CreateModalProps {
 
 function CreateReportModal({ template, onClose, onCreate }: CreateModalProps) {
   const [name, setName] = useState(template.name === 'Custom Report' ? '' : template.name);
-  const [schedule, setSchedule] = useState(SCHEDULES[0]);
+  const [schedule, setSchedule] = useState<string>(SCHEDULES[0] ?? 'Daily');
   const [format, setFormat] = useState<Report['format']>('PDF');
   const [recipientInput, setRecipientInput] = useState('');
   const [recipients, setRecipients] = useState<string[]>([]);
@@ -303,7 +296,7 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Reports</h1>
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Reports</h1>
           <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Scheduled reports and custom analytics exports</p>
         </div>
         <button

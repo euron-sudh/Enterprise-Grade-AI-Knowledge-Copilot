@@ -6,21 +6,20 @@ import {
   Send,
   Paperclip,
   Mic,
+  MicOff,
   Sparkles,
   BookOpen,
-  RotateCcw,
   Copy,
   ThumbsUp,
   ThumbsDown,
   ChevronDown,
-  MessageSquare,
   Zap,
   FileText,
   Search,
   Video,
+  Globe,
 } from 'lucide-react';
-import { cn, getInitials, formatRelativeTime, generateId } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { cn, formatRelativeTime, generateId } from '@/lib/utils';
 
 // ---- Types ----
 interface Message {
@@ -63,23 +62,6 @@ const SUGGESTED_PROMPTS = [
     prompt: 'What were the key takeaways from the last all-hands meeting?',
   },
 ];
-
-// ---- Mock streaming response ----
-const MOCK_RESPONSE = `Based on the documents in your knowledge base, here's what I found:
-
-**Q4 2026 Strategy Overview**
-
-The Q4 strategy focuses on three core pillars:
-
-1. **Product Expansion** — Launch of the Enterprise tier with unlimited queries, SAML SSO, and dedicated support. Target: 50 enterprise logos by December.
-
-2. **Knowledge Coverage** — Increase indexed content to 100K+ documents across all connected sources. Priority connectors: Salesforce, HubSpot, and Jira.
-
-3. **AI Performance** — Reduce average response latency below 300ms (p95) and improve citation accuracy to >95%.
-
-Key OKRs include reaching $2M ARR by end of Q4, achieving 99.95% uptime SLA, and onboarding 5 Fortune 500 pilot customers.
-
-> *Source: Q4 Strategy Document (March 2026), Executive All-Hands Slides*`;
 
 // ---- Citation card ----
 function CitationCard({ citation, index }: { citation: Citation; index: number }) {
@@ -153,7 +135,7 @@ function MessageBubble({
             </div>
           ) : (
             <div
-              className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-li:my-0.5"
+              className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-li:my-0.5 prose-a:text-indigo-700 dark:prose-a:text-indigo-300 prose-a:font-semibold prose-a:no-underline hover:prose-a:underline prose-strong:text-surface-900 dark:prose-strong:text-white"
               dangerouslySetInnerHTML={{
                 __html: message.content
                   .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -161,7 +143,8 @@ function MessageBubble({
                   .replace(/^> (.+)$/gm, '<blockquote class="border-l-2 border-brand-400 pl-3 text-surface-500 dark:text-surface-400 not-italic">$1</blockquote>')
                   .replace(/\n\n/g, '<br/><br/>')
                   .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
-                  .replace(/^## (.+)$/gm, '<h2>$1</h2>'),
+                  .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                  .replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-700 dark:text-indigo-300 font-semibold hover:underline break-all">$1</a>'),
               }}
             />
           )}
@@ -228,9 +211,15 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [activeSource, setActiveSource] = useState('All sources');
+  const [isRecording, setIsRecording] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const isRecordingRef = useRef(false);
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({
@@ -313,7 +302,12 @@ export default function ChatPage() {
         const res = await fetch(`/api/backend/conversations/${convId}/messages/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(session as any)?.accessToken ?? ''}` },
-          body: JSON.stringify({ content: content.trim(), model: 'claude-sonnet-4-6' }),
+          body: JSON.stringify({
+            content: content.trim(),
+            model: 'claude-sonnet-4-6',
+            sourceFilter: activeSource === 'All sources' || activeSource === 'Web' ? null : activeSource,
+            useWebSearch: activeSource === 'Web',
+          }),
         });
 
         if (!res.ok || !res.body) throw new Error(`API error ${res.status}`);
@@ -405,6 +399,67 @@ export default function ChatPage() {
     console.log('Feedback:', id, type);
   };
 
+  const handleVoiceToggle = useCallback(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in your browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    if (isRecordingRef.current) {
+      recognitionRef.current?.stop();
+      isRecordingRef.current = false;
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        isRecordingRef.current = true;
+        setIsRecording(true);
+      };
+      recognition.onend = () => {
+        isRecordingRef.current = false;
+        setIsRecording(false);
+      };
+      recognition.onerror = (e: any) => {
+        console.error('Speech recognition error:', e.error);
+        isRecordingRef.current = false;
+        setIsRecording(false);
+      };
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results as any[])
+          .map((r: any) => r[0].transcript)
+          .join('');
+        setInput(transcript);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start speech recognition:', err);
+      isRecordingRef.current = false;
+      setIsRecording(false);
+    }
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setAttachedFiles(prev => [...prev, ...files]);
+    // Append filenames to input so user sees what's attached
+    const names = files.map(f => f.name).join(', ');
+    setInput(prev => prev ? `${prev} [${names}]` : `[Attached: ${names}]`);
+    // Reset so same file can be re-selected
+    e.target.value = '';
+  }, []);
+
   const isEmpty = messages.length === 0;
 
   return (
@@ -478,30 +533,50 @@ export default function ChatPage() {
           {/* Context chips */}
           <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <span className="text-[11px] text-surface-400 flex-shrink-0">Context:</span>
-            {['All sources', 'Confluence', 'Google Drive', 'Slack', 'GitHub'].map(
-              (src, i) => (
-                <button
-                  key={src}
-                  className={cn(
-                    'flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors',
-                    i === 0
-                      ? 'bg-brand-100 dark:bg-brand-950 text-brand-700 dark:text-brand-300'
-                      : 'bg-surface-100 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
-                  )}
-                >
-                  {src}
-                </button>
-              )
-            )}
+            {[
+              { label: 'All sources', icon: null },
+              { label: 'Web', icon: Globe },
+              { label: 'Confluence', icon: null },
+              { label: 'Google Drive', icon: null },
+              { label: 'Slack', icon: null },
+              { label: 'GitHub', icon: null },
+            ].map(({ label, icon: Icon }) => (
+              <button
+                key={label}
+                onClick={() => setActiveSource(label)}
+                className={cn(
+                  'flex-shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors',
+                  label === activeSource
+                    ? label === 'Web'
+                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-brand-100 dark:bg-brand-950 text-brand-700 dark:text-brand-300'
+                    : 'bg-surface-100 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
+                )}
+              >
+                {Icon && <Icon className="h-2.5 w-2.5" />}
+                {label}
+              </button>
+            ))}
           </div>
 
           <form
             onSubmit={handleSubmit}
             className="flex items-end gap-2 rounded-2xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 px-4 py-3 focus-within:border-brand-400 dark:focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-500/10 transition-all"
           >
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.pptx,image/*"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+
             {/* Attach */}
             <button
               type="button"
+              onClick={() => fileInputRef.current?.click()}
               className="flex-shrink-0 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors"
               aria-label="Attach file"
             >
@@ -523,10 +598,23 @@ export default function ChatPage() {
             {/* Voice */}
             <button
               type="button"
-              className="flex-shrink-0 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors"
-              aria-label="Voice input"
+              onClick={handleVoiceToggle}
+              className={cn(
+                'flex-shrink-0 transition-colors relative',
+                isRecording
+                  ? 'text-red-500 hover:text-red-600'
+                  : 'text-surface-400 hover:text-surface-600 dark:hover:text-surface-300'
+              )}
+              aria-label={isRecording ? 'Stop recording' : 'Voice input'}
             >
-              <Mic className="h-5 w-5" />
+              {isRecording ? (
+                <>
+                  <MicOff className="h-5 w-5" />
+                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                </>
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
             </button>
 
             {/* Send */}

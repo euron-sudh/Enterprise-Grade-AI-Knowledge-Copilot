@@ -82,11 +82,11 @@ export default function PlaygroundPage() {
           try {
             const chunk = JSON.parse(raw);
             if (chunk.type === 'error') { setResponse(`⚠ ${chunk.error || 'Model error'}`); break; }
-            if (chunk.type === 'done') break;
+            if (chunk.type === 'done' || chunk.type === 'sources') continue;
             const delta = chunk.delta ?? chunk.text ?? chunk.content ?? chunk.choices?.[0]?.delta?.content ?? '';
             if (delta) { fullText += delta; setResponse(fullText); }
           } catch {
-            if (raw) { fullText += raw; setResponse(fullText); }
+            /* skip malformed JSON frames */
           }
         }
       }

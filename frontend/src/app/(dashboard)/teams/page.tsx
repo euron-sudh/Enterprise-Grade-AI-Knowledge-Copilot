@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { authFetch } from '@/lib/api/token';
-import { Users, Plus, Search, MoreHorizontal, Shield, Crown, User, Mail, Trash2, Settings, Loader2, RefreshCw } from 'lucide-react';
+import { Users, Plus, Search, MoreHorizontal, Shield, Crown, User, Mail, Trash2, Settings, Loader2, RefreshCw, UserPlus, CheckCircle2, X } from 'lucide-react';
 
 interface Team {
   id: string;

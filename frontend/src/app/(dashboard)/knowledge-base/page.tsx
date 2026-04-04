@@ -696,6 +696,7 @@ export default function KnowledgeBasePage() {
   const [totalDocsCount, setTotalDocsCount] = useState(0);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [connectors, setConnectors] = useState<Connector[]>(CONNECTORS);
+  const [connectorsLoaded, setConnectorsLoaded] = useState(false);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
   const [showConnectorsPanel, setShowConnectorsPanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -726,6 +727,37 @@ export default function KnowledgeBasePage() {
       .finally(() => setLoadingDocs(false));
   }, [status, session?.user?.email]);
 
+  // Load persisted connector statuses from backend
+  useEffect(() => {
+    if (status !== 'authenticated' || connectorsLoaded) return;
+    authFetch('/api/backend/knowledge/connectors', {}, (session as any)?.accessToken, getUser())
+      .then(r => r.ok ? r.json() : null)
+      .then((data: Array<{ id: string; type: string; name: string; status: string; documentCount: number; lastSyncAt: string | null }> | null) => {
+        if (!data?.length) return;
+        // Map backend status → frontend ConnectorStatus
+        const statusMap: Record<string, ConnectorStatus> = {
+          connected: 'synced', syncing: 'syncing', error: 'error', disconnected: 'disconnected',
+        };
+        // Map connector type → display name used in CONNECTORS
+        const typeToName: Record<string, string> = {
+          google_drive: 'Google Drive', confluence: 'Confluence', slack: 'Slack',
+          github: 'GitHub', notion: 'Notion', jira: 'Jira', salesforce: 'Salesforce', gmail: 'Gmail',
+        };
+        setConnectors(prev => prev.map(c => {
+          const saved = data.find(d => typeToName[d.type] === c.name);
+          if (!saved) return c;
+          return {
+            ...c,
+            status: statusMap[saved.status] ?? 'disconnected',
+            docs: saved.documentCount,
+            lastSync: saved.lastSyncAt ? new Date(saved.lastSyncAt).toLocaleString() : 'Synced',
+          };
+        }));
+        setConnectorsLoaded(true);
+      })
+      .catch(() => {});
+  }, [status, session?.user?.email]);
+
   // Real-time sync simulation: syncing connectors poll every 8s
   useEffect(() => {
     const interval = setInterval(() => {
@@ -742,11 +774,24 @@ export default function KnowledgeBasePage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleConnect = useCallback((id: string, _fields: Record<string, string>) => {
+  const handleConnect = useCallback((id: string, fields: Record<string, string>) => {
+    const connector = connectors.find(c => c.id === id);
+    if (!connector) return;
+    const nameToType: Record<string, string> = {
+      'Google Drive': 'google_drive', 'Confluence': 'confluence', 'Slack': 'slack',
+      'GitHub': 'github', 'Notion': 'notion', 'Jira': 'jira', 'Salesforce': 'salesforce', 'Gmail': 'gmail',
+    };
+    // Optimistically update UI
     setConnectors(prev => prev.map(c =>
       c.id === id ? { ...c, status: 'syncing', lastSync: 'Syncing...' } : c
     ));
-  }, []);
+    // Persist to backend (fire-and-forget; UI already updated optimistically)
+    authFetch('/api/backend/knowledge/connectors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: nameToType[connector.name] ?? connector.name.toLowerCase().replace(' ', '_'), name: connector.name, config: fields }),
+    }, (session as any)?.accessToken, getUser()).catch(() => {});
+  }, [connectors, session]);
 
   const uploadFiles = async (files: File[]) => {
     if (!files.length) return;
@@ -756,27 +801,64 @@ export default function KnowledgeBasePage() {
     names.forEach(n => { statusMap[n] = 'uploading'; });
     setUploadStatus({ ...statusMap });
 
+    const addDocToList = (doc: any) => {
+      if (!doc) return;
+      setRealDocs(prev => [{
+        id: doc.id, name: doc.name, type: doc.type ?? 'other',
+        size: doc.size ? `${Math.round(doc.size / 1024)} KB` : '—',
+        uploadedAt: new Date().toLocaleDateString(),
+        status: 'processing', source: 'Upload',
+      }, ...prev]);
+      setTotalDocsCount(prev => prev + 1);
+    };
+
     await Promise.all(files.map(async (file) => {
       try {
-        const formData = new FormData();
-        formData.append('files', file);
-        const res = await authFetch('/api/backend/knowledge/documents/upload',
-          { method: 'POST', body: formData },
+        // Use presigned S3 URL to avoid Amplify's ~4.5 MB body limit
+        const presignRes = await authFetch(
+          `/api/backend/knowledge/documents/presigned-upload?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(file.type || 'application/octet-stream')}`,
+          {},
           (session as any)?.accessToken, getUser(),
         );
-        statusMap[file.name] = res.ok ? 'done' : 'error';
-        setUploadStatus({ ...statusMap });
-        if (res.ok) {
-          const docs = await res.json();
-          const doc = Array.isArray(docs) ? docs[0] : docs;
-          if (doc) {
-            setRealDocs(prev => [{
-              id: doc.id, name: doc.name, type: doc.type ?? 'other',
-              size: doc.size ? `${Math.round(doc.size / 1024)} KB` : '—',
-              uploadedAt: new Date().toLocaleDateString(),
-              status: 'processing', source: 'Upload',
-            }, ...prev]);
-            setTotalDocsCount(prev => prev + 1);
+
+        if (presignRes.ok) {
+          const { uploadUrl, s3Key } = await presignRes.json();
+          // PUT file directly to S3 (bypasses API gateway body limits)
+          const s3Res = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: file,
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          });
+          if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status}`);
+          // Register the uploaded file with the backend
+          const regForm = new FormData();
+          regForm.append('s3_key', s3Key);
+          regForm.append('filename', file.name);
+          regForm.append('file_size', String(file.size));
+          regForm.append('content_type', file.type || 'application/octet-stream');
+          const regRes = await authFetch('/api/backend/knowledge/documents/register-s3',
+            { method: 'POST', body: regForm },
+            (session as any)?.accessToken, getUser(),
+          );
+          statusMap[file.name] = regRes.ok ? 'done' : 'error';
+          setUploadStatus({ ...statusMap });
+          if (regRes.ok) {
+            const docs = await regRes.json();
+            addDocToList(Array.isArray(docs) ? docs[0] : docs);
+          }
+        } else {
+          // Fallback: direct multipart upload (for small files when S3 not configured)
+          const formData = new FormData();
+          formData.append('files', file);
+          const res = await authFetch('/api/backend/knowledge/documents/upload',
+            { method: 'POST', body: formData },
+            (session as any)?.accessToken, getUser(),
+          );
+          statusMap[file.name] = res.ok ? 'done' : 'error';
+          setUploadStatus({ ...statusMap });
+          if (res.ok) {
+            const docs = await res.json();
+            addDocToList(Array.isArray(docs) ? docs[0] : docs);
           }
         }
       } catch {

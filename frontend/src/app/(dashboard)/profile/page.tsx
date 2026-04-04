@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { authFetch } from '@/lib/api/token';
-import { User, Mail, Building2, Bell, Shield, Key, Palette, Globe, Save, Camera, Moon, Sun, Monitor, Loader2, CheckCircle2 } from 'lucide-react';
+import { User, Mail, Building2, Shield, Palette, Globe, Save, Camera, Moon, Sun, Monitor, Loader2, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useUIStore } from '@/stores/uiStore';
 
 const TABS = ['General', 'Notifications', 'Security', 'Appearance'] as const;
 type Tab = typeof TABS[number];
@@ -14,7 +15,7 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<Tab>('General');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark');
+  const { theme, setTheme } = useUIStore();
   const [notifs, setNotifs] = useState({
     emailDigest: true, newDocuments: true, meetingRecaps: true,
     workflowAlerts: false, teamMentions: true, systemUpdates: false,
@@ -102,7 +103,7 @@ export default function ProfilePage() {
           <nav className="space-y-1">
             {TABS.map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-400' : 'text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-100 dark:bg-gray-800'}`}>
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-400' : 'text-surface-600 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-gray-700'}`}>
                 {tab}
               </button>
             ))}
@@ -205,8 +206,8 @@ export default function ProfilePage() {
                   return (
                     <div key={key} className="flex items-center justify-between py-3 border-b border-surface-200 dark:border-gray-800 last:border-0">
                       <div>
-                        <p className="text-sm font-medium text-surface-900 dark:text-white">{labels[key].title}</p>
-                        <p className="text-xs text-surface-400 dark:text-gray-500">{labels[key].desc}</p>
+                        <p className="text-sm font-medium text-surface-900 dark:text-white">{labels[key]?.title}</p>
+                        <p className="text-xs text-surface-400 dark:text-gray-500">{labels[key]?.desc}</p>
                       </div>
                       <button onClick={() => setNotifs(n => ({ ...n, [key]: !val }))}
                         className={`relative w-11 h-6 rounded-full transition-colors ${val ? 'bg-indigo-600' : 'bg-surface-200 dark:bg-gray-700'}`}>

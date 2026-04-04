@@ -44,12 +44,11 @@ export default function KnowledgeGapsPage() {
   }, [status, session?.user?.email]);
 
   const gapPct = summary ? Math.round(summary.gapRate * 100) : 0;
-  const highPriority = gaps.filter(g => g.priority === 'high').length;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Knowledge Gaps</h1>
+        <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Knowledge Gaps</h1>
         <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Questions answered without source citations — indicating missing knowledge base content</p>
       </div>
 

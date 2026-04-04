@@ -109,6 +109,8 @@ class SendMessageRequest(BaseModel):
     attachmentIds: Optional[List[UUID]] = None
     systemPrompt: Optional[str] = None
     images: Optional[List[str]] = None  # base64 data URIs for vision
+    sourceFilter: Optional[str] = None  # e.g. "Confluence", "Google Drive" — None means all sources
+    useWebSearch: Optional[bool] = False  # force Tavily web search regardless of query keywords
 
 
 class BranchConversationRequest(BaseModel):

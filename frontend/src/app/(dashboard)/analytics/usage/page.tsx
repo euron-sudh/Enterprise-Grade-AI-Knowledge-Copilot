@@ -18,11 +18,6 @@ interface UsageData {
   peakHours: HourlyUsage[];
 }
 
-const AVATAR_COLORS = [
-  'from-pink-500 to-rose-600', 'from-amber-500 to-orange-600',
-  'from-violet-500 to-purple-600', 'from-teal-500 to-emerald-600', 'from-cyan-500 to-blue-600',
-];
-
 export default function UsagePage() {
   const { data: session, status } = useSession();
   const [data, setData] = useState<UsageData | null>(null);
@@ -65,7 +60,7 @@ export default function UsagePage() {
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Usage Analytics</h1>
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">Usage Analytics</h1>
           <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Track platform usage, active users, and feature adoption</p>
         </div>
         <div className="flex items-center gap-2">
@@ -171,7 +166,7 @@ export default function UsagePage() {
             <div className="flex items-center justify-center h-32 text-surface-500 dark:text-gray-600 text-sm">No query data yet</div>
           ) : (
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {[...timeSeries].reverse().slice(0, 7).map((d, i) => (
+              {[...timeSeries].reverse().slice(0, 7).map((d) => (
                 <div key={d.date} className="flex items-center gap-3">
                   <span className="text-surface-500 dark:text-gray-600 text-xs w-16 flex-shrink-0">{d.date}</span>
                   <div className="flex-1 h-2 bg-surface-100 dark:bg-gray-800 rounded-full overflow-hidden">

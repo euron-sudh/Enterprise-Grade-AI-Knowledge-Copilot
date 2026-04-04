@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { authFetch } from '@/lib/api/token';
-import { Lightbulb, TrendingUp, TrendingDown, Zap, Users, BookOpen, RefreshCw, Loader2 } from 'lucide-react';
+import { Lightbulb, TrendingUp, TrendingDown, Zap, Users, RefreshCw, Loader2 } from 'lucide-react';
 
 const TYPE_CONFIG: Record<string, { icon: typeof TrendingUp; color: string; bg: string }> = {
   opportunity: { icon: Users,        color: 'text-violet-400', bg: 'bg-violet-500/10 border-violet-500/20' },
@@ -49,7 +49,7 @@ export default function AIInsightsPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">AI Insights</h1>
+          <h1 className="text-2xl font-bold text-surface-900 dark:text-white">AI Insights</h1>
           <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">
             {meta.generatedAt ? `Generated ${new Date(meta.generatedAt).toLocaleString()}` : 'AI-generated recommendations based on your usage patterns'}
           </p>
@@ -89,7 +89,7 @@ export default function AIInsightsPage() {
       ) : (
         <div className="space-y-4">
           {insights.map(insight => {
-            const cfg = TYPE_CONFIG[insight.type] ?? TYPE_CONFIG.trend;
+            const cfg = TYPE_CONFIG[insight.type] ?? { icon: TrendingUp, color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20' };
             const Icon = cfg.icon;
             return (
               <div key={insight.id} className={`border rounded-2xl p-5 ${cfg.bg}`}>
@@ -99,7 +99,7 @@ export default function AIInsightsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-white font-semibold text-sm">{insight.title}</h3>
+                      <h3 className="text-surface-900 dark:text-white font-semibold text-sm">{insight.title}</h3>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${insight.impact === 'High' ? 'bg-indigo-500/20 text-indigo-400' : insight.impact === 'Positive' ? 'bg-green-500/20 text-green-400' : insight.impact === 'Cost Saving' ? 'bg-orange-500/20 text-orange-400' : 'bg-surface-200 dark:bg-gray-700 text-surface-600 dark:text-gray-400'}`}>
                         {insight.impact}
                       </span>

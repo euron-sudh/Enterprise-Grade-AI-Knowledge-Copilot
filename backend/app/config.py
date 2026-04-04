@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     # Convenience: add a single frontend URL without overriding the full list
     FRONTEND_URL: str = ""
 
+    # Email / SMTP
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    FROM_EMAIL: str = "noreply@knowledgeforge.ai"
+    FROM_NAME: str = "KnowledgeForge"
+
     # App
     APP_VERSION: str = "1.0.0"
     APP_NAME: str = "KnowledgeForge API"
@@ -86,6 +94,10 @@ class Settings(BaseSettings):
         if self.FRONTEND_URL and self.FRONTEND_URL not in origins:
             origins.append(self.FRONTEND_URL)
         return origins
+
+    @property
+    def has_smtp(self) -> bool:
+        return bool(self.SMTP_HOST and self.SMTP_USER and self.SMTP_PASSWORD)
 
     @property
     def has_s3(self) -> bool:
