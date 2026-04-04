@@ -47,7 +47,6 @@ jobs:
     name: Trigger Amplify Build (${{ needs.setup.outputs.environment }})
     runs-on: ubuntu-latest
     needs: setup
-    environment: ${{ needs.setup.outputs.environment }}
     permissions:
       id-token: write
       contents: read
