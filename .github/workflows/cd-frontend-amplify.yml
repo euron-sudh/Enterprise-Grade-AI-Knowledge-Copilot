@@ -97,28 +97,18 @@ jobs:
           echo "Timed out waiting for Amplify build."
           exit 1
 
-  # ── 3. Notify on failure ──────────────────────────────────────────────────────
-  notify-failure:
-    name: Notify on Failure
+  # ── 3. Summary ───────────────────────────────────────────────────────────────
+  summary:
+    name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy]
-    if: failure()
+    needs: [setup, deploy]
+    if: always()
     steps:
-      - name: Slack alert
-        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": ":x: KnowledgeForge frontend (Amplify) deployment failed",
-              "blocks": [{
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*:x: Frontend Deploy Failed*\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
-                }
-              }]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+      - name: Report result
+        run: |
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            echo "✅ Amplify deployment succeeded for branch ${{ needs.setup.outputs.amplify_branch }}"
+          else
+            echo "❌ Amplify deployment failed — check Amplify console for details"
+            exit 1
+          fi
