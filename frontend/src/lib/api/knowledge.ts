@@ -45,33 +45,95 @@ export async function getDocumentChunks(
   return data;
 }
 
+async function uploadViaPresignedS3(
+  file: File,
+  options?: { collectionId?: string },
+  onProgress?: (progress: UploadProgress[]) => void,
+): Promise<Document[]> {
+  // 1. Get presigned URL from backend
+  const { data: urlData } = await apiClient.get<{
+    uploadUrl: string; s3Key: string; bucket: string;
+  }>('/knowledge/documents/presigned-upload', {
+    params: { filename: file.name, content_type: file.type || 'application/octet-stream' },
+  });
+
+  // 2. Upload directly to S3 (bypasses Lambda proxy — no body size limit)
+  onProgress?.([{ fileId: 'file-0', fileName: file.name, progress: 10, status: 'uploading' }]);
+  const uploadRes = await fetch(urlData.uploadUrl, {
+    method: 'PUT',
+    body: file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+  });
+  if (!uploadRes.ok) throw new Error(`S3 upload failed: ${uploadRes.status}`);
+  onProgress?.([{ fileId: 'file-0', fileName: file.name, progress: 80, status: 'processing' }]);
+
+  // 3. Register with backend to trigger indexing
+  const regForm = new FormData();
+  regForm.append('s3_key', urlData.s3Key);
+  regForm.append('filename', file.name);
+  regForm.append('file_size', String(file.size));
+  regForm.append('content_type', file.type || 'application/octet-stream');
+  if (options?.collectionId) regForm.append('collectionId', options.collectionId);
+  const { data } = await apiClient.post<Document[]>('/knowledge/documents/register-s3', regForm);
+  onProgress?.([{ fileId: 'file-0', fileName: file.name, progress: 100, status: 'complete' }]);
+  return data;
+}
+
 export async function uploadDocuments(
   files: File[],
   options?: { collectionId?: string; tags?: string[] },
   onProgress?: (progress: UploadProgress[]) => void
 ): Promise<Document[]> {
-  const formData = new FormData();
-  files.forEach((file) => formData.append('files', file));
-  if (options?.collectionId) formData.append('collectionId', options.collectionId);
-  if (options?.tags) formData.append('tags', JSON.stringify(options.tags));
+  // For large files (>3 MB), use presigned S3 upload to bypass Lambda body limit.
+  // For small files, use the standard proxy route (faster, no extra round-trips).
+  const LARGE_FILE_THRESHOLD = 3 * 1024 * 1024; // 3 MB
+  const largeFiles = files.filter(f => f.size > LARGE_FILE_THRESHOLD);
+  const smallFiles = files.filter(f => f.size <= LARGE_FILE_THRESHOLD);
 
-  const { data } = await apiClient.post<Document[]>('/knowledge/documents/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: (progressEvent) => {
-      if (onProgress && progressEvent.total) {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-        onProgress(
-          files.map((f, i) => ({
-            fileId: `file-${i}`,
-            fileName: f.name,
-            progress: percent,
-            status: percent < 100 ? 'uploading' : 'processing',
-          }))
-        );
-      }
-    },
-  });
-  return data;
+  const results: Document[] = [];
+
+  // Upload large files via presigned S3
+  for (const file of largeFiles) {
+    try {
+      const docs = await uploadViaPresignedS3(file, options, onProgress);
+      results.push(...docs);
+    } catch {
+      // Fallback to proxy if S3 unavailable
+      const formData = new FormData();
+      formData.append('files', file);
+      if (options?.collectionId) formData.append('collectionId', options.collectionId);
+      const { data } = await apiClient.post<Document[]>('/knowledge/documents/upload', formData);
+      results.push(...data);
+    }
+  }
+
+  // Upload small files via proxy
+  if (smallFiles.length > 0) {
+    const formData = new FormData();
+    smallFiles.forEach((file) => formData.append('files', file));
+    if (options?.collectionId) formData.append('collectionId', options.collectionId);
+    if (options?.tags) formData.append('tags', JSON.stringify(options.tags));
+
+    const { data } = await apiClient.post<Document[]>('/knowledge/documents/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(
+            smallFiles.map((f, i) => ({
+              fileId: `file-${i}`,
+              fileName: f.name,
+              progress: percent,
+              status: percent < 100 ? 'uploading' : 'processing',
+            }))
+          );
+        }
+      },
+    });
+    results.push(...data);
+  }
+
+  return results;
 }
 
 export async function listCollections(): Promise<Collection[]> {

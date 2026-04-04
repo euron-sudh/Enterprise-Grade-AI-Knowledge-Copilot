@@ -475,7 +475,7 @@ function ConnectorModal({
               {connector.icon}
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Connect {connector.name}</h2>
+              <h2 className="text-base font-bold text-surface-900 dark:text-white">Connect {connector.name}</h2>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs text-surface-600 dark:text-gray-400">{config.authType}</span>
                 <span className="text-surface-500 dark:text-gray-600">·</span>
@@ -491,7 +491,7 @@ function ConnectorModal({
         <div className="p-6 space-y-6">
           {/* Steps */}
           <div>
-            <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
                 {config.steps.length}
               </span>
@@ -542,7 +542,7 @@ function ConnectorModal({
           {/* Fields */}
           {!isConnected && (
             <div>
-              <h3 className="text-sm font-semibold text-white mb-3">Connection Details</h3>
+              <h3 className="text-sm font-semibold text-surface-900 dark:text-white mb-3">Connection Details</h3>
               <div className="space-y-3">
                 {config.fields.map(field => (
                   <div key={field.key}>
@@ -555,7 +555,7 @@ function ConnectorModal({
                         setFields(prev => ({ ...prev, [field.key]: e.target.value }));
                         setErrors(prev => ({ ...prev, [field.key]: '' }));
                       }}
-                      className={`w-full rounded-lg border px-3 py-2 text-sm bg-surface-100 dark:bg-gray-800 text-white placeholder-gray-500 outline-none transition-colors focus:ring-1 ${
+                      className={`w-full rounded-lg border px-3 py-2 text-sm bg-surface-100 dark:bg-gray-800 text-surface-900 dark:text-white placeholder-gray-500 outline-none transition-colors focus:ring-1 ${
                         errors[field.key]
                           ? 'border-red-500 focus:ring-red-500'
                           : 'border-surface-200 dark:border-gray-700 focus:border-indigo-500 focus:ring-indigo-500'
@@ -646,7 +646,7 @@ function ConnectorsPanel({
       <div className="relative w-full max-w-sm h-full bg-white dark:bg-gray-900 border-l border-surface-200 dark:border-gray-800 shadow-2xl overflow-y-auto">
         <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900">
           <div>
-            <h2 className="text-sm font-bold text-white">All Connectors</h2>
+            <h2 className="text-sm font-bold text-surface-900 dark:text-white">All Connectors</h2>
             <p className="text-xs text-surface-600 dark:text-gray-400 mt-0.5">{connectors.length} available</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-surface-600 dark:text-gray-400 hover:text-white hover:bg-surface-100 dark:bg-gray-800 transition-colors">
@@ -668,7 +668,7 @@ function ConnectorsPanel({
                       {c.icon}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white">{c.name}</p>
+                      <p className="text-sm font-semibold text-surface-900 dark:text-white">{c.name}</p>
                       <p className="text-xs text-surface-600 dark:text-gray-400 truncate">{c.description}</p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">

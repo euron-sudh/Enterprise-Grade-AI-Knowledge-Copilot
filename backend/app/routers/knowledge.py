@@ -273,6 +273,73 @@ async def upload_documents(
     return [DocumentOut.from_orm(d) for d in documents]
 
 
+# ── Presigned S3 Upload (bypasses Lambda body limit) ─────────────────────────
+
+@router.get("/documents/presigned-upload")
+async def get_presigned_upload_url(
+    filename: str = Query(...),
+    content_type: str = Query("application/octet-stream"),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a presigned S3 URL for direct browser-to-S3 upload."""
+    if not settings.AWS_S3_BUCKET:
+        raise HTTPException(status_code=501, detail="S3 not configured")
+    try:
+        import boto3
+        s3 = boto3.client("s3", region_name=settings.AWS_S3_REGION or "ap-south-1")
+        key = f"uploads/{current_user.id}/{uuid.uuid4()}_{filename}"
+        presigned = s3.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": settings.AWS_S3_BUCKET, "Key": key, "ContentType": content_type},
+            ExpiresIn=600,
+        )
+        return {"uploadUrl": presigned, "s3Key": key, "bucket": settings.AWS_S3_BUCKET}
+    except Exception as e:
+        logger.error(f"Presigned URL generation failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+
+@router.post("/documents/register-s3")
+async def register_s3_document(
+    s3_key: str = Form(...),
+    filename: str = Form(...),
+    file_size: int = Form(...),
+    content_type: str = Form("application/octet-stream"),
+    collectionId: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """After a direct S3 upload, register the document and trigger indexing."""
+    if not settings.AWS_S3_BUCKET:
+        raise HTTPException(status_code=501, detail="S3 not configured")
+    try:
+        import boto3
+        s3 = boto3.client("s3", region_name=settings.AWS_S3_REGION or "ap-south-1")
+        obj = s3.get_object(Bucket=settings.AWS_S3_BUCKET, Key=s3_key)
+        content = obj["Body"].read()
+    except Exception as e:
+        logger.error(f"Failed to fetch S3 object: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve uploaded file from S3")
+
+    # Use existing upload pipeline with the downloaded content
+    import io
+    from fastapi import UploadFile as FUploadFile
+    from starlette.datastructures import UploadFile as StarletteUploadFile
+
+    mock_file = StarletteUploadFile(
+        filename=filename,
+        file=io.BytesIO(content),
+        headers={"content-type": content_type},
+    )
+    documents = await document_service.upload_documents(
+        files=[mock_file],
+        user=current_user,
+        collection_id=collectionId,
+        db=db,
+    )
+    return [DocumentOut.from_orm(d) for d in documents]
+
+
 # ── Video Upload ──────────────────────────────────────────────────────────────
 
 @router.post("/videos/upload", response_model=DocumentOut)

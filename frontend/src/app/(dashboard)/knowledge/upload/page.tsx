@@ -48,20 +48,55 @@ export default function UploadPage() {
 
   const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
+  const LARGE_FILE_THRESHOLD = 3 * 1024 * 1024; // 3 MB
+
   const uploadFile = async (file: File, id: string) => {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, status: 'uploading' } : f));
     try {
-      const formData = new FormData();
-      formData.append('files', file);
-      const res = await authFetch(
-        '/api/backend/knowledge/documents/upload',
-        { method: 'POST', body: formData },
-        session?.accessToken,
-        getUser(),
-      );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.detail || `Upload failed (${res.status})`);
+      if (file.size > LARGE_FILE_THRESHOLD) {
+        // Large file: use presigned S3 to bypass Lambda body limit
+        const urlRes = await authFetch(
+          `/api/backend/knowledge/documents/presigned-upload?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(file.type || 'application/octet-stream')}`,
+          { method: 'GET' },
+          session?.accessToken,
+          getUser(),
+        );
+        if (!urlRes.ok) throw new Error('Could not get upload URL');
+        const { uploadUrl, s3Key } = await urlRes.json();
+        // Upload directly to S3 (no Lambda in path)
+        const s3Res = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        });
+        if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status}`);
+        // Register with backend
+        const regForm = new FormData();
+        regForm.append('s3_key', s3Key);
+        regForm.append('filename', file.name);
+        regForm.append('file_size', String(file.size));
+        regForm.append('content_type', file.type || 'application/octet-stream');
+        const regRes = await authFetch(
+          '/api/backend/knowledge/documents/register-s3',
+          { method: 'POST', body: regForm },
+          session?.accessToken,
+          getUser(),
+        );
+        if (!regRes.ok) throw new Error('Failed to register document');
+      } else {
+        // Small file: use standard proxy
+        const formData = new FormData();
+        formData.append('files', file);
+        const res = await authFetch(
+          '/api/backend/knowledge/documents/upload',
+          { method: 'POST', body: formData },
+          session?.accessToken,
+          getUser(),
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.detail || `Upload failed (${res.status})`);
+        }
       }
       setFiles(prev => prev.map(f => f.id === id ? { ...f, status: 'done' } : f));
     } catch (e: any) {
