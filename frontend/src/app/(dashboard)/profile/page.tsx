@@ -102,7 +102,7 @@ export default function ProfilePage() {
           <nav className="space-y-1">
             {TABS.map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-400' : 'text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-gray-800'}`}>
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-400' : 'text-surface-500 dark:text-gray-400 hover:text-surface-900 dark:hover:text-white hover:bg-surface-100 dark:hover:bg-surface-100 dark:bg-gray-800'}`}>
                 {tab}
               </button>
             ))}
@@ -115,7 +115,7 @@ export default function ProfilePage() {
             <div className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-gray-800 rounded-xl p-6">
               <h2 className="text-lg font-semibold text-surface-900 dark:text-white mb-6">Personal Information</h2>
               {loading ? (
-                <div className="flex items-center justify-center py-10 text-gray-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
+                <div className="flex items-center justify-center py-10 text-surface-500 dark:text-gray-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
               ) : (
                 <>
                   <div className="flex items-center gap-4 mb-6">

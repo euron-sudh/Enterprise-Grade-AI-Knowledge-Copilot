@@ -137,7 +137,7 @@ const CONNECTOR_CONFIGS: Record<string, ConnectorConfig> = {
       {
         title: 'Add Authorized Redirect URI',
         description: 'In the OAuth client settings, add the following redirect URI:',
-        code: 'http://localhost:8010/auth/oauth/google-drive/callback',
+        code: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010'}/auth/oauth/google-drive/callback`,
       },
       {
         title: 'Copy credentials and connect',
@@ -330,7 +330,7 @@ const CONNECTOR_CONFIGS: Record<string, ConnectorConfig> = {
       {
         title: 'Add Callback URL',
         description: 'In the Connected App OAuth settings, add this callback URL:',
-        code: 'http://localhost:8010/auth/oauth/salesforce/callback',
+        code: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010'}/auth/oauth/salesforce/callback`,
       },
       {
         title: 'Get Consumer Key and Secret',
@@ -367,7 +367,7 @@ const CONNECTOR_CONFIGS: Record<string, ConnectorConfig> = {
       {
         title: 'Add Authorized Redirect URI',
         description: 'Add the following redirect URI to your OAuth client:',
-        code: 'http://localhost:8010/auth/oauth/gmail/callback',
+        code: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010'}/auth/oauth/gmail/callback`,
       },
       {
         title: 'Enter credentials and connect',
@@ -382,7 +382,7 @@ const CONNECTORS: Connector[] = [
   { id: '1', name: 'Google Drive', icon: <GoogleDriveIcon />, color: 'text-white', bgColor: 'bg-blue-600', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync files & folders', category: 'Storage' },
   { id: '2', name: 'Confluence', icon: <ConfluenceIcon />, color: 'text-white', bgColor: 'bg-blue-500', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync pages & spaces', category: 'Wiki' },
   { id: '3', name: 'Slack', icon: <SlackIcon />, color: 'text-white', bgColor: 'bg-purple-600', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync channels & messages', category: 'Communication' },
-  { id: '4', name: 'GitHub', icon: <GitHubIcon />, color: 'text-white', bgColor: 'bg-gray-900', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync repos & wikis', category: 'Development' },
+  { id: '4', name: 'GitHub', icon: <GitHubIcon />, color: 'text-white', bgColor: 'bg-white dark:bg-gray-900', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync repos & wikis', category: 'Development' },
   { id: '5', name: 'Notion', icon: <NotionIcon />, color: 'text-black', bgColor: 'bg-white border border-gray-200', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync pages & databases', category: 'Wiki' },
   { id: '6', name: 'Jira', icon: <JiraIcon />, color: 'text-white', bgColor: 'bg-blue-700', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync issues & projects', category: 'Project Management' },
   { id: '7', name: 'Salesforce', icon: <SalesforceIcon />, color: 'text-white', bgColor: 'bg-sky-500', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync CRM records', category: 'CRM' },
@@ -420,7 +420,7 @@ function CopyButton({ text }: { text: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <button onClick={copy} className="absolute top-2 right-2 p-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
+    <button onClick={copy} className="absolute top-2 right-2 p-1 rounded bg-surface-200 dark:bg-gray-700 hover:bg-gray-600 text-surface-700 dark:text-gray-300 transition-colors">
       {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
   );
@@ -467,9 +467,9 @@ function ConnectorModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl">
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-surface-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl">
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-gray-800 bg-gray-900 px-6 py-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-4">
           <div className="flex items-center gap-3">
             <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${connector.bgColor}`}>
               {connector.icon}
@@ -477,13 +477,13 @@ function ConnectorModal({
             <div>
               <h2 className="text-base font-bold text-white">Connect {connector.name}</h2>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-gray-400">{config.authType}</span>
-                <span className="text-gray-600">·</span>
-                <span className="text-xs text-gray-500">{connector.category}</span>
+                <span className="text-xs text-surface-600 dark:text-gray-400">{config.authType}</span>
+                <span className="text-surface-500 dark:text-gray-600">·</span>
+                <span className="text-xs text-surface-500 dark:text-gray-500">{connector.category}</span>
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-surface-600 dark:text-gray-400 hover:text-white hover:bg-surface-100 dark:bg-gray-800 transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -499,24 +499,24 @@ function ConnectorModal({
             </h3>
             <div className="space-y-2">
               {config.steps.map((step, i) => (
-                <div key={i} className={`rounded-xl border transition-all ${expandedStep === i ? 'border-indigo-500/50 bg-indigo-950/30' : 'border-gray-800 bg-gray-800/40 hover:border-gray-700'}`}>
+                <div key={i} className={`rounded-xl border transition-all ${expandedStep === i ? 'border-indigo-500/50 bg-indigo-950/30' : 'border-surface-200 dark:border-gray-800 bg-surface-100/40 dark:bg-gray-800/40 hover:border-surface-200 dark:border-gray-700'}`}>
                   <button
                     className="w-full flex items-center gap-3 px-4 py-3 text-left"
                     onClick={() => setExpandedStep(expandedStep === i ? -1 : i)}
                   >
-                    <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${expandedStep === i ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
+                    <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${expandedStep === i ? 'bg-indigo-600 text-white' : 'bg-surface-200 dark:bg-gray-700 text-surface-700 dark:text-gray-300'}`}>
                       {i + 1}
                     </span>
-                    <span className={`flex-1 text-sm font-medium ${expandedStep === i ? 'text-white' : 'text-gray-300'}`}>{step.title}</span>
+                    <span className={`flex-1 text-sm font-medium ${expandedStep === i ? 'text-white' : 'text-surface-700 dark:text-gray-300'}`}>{step.title}</span>
                     {expandedStep === i
-                      ? <ChevronUp className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                      : <ChevronDown className="h-4 w-4 text-gray-500 flex-shrink-0" />}
+                      ? <ChevronUp className="h-4 w-4 text-surface-600 dark:text-gray-400 flex-shrink-0" />
+                      : <ChevronDown className="h-4 w-4 text-surface-500 dark:text-gray-500 flex-shrink-0" />}
                   </button>
                   {expandedStep === i && (
                     <div className="px-4 pb-4 space-y-3">
-                      <p className="text-sm text-gray-400 leading-relaxed">{step.description}</p>
+                      <p className="text-sm text-surface-600 dark:text-gray-400 leading-relaxed">{step.description}</p>
                       {step.code && (
-                        <div className="relative rounded-lg bg-gray-950 border border-gray-700 p-3 pr-10">
+                        <div className="relative rounded-lg bg-surface-50 dark:bg-gray-950 border border-surface-200 dark:border-gray-700 p-3 pr-10">
                           <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap">{step.code}</pre>
                           <CopyButton text={step.code} />
                         </div>
@@ -546,7 +546,7 @@ function ConnectorModal({
               <div className="space-y-3">
                 {config.fields.map(field => (
                   <div key={field.key}>
-                    <label className="block text-xs font-medium text-gray-400 mb-1">{field.label}</label>
+                    <label className="block text-xs font-medium text-surface-600 dark:text-gray-400 mb-1">{field.label}</label>
                     <input
                       type={field.type ?? 'text'}
                       placeholder={field.placeholder}
@@ -555,10 +555,10 @@ function ConnectorModal({
                         setFields(prev => ({ ...prev, [field.key]: e.target.value }));
                         setErrors(prev => ({ ...prev, [field.key]: '' }));
                       }}
-                      className={`w-full rounded-lg border px-3 py-2 text-sm bg-gray-800 text-white placeholder-gray-500 outline-none transition-colors focus:ring-1 ${
+                      className={`w-full rounded-lg border px-3 py-2 text-sm bg-surface-100 dark:bg-gray-800 text-white placeholder-gray-500 outline-none transition-colors focus:ring-1 ${
                         errors[field.key]
                           ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-700 focus:border-indigo-500 focus:ring-indigo-500'
+                          : 'border-surface-200 dark:border-gray-700 focus:border-indigo-500 focus:ring-indigo-500'
                       }`}
                     />
                     {errors[field.key] && (
@@ -577,18 +577,18 @@ function ConnectorModal({
               <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0" />
               <div>
                 <p className="text-sm font-semibold text-emerald-400">Connected successfully</p>
-                <p className="text-xs text-gray-400 mt-0.5">This connector is active and syncing in real-time.</p>
+                <p className="text-xs text-surface-600 dark:text-gray-400 mt-0.5">This connector is active and syncing in real-time.</p>
               </div>
             </div>
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-800">
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-surface-200 dark:border-gray-800">
             <a
               href={config.docsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs text-surface-500 dark:text-gray-500 hover:text-surface-700 dark:text-gray-300 transition-colors"
             >
               <ExternalLink className="h-3.5 w-3.5" />
               View API Docs
@@ -596,7 +596,7 @@ function ConnectorModal({
             <div className="flex items-center gap-2">
               <button
                 onClick={onClose}
-                className="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 transition-colors"
+                className="rounded-lg border border-surface-200 dark:border-gray-700 px-4 py-2 text-sm font-medium text-surface-700 dark:text-gray-300 hover:bg-surface-100 dark:bg-gray-800 transition-colors"
               >
                 Cancel
               </button>
@@ -643,37 +643,37 @@ function ConnectorsPanel({
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm h-full bg-gray-900 border-l border-gray-800 shadow-2xl overflow-y-auto">
-        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-gray-800 bg-gray-900">
+      <div className="relative w-full max-w-sm h-full bg-white dark:bg-gray-900 border-l border-surface-200 dark:border-gray-800 shadow-2xl overflow-y-auto">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900">
           <div>
             <h2 className="text-sm font-bold text-white">All Connectors</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{connectors.length} available</p>
+            <p className="text-xs text-surface-600 dark:text-gray-400 mt-0.5">{connectors.length} available</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-surface-600 dark:text-gray-400 hover:text-white hover:bg-surface-100 dark:bg-gray-800 transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
         <div className="p-4 space-y-5">
           {categories.map(cat => (
             <div key={cat}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2 px-1">{cat}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-surface-500 dark:text-gray-500 mb-2 px-1">{cat}</p>
               <div className="space-y-2">
                 {connectors.filter(c => c.category === cat).map(c => (
                   <button
                     key={c.id}
                     onClick={() => { onClose(); onCardClick(c); }}
-                    className="w-full flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-800/40 px-4 py-3 hover:border-indigo-500/50 hover:bg-indigo-950/20 transition-all text-left"
+                    className="w-full flex items-center gap-3 rounded-xl border border-surface-200 dark:border-gray-800 bg-surface-100/40 dark:bg-gray-800/40 px-4 py-3 hover:border-indigo-500/50 hover:bg-indigo-950/20 transition-all text-left"
                   >
                     <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${c.bgColor}`}>
                       {c.icon}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white">{c.name}</p>
-                      <p className="text-xs text-gray-400 truncate">{c.description}</p>
+                      <p className="text-xs text-surface-600 dark:text-gray-400 truncate">{c.description}</p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <span className={`h-2 w-2 rounded-full ${CONNECTOR_STATUS[c.status].dot}`} />
-                      <span className="text-[10px] text-gray-500">{CONNECTOR_STATUS[c.status].label}</span>
+                      <span className="text-[10px] text-surface-500 dark:text-gray-500">{CONNECTOR_STATUS[c.status].label}</span>
                     </div>
                   </button>
                 ))}
@@ -800,7 +800,7 @@ export default function KnowledgeBasePage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowConnectorsPanel(true)}
-            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors"
           >
             <Plug className="h-4 w-4" />
             Connectors
@@ -963,7 +963,7 @@ export default function KnowledgeBasePage() {
                 const statusCfg = STATUS_CONFIG[docStatus];
                 const StatusIcon = statusCfg.icon;
                 return (
-                  <tr key={doc.id} className="hover:bg-surface-100 dark:hover:bg-gray-800/50 transition-colors group">
+                  <tr key={doc.id} className="hover:bg-surface-100 dark:hover:bg-surface-100/50 dark:bg-gray-800/50 transition-colors group">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <Icon className={`h-4 w-4 flex-shrink-0 ${FILE_COLORS[docType]}`} />
@@ -981,10 +981,10 @@ export default function KnowledgeBasePage() {
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="rounded p-1 text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
+                        <button className="rounded p-1 text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-surface-700 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors">
                           <RefreshCw className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded p-1 text-surface-400 dark:text-gray-500 hover:text-red-400 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
+                        <button className="rounded p-1 text-surface-400 dark:text-gray-500 hover:text-red-400 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>

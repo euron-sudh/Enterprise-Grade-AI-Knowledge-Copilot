@@ -28,6 +28,7 @@ import GoogleProvider from 'next-auth/providers/google';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
+// Backend exposes routes at /auth/login (no /api/v1 prefix)
 
 // NEXTAUTH_URL isn't injected into Amplify SSR Lambda at runtime — set fallback so
 // NextAuth can construct correct OAuth callback URLs in production.

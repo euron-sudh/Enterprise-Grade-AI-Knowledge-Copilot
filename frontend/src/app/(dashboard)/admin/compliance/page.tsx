@@ -23,7 +23,7 @@ const CONTROLS = [
 const statusConfig = {
   compliant: { icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-500/20', label: 'Compliant' },
   in_progress: { icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/20', label: 'In Progress' },
-  pending: { icon: AlertCircle, color: 'text-gray-400', bg: 'bg-gray-500/20', label: 'Pending' },
+  pending: { icon: AlertCircle, color: 'text-surface-600 dark:text-gray-400', bg: 'bg-gray-500/20', label: 'Pending' },
 };
 
 export default function CompliancePage() {
@@ -32,9 +32,9 @@ export default function CompliancePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Compliance Dashboard</h1>
-          <p className="text-gray-400 text-sm mt-1">Monitor compliance status across regulatory frameworks and standards</p>
+          <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Monitor compliance status across regulatory frameworks and standards</p>
         </div>
-        <button className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white font-medium px-4 py-2 rounded-xl border border-white/10 transition-colors text-sm">
+        <button className="flex items-center gap-2 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white font-medium px-4 py-2 rounded-xl border border-surface-200 dark:border-white/10 transition-colors text-sm">
           <Download className="w-4 h-4" /> Export Report
         </button>
       </div>
@@ -45,7 +45,7 @@ export default function CompliancePage() {
           const cfg = statusConfig[fw.status as keyof typeof statusConfig];
           const Icon = cfg.icon;
           return (
-            <div key={fw.name} className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+            <div key={fw.name} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
               <div className="flex items-start justify-between mb-4">
                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${fw.color} flex items-center justify-center`}>
                   <Shield className="w-5 h-5 text-white" />
@@ -57,17 +57,17 @@ export default function CompliancePage() {
               <h3 className="text-white font-bold">{fw.name}</h3>
               <div className="mt-3 mb-2">
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-gray-500">Compliance Score</span>
+                  <span className="text-surface-500 dark:text-gray-500">Compliance Score</span>
                   <span className={fw.score >= 90 ? 'text-green-400' : fw.score >= 70 ? 'text-amber-400' : 'text-red-400'}>{fw.score}%</span>
                 </div>
-                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-surface-100 dark:bg-gray-800 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full ${fw.score >= 90 ? 'bg-green-500' : fw.score >= 70 ? 'bg-amber-500' : 'bg-red-500'}`}
                     style={{ width: `${fw.score}%` }}
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-600 mt-3">
+              <div className="flex items-center justify-between text-xs text-surface-500 dark:text-gray-600 mt-3">
                 <span>Last: {fw.lastAudit}</span>
                 <span>Next: {fw.nextAudit}</span>
               </div>
@@ -77,15 +77,15 @@ export default function CompliancePage() {
       </div>
 
       {/* Control checks */}
-      <div className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+      <div className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
         <h3 className="text-white font-semibold mb-4">Control Summary</h3>
         <div className="space-y-3">
           {CONTROLS.map(ctrl => {
             const pct = Math.round((ctrl.passed / ctrl.total) * 100);
             return (
               <div key={ctrl.category} className="flex items-center gap-4">
-                <span className="text-gray-400 text-sm w-48 flex-shrink-0">{ctrl.category}</span>
-                <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <span className="text-surface-600 dark:text-gray-400 text-sm w-48 flex-shrink-0">{ctrl.category}</span>
+                <div className="flex-1 h-2 bg-surface-100 dark:bg-gray-800 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${ctrl.failed === 0 ? 'bg-green-500' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
                 </div>
                 <span className={`text-sm font-medium w-16 text-right flex-shrink-0 ${ctrl.failed === 0 ? 'text-green-400' : 'text-amber-400'}`}>
@@ -101,7 +101,7 @@ export default function CompliancePage() {
       </div>
 
       {/* Data governance quick actions */}
-      <div className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+      <div className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
         <h3 className="text-white font-semibold mb-4">Compliance Actions</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
@@ -110,10 +110,10 @@ export default function CompliancePage() {
             { title: 'Incident Report', desc: 'File a security or data breach report', action: 'Report', color: 'text-red-400' },
             { title: 'Vendor Assessment', desc: 'Audit third-party data processors', action: 'View', color: 'text-amber-400' },
           ].map(action => (
-            <div key={action.title} className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl">
+            <div key={action.title} className="flex items-center justify-between p-4 bg-surface-100/50 dark:bg-gray-800/50 rounded-xl">
               <div>
                 <div className="text-white text-sm font-medium">{action.title}</div>
-                <div className="text-gray-500 text-xs mt-0.5">{action.desc}</div>
+                <div className="text-surface-500 dark:text-gray-500 text-xs mt-0.5">{action.desc}</div>
               </div>
               <button className={`text-sm font-medium ${action.color} hover:opacity-80 transition-opacity flex items-center gap-1`}>
                 {action.action} <ExternalLink className="w-3 h-3" />

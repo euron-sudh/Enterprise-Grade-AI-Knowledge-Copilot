@@ -21,9 +21,9 @@ export default function SharedChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col">
+    <div className="min-h-screen bg-surface-50 dark:bg-gray-950 flex flex-col">
       {/* Header */}
-      <div className="border-b border-white/5 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
+      <div className="border-b border-surface-100 dark:border-white/5 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
@@ -31,11 +31,11 @@ export default function SharedChatPage() {
             </div>
             <div>
               <div className="text-white font-semibold text-sm">Shared Conversation</div>
-              <div className="text-gray-500 text-xs flex items-center gap-1"><Lock className="w-3 h-3" /> Read-only · KnowledgeForge</div>
+              <div className="text-surface-500 dark:text-gray-500 text-xs flex items-center gap-1"><Lock className="w-3 h-3" /> Read-only · KnowledgeForge</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={copyLink} className="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg border border-white/10 transition-colors">
+            <button onClick={copyLink} className="flex items-center gap-1.5 text-xs bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white px-3 py-1.5 rounded-lg border border-surface-200 dark:border-white/10 transition-colors">
               {copied ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
               {copied ? 'Copied!' : 'Copy link'}
             </button>
@@ -50,20 +50,20 @@ export default function SharedChatPage() {
       <div className="flex-1 max-w-3xl w-full mx-auto px-6 py-8 space-y-6">
         <div className="text-center mb-8">
           <h1 className="text-white font-bold text-lg">Q1 SLA & Uptime Analysis</h1>
-          <p className="text-gray-500 text-sm mt-1">Shared by Alex Kim · March 26, 2026</p>
+          <p className="text-surface-500 dark:text-gray-500 text-sm mt-1">Shared by Alex Kim · March 26, 2026</p>
         </div>
 
         {SHARED_MESSAGES.map((msg, i) => (
           <div key={i} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gray-800 border border-white/10 text-gray-400'}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 text-surface-600 dark:text-gray-400'}`}>
               {msg.role === 'user' ? 'AK' : 'AI'}
             </div>
             <div className={`flex-1 max-w-2xl ${msg.role === 'user' ? 'text-right' : ''}`}>
-              <div className={`inline-block text-left rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-gray-900 border border-white/5 text-gray-300 rounded-tl-sm'}`}>
+              <div className={`inline-block text-left rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 text-surface-700 dark:text-gray-300 rounded-tl-sm'}`}>
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                 {'citations' in msg && msg.citations && (
-                  <div className="mt-3 pt-3 border-t border-white/10">
-                    <p className="text-gray-500 text-xs mb-1">Sources</p>
+                  <div className="mt-3 pt-3 border-t border-surface-200 dark:border-white/10">
+                    <p className="text-surface-500 dark:text-gray-500 text-xs mb-1">Sources</p>
                     <div className="flex flex-wrap gap-1">
                       {msg.citations.map((c: string) => (
                         <span key={c} className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full">{c}</span>
@@ -78,9 +78,9 @@ export default function SharedChatPage() {
       </div>
 
       {/* Footer CTA */}
-      <div className="border-t border-white/5 py-6">
+      <div className="border-t border-surface-100 dark:border-white/5 py-6">
         <div className="max-w-3xl mx-auto px-6 text-center">
-          <p className="text-gray-500 text-sm mb-3">Want to ask your own questions across your organization's knowledge?</p>
+          <p className="text-surface-500 dark:text-gray-500 text-sm mb-3">Want to ask your own questions across your organization's knowledge?</p>
           <Link href="/register" className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors">
             Get started free <ExternalLink className="w-4 h-4" />
           </Link>

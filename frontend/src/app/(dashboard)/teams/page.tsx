@@ -241,16 +241,16 @@ export default function TeamsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredTeams.map(team => (
-              <div key={team.id} className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-gray-800 rounded-xl p-5 hover:border-surface-300 dark:hover:border-gray-700 transition-colors group">
+              <div key={team.id} className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-gray-800 rounded-xl p-5 hover:border-surface-300 dark:hover:border-surface-200 dark:border-gray-700 transition-colors group">
                 <div className="flex items-start justify-between mb-3">
                   <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${team.color} flex items-center justify-center`}>
                     <Users className="w-5 h-5 text-white" />
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-1.5 text-surface-400 dark:text-gray-500 hover:text-surface-900 dark:hover:text-white rounded-md hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
+                    <button className="p-1.5 text-surface-400 dark:text-gray-500 hover:text-surface-900 dark:hover:text-white rounded-md hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors">
                       <Settings className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDeleteTeam(team.id)} className="p-1.5 text-surface-400 dark:text-gray-500 hover:text-red-400 rounded-md hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors">
+                    <button onClick={() => handleDeleteTeam(team.id)} className="p-1.5 text-surface-400 dark:text-gray-500 hover:text-red-400 rounded-md hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors">
                       <MoreHorizontal className="w-4 h-4" />
                     </button>
                   </div>
@@ -267,7 +267,7 @@ export default function TeamsPage() {
               </div>
             ))}
             {/* Add team card */}
-            <button onClick={() => setShowCreate(true)} className="bg-white dark:bg-gray-900 border border-dashed border-surface-300 dark:border-gray-700 rounded-xl p-5 hover:border-indigo-500 hover:bg-surface-100 dark:hover:bg-gray-800/50 transition-all flex flex-col items-center justify-center gap-2 text-surface-400 dark:text-gray-500 hover:text-indigo-400 min-h-[160px]">
+            <button onClick={() => setShowCreate(true)} className="bg-white dark:bg-gray-900 border border-dashed border-surface-300 dark:border-gray-700 rounded-xl p-5 hover:border-indigo-500 hover:bg-surface-100 dark:hover:bg-surface-100/50 dark:bg-gray-800/50 transition-all flex flex-col items-center justify-center gap-2 text-surface-400 dark:text-gray-500 hover:text-indigo-400 min-h-[160px]">
               <Plus className="w-8 h-8" />
               <span className="text-sm font-medium">Create new team</span>
             </button>
@@ -301,7 +301,7 @@ export default function TeamsPage() {
               </thead>
               <tbody>
                 {filteredMembers.map(m => (
-                  <tr key={m.id} className="border-b border-surface-200 dark:border-gray-800/50 hover:bg-surface-100 dark:hover:bg-gray-800/30 transition-colors">
+                  <tr key={m.id} className="border-b border-surface-200 dark:border-gray-800/50 hover:bg-surface-100 dark:hover:bg-surface-100/30 dark:bg-gray-800/30 transition-colors">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold">{m.avatar}</div>

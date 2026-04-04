@@ -47,7 +47,7 @@ export function AdminShell({ role, children }: { role: string; children: React.R
   return (
     <div className="flex h-full overflow-hidden">
       {/* ── Admin Sidebar ───────────────────────────────────────────── */}
-      <aside className="flex flex-col w-56 flex-shrink-0 h-full border-r border-red-900/40 bg-gray-950">
+      <aside className="flex flex-col w-56 flex-shrink-0 h-full border-r border-red-900/40 bg-surface-50 dark:bg-gray-950">
         {/* Header */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-red-900/40 bg-red-950/30">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-600 flex-shrink-0">
@@ -73,13 +73,13 @@ export function AdminShell({ role, children }: { role: string; children: React.R
                   'flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors',
                   isActive
                     ? 'bg-red-600/20 text-red-400 font-medium'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
+                    : 'text-surface-600 dark:text-gray-400 hover:bg-surface-100 dark:bg-gray-800 hover:text-gray-100'
                 )}
               >
                 <item.icon
                   className={cn(
                     'h-4 w-4 flex-shrink-0',
-                    isActive ? 'text-red-400' : 'text-gray-500'
+                    isActive ? 'text-red-400' : 'text-surface-500 dark:text-gray-500'
                   )}
                 />
                 {item.label}
@@ -92,7 +92,7 @@ export function AdminShell({ role, children }: { role: string; children: React.R
         <div className="p-2 border-t border-red-900/40">
           <Link
             href="/home"
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-surface-500 dark:text-gray-500 hover:bg-surface-100 dark:bg-gray-800 hover:text-gray-200 transition-colors"
           >
             <ArrowLeft className="h-4 w-4 flex-shrink-0" />
             Back to App
@@ -101,7 +101,7 @@ export function AdminShell({ role, children }: { role: string; children: React.R
       </aside>
 
       {/* ── Admin Content ────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-gray-950">
+      <div className="flex-1 flex flex-col overflow-hidden bg-surface-50 dark:bg-gray-950">
         {/* Admin top banner */}
         <div className="flex items-center gap-3 px-6 py-2.5 border-b border-red-900/40 bg-red-950/20 flex-shrink-0">
           <Shield className="h-3.5 w-3.5 text-red-500" />
@@ -109,7 +109,7 @@ export function AdminShell({ role, children }: { role: string; children: React.R
             Admin Console
           </span>
           <span className="text-gray-700 text-xs">·</span>
-          <span className="text-xs text-gray-500">Changes here affect the entire platform</span>
+          <span className="text-xs text-surface-500 dark:text-gray-500">Changes here affect the entire platform</span>
           <div className="ml-auto">
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-600/20 text-red-400 border border-red-700/40 px-2 py-0.5 rounded-full">
               <Shield className="h-2.5 w-2.5" />

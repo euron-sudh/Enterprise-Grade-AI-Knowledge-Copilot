@@ -54,7 +54,7 @@ export default function RolesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Role Management</h1>
-          <p className="text-gray-400 text-sm mt-1">Define roles and configure granular permissions</p>
+          <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Define roles and configure granular permissions</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-xl transition-colors text-sm">
           <Plus className="w-4 h-4" /> Create Role
@@ -64,10 +64,10 @@ export default function RolesPage() {
       {/* Roles list */}
       <div className="space-y-3">
         {ROLES.map(role => (
-          <div key={role.id} className="bg-gray-900 border border-white/5 rounded-2xl overflow-hidden">
+          <div key={role.id} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl overflow-hidden">
             <button
               onClick={() => setExpanded(expanded === role.id ? null : role.id)}
-              className="w-full flex items-center gap-4 p-5 hover:bg-gray-800/50 transition-colors text-left"
+              className="w-full flex items-center gap-4 p-5 hover:bg-surface-100/50 dark:bg-gray-800/50 transition-colors text-left"
             >
               <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${role.color} flex items-center justify-center flex-shrink-0`}>
                 <Shield className="w-5 h-5 text-white" />
@@ -75,38 +75,38 @@ export default function RolesPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-white font-semibold">{role.name}</span>
-                  {role.isSystem && <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">System</span>}
+                  {role.isSystem && <span className="text-xs bg-surface-200 dark:bg-gray-700 text-surface-600 dark:text-gray-400 px-2 py-0.5 rounded-full">System</span>}
                 </div>
-                <p className="text-gray-500 text-sm truncate">{role.description}</p>
+                <p className="text-surface-500 dark:text-gray-500 text-sm truncate">{role.description}</p>
               </div>
               <div className="flex items-center gap-6 flex-shrink-0">
-                <div className="flex items-center gap-1.5 text-gray-400 text-sm">
+                <div className="flex items-center gap-1.5 text-surface-600 dark:text-gray-400 text-sm">
                   <Users className="w-3.5 h-3.5" />
                   <span>{role.users} users</span>
                 </div>
-                <div className="text-gray-400 text-sm">{role.permissions.length} permissions</div>
+                <div className="text-surface-600 dark:text-gray-400 text-sm">{role.permissions.length} permissions</div>
                 {!role.isSystem && (
                   <div className="flex items-center gap-1">
-                    <button className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
-                    <button className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button className="p-1.5 rounded-lg hover:bg-surface-200 dark:bg-gray-700 text-surface-600 dark:text-gray-400 hover:text-white transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button className="p-1.5 rounded-lg hover:bg-red-500/20 text-surface-600 dark:text-gray-400 hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
-                {expanded === role.id ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                {expanded === role.id ? <ChevronUp className="w-4 h-4 text-surface-500 dark:text-gray-500" /> : <ChevronDown className="w-4 h-4 text-surface-500 dark:text-gray-500" />}
               </div>
             </button>
             {expanded === role.id && (
-              <div className="border-t border-white/5 p-5">
+              <div className="border-t border-surface-100 dark:border-white/5 p-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {PERMISSIONS.map(group => (
-                    <div key={group.group} className="bg-gray-800/50 rounded-xl p-4">
+                    <div key={group.group} className="bg-surface-100/50 dark:bg-gray-800/50 rounded-xl p-4">
                       <h4 className="text-white text-sm font-semibold mb-3">{group.group}</h4>
                       <div className="space-y-2">
                         {group.perms.map(perm => {
                           const has = role.permissions.includes(perm);
                           return (
                             <div key={perm} className="flex items-center justify-between">
-                              <span className="text-gray-400 text-xs font-mono">{perm}</span>
-                              {has ? <Check className="w-4 h-4 text-green-400" /> : <X className="w-4 h-4 text-gray-600" />}
+                              <span className="text-surface-600 dark:text-gray-400 text-xs font-mono">{perm}</span>
+                              {has ? <Check className="w-4 h-4 text-green-400" /> : <X className="w-4 h-4 text-surface-500 dark:text-gray-600" />}
                             </div>
                           );
                         })}
@@ -123,29 +123,29 @@ export default function RolesPage() {
       {/* Create Role Modal */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg">
+          <div className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-2xl p-6 w-full max-w-lg">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-white font-bold text-lg">Create Custom Role</h3>
-              <button onClick={() => setShowCreate(false)} className="text-gray-500 hover:text-white"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowCreate(false)} className="text-surface-500 dark:text-gray-500 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Role Name</label>
-                <input type="text" placeholder="e.g. Content Manager" className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Role Name</label>
+                <input type="text" placeholder="e.g. Content Manager" className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Description</label>
-                <input type="text" placeholder="Brief description of this role" className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Description</label>
+                <input type="text" placeholder="Brief description of this role" className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Base on existing role</label>
-                <select className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500">
+                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-2">Base on existing role</label>
+                <select className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500">
                   <option value="">Start from scratch</option>
                   {ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowCreate(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-medium py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
+                <button onClick={() => setShowCreate(false)} className="flex-1 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white font-medium py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
                 <button onClick={() => setShowCreate(false)} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">Create & Configure</button>
               </div>
             </div>

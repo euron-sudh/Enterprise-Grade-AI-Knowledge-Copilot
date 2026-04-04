@@ -172,7 +172,7 @@ export default function VideoPage() {
           <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">Upload and search video content with AI-powered transcription</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => fetchVideos()} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
+          <button onClick={() => fetchVideos()} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button onClick={() => setShowUpload(!showUpload)}
@@ -205,7 +205,7 @@ export default function VideoPage() {
               </label>
             </>
           )}
-          <button onClick={() => setShowUpload(false)} className="ml-3 text-xs text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300">Cancel</button>
+          <button onClick={() => setShowUpload(false)} className="ml-3 text-xs text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-surface-700 dark:text-gray-300">Cancel</button>
         </div>
       )}
 
@@ -263,7 +263,7 @@ export default function VideoPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map(v => (
-            <div key={v.id} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden hover:border-surface-300 dark:hover:border-gray-700 transition-colors group">
+            <div key={v.id} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden hover:border-surface-300 dark:hover:border-surface-200 dark:border-gray-700 transition-colors group">
               {/* Thumbnail */}
               <div className={`relative h-40 bg-gradient-to-br ${v.thumbnail} flex items-center justify-center`}>
                 <button

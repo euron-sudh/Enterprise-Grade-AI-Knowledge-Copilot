@@ -36,21 +36,21 @@ export default function MeetingRecapPage() {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start gap-4">
-        <Link href="/meetings" className="p-2 rounded-xl hover:bg-gray-800 text-gray-400 hover:text-white transition-colors flex-shrink-0">
+        <Link href="/meetings" className="p-2 rounded-xl hover:bg-surface-100 dark:bg-gray-800 text-surface-600 dark:text-gray-400 hover:text-white transition-colors flex-shrink-0">
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white">{RECAP.title}</h1>
           <div className="flex items-center gap-4 mt-1">
-            <span className="text-gray-500 text-sm flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{RECAP.date} · {RECAP.duration}</span>
-            <span className="text-gray-500 text-sm flex items-center gap-1"><Users className="w-3.5 h-3.5" />{RECAP.participants} participants</span>
+            <span className="text-surface-500 dark:text-gray-500 text-sm flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{RECAP.date} · {RECAP.duration}</span>
+            <span className="text-surface-500 dark:text-gray-500 text-sm flex items-center gap-1"><Users className="w-3.5 h-3.5" />{RECAP.participants} participants</span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button className="flex items-center gap-1.5 text-sm bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-xl border border-white/10 transition-colors">
+          <button className="flex items-center gap-1.5 text-sm bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white px-3 py-2 rounded-xl border border-surface-200 dark:border-white/10 transition-colors">
             <Share2 className="w-3.5 h-3.5" /> Share
           </button>
-          <button className="flex items-center gap-1.5 text-sm bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-xl border border-white/10 transition-colors">
+          <button className="flex items-center gap-1.5 text-sm bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white px-3 py-2 rounded-xl border border-surface-200 dark:border-white/10 transition-colors">
             <Download className="w-3.5 h-3.5" /> Export
           </button>
         </div>
@@ -59,41 +59,41 @@ export default function MeetingRecapPage() {
       {/* Quick navigation */}
       <div className="flex gap-2 flex-wrap">
         {['Summary', 'Action Items', 'Decisions', 'Topics'].map(tab => (
-          <a key={tab} href={`#${tab.toLowerCase().replace(' ', '-')}`} className="px-3 py-1.5 rounded-lg bg-gray-900 border border-white/10 text-gray-400 hover:text-white text-sm transition-colors">
+          <a key={tab} href={`#${tab.toLowerCase().replace(' ', '-')}`} className="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 text-surface-600 dark:text-gray-400 hover:text-white text-sm transition-colors">
             {tab}
           </a>
         ))}
-        <Link href={`/meetings/1/transcript`} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-900 border border-white/10 text-gray-400 hover:text-white text-sm transition-colors">
+        <Link href={`/meetings/1/transcript`} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 text-surface-600 dark:text-gray-400 hover:text-white text-sm transition-colors">
           <FileText className="w-3.5 h-3.5" /> View Full Transcript
         </Link>
       </div>
 
       {/* Summary */}
-      <div id="summary" className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+      <div id="summary" className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
         <h2 className="text-white font-semibold mb-3 flex items-center gap-2">
           <div className="w-6 h-6 rounded-lg bg-indigo-500/20 flex items-center justify-center"><FileText className="w-3.5 h-3.5 text-indigo-400" /></div>
           AI Summary
         </h2>
-        <p className="text-gray-300 text-sm leading-relaxed">{RECAP.summary}</p>
+        <p className="text-surface-700 dark:text-gray-300 text-sm leading-relaxed">{RECAP.summary}</p>
       </div>
 
       {/* Action items */}
-      <div id="action-items" className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+      <div id="action-items" className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
         <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
           <div className="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center"><CheckSquare className="w-3.5 h-3.5 text-green-400" /></div>
           Action Items ({RECAP.actionItems.filter(a => a.status === 'open').length} open)
         </h2>
         <div className="space-y-2">
           {RECAP.actionItems.map((item, i) => (
-            <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-gray-800/50">
+            <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-surface-100/50 dark:bg-gray-800/50">
               <div className={`w-4 h-4 rounded border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${item.status === 'done' ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
                 {item.status === 'done' && <div className="w-2 h-2 bg-white rounded-sm" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`text-sm ${item.status === 'done' ? 'line-through text-gray-500' : 'text-white'}`}>{item.item}</p>
+                <p className={`text-sm ${item.status === 'done' ? 'line-through text-surface-500 dark:text-gray-500' : 'text-white'}`}>{item.item}</p>
                 <div className="flex items-center gap-3 mt-1">
-                  <span className="text-gray-500 text-xs">{item.assignee}</span>
-                  <span className="text-gray-600 text-xs">Due: {item.due}</span>
+                  <span className="text-surface-500 dark:text-gray-500 text-xs">{item.assignee}</span>
+                  <span className="text-surface-500 dark:text-gray-600 text-xs">Due: {item.due}</span>
                 </div>
               </div>
               {item.status === 'open' && (
@@ -105,11 +105,11 @@ export default function MeetingRecapPage() {
       </div>
 
       {/* Key decisions */}
-      <div id="decisions" className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+      <div id="decisions" className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
         <h2 className="text-white font-semibold mb-4">Key Decisions</h2>
         <ul className="space-y-2">
           {RECAP.decisions.map((d, i) => (
-            <li key={i} className="flex items-start gap-2 text-gray-300 text-sm">
+            <li key={i} className="flex items-start gap-2 text-surface-700 dark:text-gray-300 text-sm">
               <ChevronRight className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
               {d}
             </li>
@@ -118,15 +118,15 @@ export default function MeetingRecapPage() {
       </div>
 
       {/* Topics covered */}
-      <div id="topics" className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+      <div id="topics" className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
         <h2 className="text-white font-semibold mb-4">Topics Covered</h2>
         <div className="space-y-2">
           {RECAP.topics.map((t, i) => (
-            <div key={i} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/50 hover:bg-gray-800 transition-colors cursor-pointer group">
+            <div key={i} className="flex items-center gap-4 p-3 rounded-xl bg-surface-100/50 dark:bg-gray-800/50 hover:bg-surface-100 dark:bg-gray-800 transition-colors cursor-pointer group">
               <span className="text-indigo-400 text-xs font-mono w-10 flex-shrink-0">{t.timestamp}</span>
               <span className="text-white text-sm flex-1">{t.topic}</span>
-              <span className="text-gray-500 text-xs">{t.duration}</span>
-              <ChevronRight className="w-3.5 h-3.5 text-gray-600 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
+              <span className="text-surface-500 dark:text-gray-500 text-xs">{t.duration}</span>
+              <ChevronRight className="w-3.5 h-3.5 text-surface-500 dark:text-gray-600 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
             </div>
           ))}
         </div>

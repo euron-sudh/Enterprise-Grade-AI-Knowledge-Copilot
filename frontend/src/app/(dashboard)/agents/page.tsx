@@ -133,12 +133,12 @@ const FILE_ICONS: Record<AttachedFile['type'], React.ElementType> = {
 };
 const FILE_COLORS: Record<AttachedFile['type'], string> = {
   pdf: 'text-red-400', doc: 'text-blue-400', image: 'text-purple-400',
-  data: 'text-green-400', text: 'text-gray-400', other: 'text-gray-400',
+  data: 'text-green-400', text: 'text-surface-600 dark:text-gray-400', other: 'text-surface-600 dark:text-gray-400',
 };
 const FILE_BG: Record<AttachedFile['type'], string> = {
   pdf: 'bg-red-900/20 border-red-800/40', doc: 'bg-blue-900/20 border-blue-800/40',
   image: 'bg-purple-900/20 border-purple-800/40', data: 'bg-green-900/20 border-green-800/40',
-  text: 'bg-gray-800/40 border-gray-700/40', other: 'bg-gray-800/40 border-gray-700/40',
+  text: 'bg-surface-100/40 dark:bg-gray-800/40 border-surface-200 dark:border-gray-700/40', other: 'bg-surface-100/40 dark:bg-gray-800/40 border-surface-200 dark:border-gray-700/40',
 };
 
 async function extractTextFromFile(file: File): Promise<string> {
@@ -184,11 +184,11 @@ function FileChip({ af, onRemove }: { af: AttachedFile; onRemove: () => void }) 
         <img src={af.previewUrl} alt={af.name} className="h-6 w-6 rounded object-cover flex-shrink-0" />
       )}
       <span className="truncate text-gray-200">{af.name}</span>
-      <span className="text-gray-500 flex-shrink-0">{af.size}</span>
+      <span className="text-surface-500 dark:text-gray-500 flex-shrink-0">{af.size}</span>
       {af.status === 'ready' && <CheckCircle2 className="h-3 w-3 text-emerald-400 flex-shrink-0" />}
       <button
         onClick={onRemove}
-        className="ml-0.5 flex-shrink-0 text-gray-500 hover:text-white transition-colors"
+        className="ml-0.5 flex-shrink-0 text-surface-500 dark:text-gray-500 hover:text-white transition-colors"
       >
         <X className="h-3 w-3" />
       </button>
@@ -388,7 +388,7 @@ export default function AgentsPage() {
                 className={`w-full text-left rounded-xl border p-4 transition-all ${
                   activeAgent?.id === agent.id
                     ? 'border-indigo-600 bg-indigo-900/20'
-                    : 'border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-surface-300 dark:hover:border-gray-700'
+                    : 'border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-surface-300 dark:hover:border-surface-200 dark:border-gray-700'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -439,15 +439,15 @@ export default function AgentsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Source badges */}
-                  <span className="hidden sm:flex items-center gap-1 text-[10px] text-gray-500 bg-gray-800/50 rounded-full px-2 py-1">
+                  <span className="hidden sm:flex items-center gap-1 text-[10px] text-surface-500 dark:text-gray-500 bg-surface-100/50 dark:bg-gray-800/50 rounded-full px-2 py-1">
                     <Globe className="h-3 w-3 text-blue-400" />Web
                   </span>
-                  <span className="hidden sm:flex items-center gap-1 text-[10px] text-gray-500 bg-gray-800/50 rounded-full px-2 py-1">
+                  <span className="hidden sm:flex items-center gap-1 text-[10px] text-surface-500 dark:text-gray-500 bg-surface-100/50 dark:bg-gray-800/50 rounded-full px-2 py-1">
                     <BookOpen className="h-3 w-3 text-indigo-400" />KB
                   </span>
                   <button
                     onClick={() => { selectAgent(activeAgent); }}
-                    className="text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300"
+                    className="text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-surface-700 dark:text-gray-300"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -461,7 +461,7 @@ export default function AgentsPage() {
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <Paperclip className="h-10 w-10 text-indigo-400 mb-2" />
                     <p className="text-sm font-medium text-indigo-300">Drop files to attach</p>
-                    <p className="text-xs text-gray-500 mt-1">{activeAgent.fileHint}</p>
+                    <p className="text-xs text-surface-500 dark:text-gray-500 mt-1">{activeAgent.fileHint}</p>
                   </div>
                 )}
 
@@ -471,7 +471,7 @@ export default function AgentsPage() {
                     <p className="text-surface-400 dark:text-gray-600 text-xs mt-2">
                       Enter your query or attach files below to start
                     </p>
-                    <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-gray-600">
+                    <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-surface-500 dark:text-gray-600">
                       <Paperclip className="h-3.5 w-3.5" />
                       <span>{activeAgent.fileHint}</span>
                     </div>
@@ -603,7 +603,7 @@ export default function AgentsPage() {
                 </div>
 
                 {/* File hint */}
-                <p className="text-[10px] text-gray-600 flex items-center gap-1">
+                <p className="text-[10px] text-surface-500 dark:text-gray-600 flex items-center gap-1">
                   <Paperclip className="h-2.5 w-2.5" />
                   {activeAgent.fileHint} · Drag & drop or click the clip icon · Enter to send
                 </p>

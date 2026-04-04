@@ -208,7 +208,7 @@ export default function SearchPage() {
           {query && (
             <button
               onClick={() => { setQuery(''); setHasSearched(false); setSubmittedQuery(''); setResults([]); }}
-              className="text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-gray-300 transition-colors"
+              className="text-surface-400 dark:text-gray-500 hover:text-surface-600 dark:hover:text-surface-700 dark:text-gray-300 transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
@@ -228,7 +228,7 @@ export default function SearchPage() {
         {/* Source filter */}
         <div className="relative">
           <button
-            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors"
           >
             <Filter className="h-3.5 w-3.5" />
             All sources
@@ -240,7 +240,7 @@ export default function SearchPage() {
         <div className="relative">
           <button
             onClick={() => setShowDateDropdown(!showDateDropdown)}
-            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors"
           >
             <Calendar className="h-3.5 w-3.5" />
             {dateFilter}
@@ -253,7 +253,7 @@ export default function SearchPage() {
                   key={d}
                   onClick={() => { setDateFilter(d); setShowDateDropdown(false); }}
                   className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                    dateFilter === d ? 'text-indigo-400 bg-indigo-950/50' : 'text-surface-600 dark:text-gray-300 hover:bg-surface-100 dark:hover:bg-gray-800'
+                    dateFilter === d ? 'text-indigo-400 bg-indigo-950/50' : 'text-surface-600 dark:text-gray-300 hover:bg-surface-100 dark:hover:bg-surface-100 dark:bg-gray-800'
                   }`}
                 >
                   {d}
@@ -273,7 +273,7 @@ export default function SearchPage() {
             className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               activeTab === tab.label
                 ? 'bg-indigo-600 text-surface-900 dark:text-white'
-                : 'bg-surface-100 dark:bg-gray-800 text-surface-500 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-gray-700 hover:text-surface-700 dark:hover:text-gray-200'
+                : 'bg-surface-100 dark:bg-gray-800 text-surface-500 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 hover:text-surface-700 dark:hover:text-gray-200'
             }`}
           >
             <tab.icon className="h-3.5 w-3.5" />
@@ -312,7 +312,7 @@ export default function SearchPage() {
             {filteredResults.map(result => (
               <div
                 key={result.id}
-                className="group rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:border-surface-300 dark:hover:border-gray-700 hover:bg-white dark:hover:bg-gray-900/80 transition-all"
+                className="group rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 hover:border-surface-300 dark:hover:border-surface-200 dark:border-gray-700 hover:bg-white dark:hover:bg-white/80 dark:bg-gray-900/80 transition-all"
               >
                 <div className="flex items-start gap-4">
                   {/* Source icon */}
@@ -327,7 +327,7 @@ export default function SearchPage() {
                       </h3>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {result.relevance > 0 && <RelevanceBadge score={result.relevance} />}
-                        <a href={result.url} className="text-surface-400 dark:text-gray-600 hover:text-surface-500 dark:hover:text-gray-400 transition-colors">
+                        <a href={result.url} className="text-surface-400 dark:text-gray-600 hover:text-surface-500 dark:hover:text-surface-600 dark:text-gray-400 transition-colors">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                       </div>
@@ -387,7 +387,7 @@ export default function SearchPage() {
                 <button
                   key={s}
                   onClick={() => { setQuery(s); void handleSearch(s); }}
-                  className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 text-sm text-surface-500 dark:text-gray-400 text-left hover:border-surface-300 dark:hover:border-gray-700 hover:text-surface-700 dark:hover:text-gray-200 hover:bg-surface-100 dark:hover:bg-gray-800 transition-all"
+                  className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 text-sm text-surface-500 dark:text-gray-400 text-left hover:border-surface-300 dark:hover:border-surface-200 dark:border-gray-700 hover:text-surface-700 dark:hover:text-gray-200 hover:bg-surface-100 dark:hover:bg-surface-100 dark:bg-gray-800 transition-all"
                 >
                   {s}
                 </button>

@@ -45,10 +45,10 @@ export default function WorkflowCreatePage() {
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
-      <div className="flex items-center gap-4 px-6 py-4 border-b border-white/5 bg-gray-950/50">
-        <input value={name} onChange={e => setName(e.target.value)} className="text-white font-bold text-lg bg-transparent border-b border-transparent hover:border-white/20 focus:border-indigo-500 focus:outline-none transition-colors px-1 py-0.5" />
+      <div className="flex items-center gap-4 px-6 py-4 border-b border-surface-100 dark:border-white/5 bg-surface-50/50 dark:bg-gray-950/50">
+        <input value={name} onChange={e => setName(e.target.value)} className="text-white font-bold text-lg bg-transparent border-b border-transparent hover:border-surface-300 dark:border-white/20 focus:border-indigo-500 focus:outline-none transition-colors px-1 py-0.5" />
         <div className="flex-1" />
-        <button className="bg-gray-800 hover:bg-gray-700 text-white font-medium px-4 py-2 rounded-xl text-sm border border-white/10 transition-colors">Save Draft</button>
+        <button className="bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white font-medium px-4 py-2 rounded-xl text-sm border border-surface-200 dark:border-white/10 transition-colors">Save Draft</button>
         <button className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors">Publish</button>
       </div>
 
@@ -58,18 +58,18 @@ export default function WorkflowCreatePage() {
           <div className="max-w-lg mx-auto space-y-2">
             {steps.length === 0 && (
               <div className="text-center py-16">
-                <div className="w-16 h-16 rounded-2xl bg-gray-900 border border-white/10 flex items-center justify-center mx-auto mb-4">
-                  <Zap className="w-8 h-8 text-gray-600" />
+                <div className="w-16 h-16 rounded-2xl bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 flex items-center justify-center mx-auto mb-4">
+                  <Zap className="w-8 h-8 text-surface-500 dark:text-gray-600" />
                 </div>
                 <h3 className="text-white font-semibold">Start building your workflow</h3>
-                <p className="text-gray-500 text-sm mt-2">Choose a trigger to begin</p>
+                <p className="text-surface-500 dark:text-gray-500 text-sm mt-2">Choose a trigger to begin</p>
               </div>
             )}
 
             {/* Trigger */}
             {!hasTrigger ? (
               <button onClick={() => setShowTrigger(true)} className="w-full border-2 border-dashed border-white/15 hover:border-indigo-500/60 rounded-2xl p-5 text-center transition-colors group">
-                <div className="flex items-center justify-center gap-2 text-gray-500 group-hover:text-indigo-400 transition-colors">
+                <div className="flex items-center justify-center gap-2 text-surface-500 dark:text-gray-500 group-hover:text-indigo-400 transition-colors">
                   <Plus className="w-4 h-4" />
                   <span className="text-sm font-medium">Add Trigger</span>
                 </div>
@@ -80,15 +80,15 @@ export default function WorkflowCreatePage() {
               const Icon = step.icon;
               return (
                 <div key={step.id}>
-                  <div className={`bg-gray-900 border rounded-2xl p-4 flex items-center gap-3 group ${step.isTrigger ? 'border-indigo-500/40' : 'border-white/10'}`}>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${step.isTrigger ? 'bg-indigo-500/20' : 'bg-gray-800'}`}>
-                      <Icon className={`w-4 h-4 ${step.isTrigger ? 'text-indigo-400' : 'text-gray-400'}`} />
+                  <div className={`bg-white dark:bg-gray-900 border rounded-2xl p-4 flex items-center gap-3 group ${step.isTrigger ? 'border-indigo-500/40' : 'border-surface-200 dark:border-white/10'}`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${step.isTrigger ? 'bg-indigo-500/20' : 'bg-surface-100 dark:bg-gray-800'}`}>
+                      <Icon className={`w-4 h-4 ${step.isTrigger ? 'text-indigo-400' : 'text-surface-600 dark:text-gray-400'}`} />
                     </div>
                     <div className="flex-1">
-                      <div className="text-xs text-gray-500 uppercase tracking-wider">{step.isTrigger ? 'Trigger' : `Step ${i}`}</div>
+                      <div className="text-xs text-surface-500 dark:text-gray-500 uppercase tracking-wider">{step.isTrigger ? 'Trigger' : `Step ${i}`}</div>
                       <div className="text-white text-sm font-medium">{step.label}</div>
                     </div>
-                    <button onClick={() => setSteps(s => s.filter(x => x.id !== step.id))} className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all">
+                    <button onClick={() => setSteps(s => s.filter(x => x.id !== step.id))} className="opacity-0 group-hover:opacity-100 text-surface-500 dark:text-gray-600 hover:text-red-400 transition-all">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
@@ -106,8 +106,8 @@ export default function WorkflowCreatePage() {
                 <div className="flex justify-center my-1">
                   <div className="w-0.5 h-6 bg-white/10 rounded-full" />
                 </div>
-                <button onClick={() => setShowAction(true)} className="w-full border-2 border-dashed border-white/10 hover:border-violet-500/50 rounded-xl p-4 text-center transition-colors group">
-                  <div className="flex items-center justify-center gap-2 text-gray-600 group-hover:text-violet-400 transition-colors">
+                <button onClick={() => setShowAction(true)} className="w-full border-2 border-dashed border-surface-200 dark:border-white/10 hover:border-violet-500/50 rounded-xl p-4 text-center transition-colors group">
+                  <div className="flex items-center justify-center gap-2 text-surface-500 dark:text-gray-600 group-hover:text-violet-400 transition-colors">
                     <Plus className="w-4 h-4" />
                     <span className="text-sm">Add Action</span>
                   </div>
@@ -119,24 +119,24 @@ export default function WorkflowCreatePage() {
 
         {/* Picker panels */}
         {(showTrigger || showAction) && (
-          <div className="w-72 border-l border-white/5 bg-gray-950/50 p-4 overflow-y-auto">
+          <div className="w-72 border-l border-surface-100 dark:border-white/5 bg-surface-50/50 dark:bg-gray-950/50 p-4 overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white font-semibold text-sm">Choose {showTrigger ? 'Trigger' : 'Action'}</h3>
-              <button onClick={() => { setShowTrigger(false); setShowAction(false); }} className="text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
+              <button onClick={() => { setShowTrigger(false); setShowAction(false); }} className="text-surface-500 dark:text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
             <div className="space-y-2">
               {(showTrigger ? TRIGGERS : ACTIONS).map(item => {
                 const Icon = item.icon;
                 return (
-                  <button key={item.id} onClick={() => showTrigger ? addTrigger(item) : addAction(item)} className="w-full flex items-center gap-3 p-3 rounded-xl bg-gray-900 hover:bg-gray-800 border border-white/5 hover:border-white/15 transition-colors text-left group">
-                    <div className="w-8 h-8 rounded-lg bg-gray-800 group-hover:bg-indigo-500/20 flex items-center justify-center transition-colors">
-                      <Icon className="w-4 h-4 text-gray-400 group-hover:text-indigo-400" />
+                  <button key={item.id} onClick={() => showTrigger ? addTrigger(item) : addAction(item)} className="w-full flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-gray-900 hover:bg-surface-100 dark:bg-gray-800 border border-surface-100 dark:border-white/5 hover:border-white/15 transition-colors text-left group">
+                    <div className="w-8 h-8 rounded-lg bg-surface-100 dark:bg-gray-800 group-hover:bg-indigo-500/20 flex items-center justify-center transition-colors">
+                      <Icon className="w-4 h-4 text-surface-600 dark:text-gray-400 group-hover:text-indigo-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-white text-sm font-medium truncate">{item.label}</div>
-                      <div className="text-gray-600 text-xs">{item.category}</div>
+                      <div className="text-surface-500 dark:text-gray-600 text-xs">{item.category}</div>
                     </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-600 group-hover:text-indigo-400 flex-shrink-0" />
+                    <ChevronRight className="w-3.5 h-3.5 text-surface-500 dark:text-gray-600 group-hover:text-indigo-400 flex-shrink-0" />
                   </button>
                 );
               })}

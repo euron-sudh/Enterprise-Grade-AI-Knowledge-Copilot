@@ -67,7 +67,7 @@ export default function CollectionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Collections</h1>
-          <p className="text-gray-400 text-sm mt-1">Organize your knowledge into curated collections</p>
+          <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Organize your knowledge into curated collections</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-xl transition-colors text-sm">
           <Plus className="w-4 h-4" /> New Collection
@@ -82,79 +82,79 @@ export default function CollectionsPage() {
           { label: 'Shared',           value: loading ? '—' : String(collections.length),   color: 'text-green-400' },
           { label: 'Private',          value: '0',                                            color: 'text-amber-400' },
         ].map(s => (
-          <div key={s.label} className="bg-gray-900 border border-white/5 rounded-xl p-4">
+          <div key={s.label} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-4">
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-            <div className="text-gray-500 text-xs mt-1">{s.label}</div>
+            <div className="text-surface-500 dark:text-gray-500 text-xs mt-1">{s.label}</div>
           </div>
         ))}
       </div>
 
       <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500 dark:text-gray-500" />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search collections..."
-          className="w-full bg-gray-900 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+          className="w-full bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-gray-500">
+        <div className="flex items-center justify-center py-20 text-surface-500 dark:text-gray-500">
           <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading collections…
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((col, i) => (
-            <div key={col.id} className="bg-gray-900 border border-white/5 hover:border-white/15 rounded-2xl p-5 transition-colors group cursor-pointer">
+            <div key={col.id} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 hover:border-white/15 rounded-2xl p-5 transition-colors group cursor-pointer">
               <div className="flex items-start justify-between mb-4">
                 <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${GRADIENT_COLORS[i % GRADIENT_COLORS.length]} flex items-center justify-center`}>
                   <FolderOpen className="w-6 h-6 text-white" />
                 </div>
-                <button onClick={() => handleDelete(col.id)} className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-red-400 transition-all">
+                <button onClick={() => handleDelete(col.id)} className="opacity-0 group-hover:opacity-100 p-1 text-surface-500 dark:text-gray-500 hover:text-red-400 transition-all">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
               <h3 className="text-white font-semibold">{col.name}</h3>
-              <p className="text-gray-500 text-sm mt-1 line-clamp-2">{col.description || 'No description'}</p>
+              <p className="text-surface-500 dark:text-gray-500 text-sm mt-1 line-clamp-2">{col.description || 'No description'}</p>
               <div className="flex items-center gap-3 mt-4">
-                <span className="text-gray-500 text-xs flex items-center gap-1"><FileText className="w-3 h-3" />{col.documentCount ?? 0} docs</span>
-                <span className="text-gray-500 text-xs flex items-center gap-1"><Users className="w-3 h-3" />Shared</span>
+                <span className="text-surface-500 dark:text-gray-500 text-xs flex items-center gap-1"><FileText className="w-3 h-3" />{col.documentCount ?? 0} docs</span>
+                <span className="text-surface-500 dark:text-gray-500 text-xs flex items-center gap-1"><Users className="w-3 h-3" />Shared</span>
               </div>
               <div className="text-gray-700 text-xs mt-2">{col.createdAt ? new Date(col.createdAt).toLocaleDateString() : ''}</div>
             </div>
           ))}
 
           <button onClick={() => setShowCreate(true)} className="border border-dashed border-white/15 hover:border-indigo-500/50 rounded-2xl p-5 flex flex-col items-center justify-center gap-2 transition-colors group min-h-[180px]">
-            <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center group-hover:bg-indigo-500/20 transition-colors">
-              <Plus className="w-5 h-5 text-gray-500 group-hover:text-indigo-400" />
+            <div className="w-10 h-10 rounded-xl bg-surface-100 dark:bg-gray-800 flex items-center justify-center group-hover:bg-indigo-500/20 transition-colors">
+              <Plus className="w-5 h-5 text-surface-500 dark:text-gray-500 group-hover:text-indigo-400" />
             </div>
-            <span className="text-gray-500 group-hover:text-gray-300 text-sm transition-colors">New Collection</span>
+            <span className="text-surface-500 dark:text-gray-500 group-hover:text-surface-700 dark:text-gray-300 text-sm transition-colors">New Collection</span>
           </button>
         </div>
       )}
 
       {filtered.length === 0 && !loading && search && (
-        <div className="text-center py-10 text-gray-500 text-sm">No collections matching "{search}"</div>
+        <div className="text-center py-10 text-surface-500 dark:text-gray-500 text-sm">No collections matching "{search}"</div>
       )}
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md">
+          <div className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-2xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-white font-bold text-lg">New Collection</h3>
-              <button onClick={() => setShowCreate(false)} className="text-gray-500 hover:text-white">✕</button>
+              <button onClick={() => setShowCreate(false)} className="text-surface-500 dark:text-gray-500 hover:text-white">✕</button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Name</label>
+                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Name</label>
                 <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Marketing Assets"
-                  className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Description</label>
+                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Description</label>
                 <textarea rows={3} value={newDesc} onChange={e => setNewDesc(e.target.value)}
                   placeholder="What documents belong in this collection?"
-                  className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 resize-none" />
+                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 resize-none" />
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowCreate(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
+                <button onClick={() => setShowCreate(false)} className="flex-1 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
                 <button onClick={handleCreate} disabled={creating || !newName.trim()}
                   className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                   {creating && <Loader2 className="w-4 h-4 animate-spin" />} Create

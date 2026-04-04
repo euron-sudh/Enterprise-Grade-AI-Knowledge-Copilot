@@ -30,7 +30,7 @@ const STATE_LABELS: Record<VoiceState, string> = {
 };
 
 const STATE_COLORS: Record<VoiceState, string> = {
-  idle: 'bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:hover:bg-gray-700 border-surface-300 dark:border-gray-700',
+  idle: 'bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 border-surface-300 dark:border-gray-700',
   listening: 'bg-red-600 hover:bg-red-700 border-red-500 shadow-lg shadow-red-500/30',
   processing: 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-500/30',
   speaking: 'bg-violet-600 border-violet-500 shadow-lg shadow-violet-500/30',
@@ -348,7 +348,7 @@ export default function VoicePage() {
         </div>
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 transition-colors"
+          className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 transition-colors"
         >
           <Settings className="h-4 w-4" />
           Settings
@@ -425,7 +425,7 @@ export default function VoicePage() {
                   )}
                 </div>
                 <p className="text-sm text-surface-900 dark:text-white min-h-[1.25rem]">
-                  {transcript || <span className="text-gray-500 italic">Waiting for speech…</span>}
+                  {transcript || <span className="text-surface-500 dark:text-gray-500 italic">Waiting for speech…</span>}
                 </p>
               </div>
             )}
@@ -443,8 +443,8 @@ export default function VoicePage() {
                           <FileText className="w-3 h-3 text-indigo-400 flex-shrink-0 mt-0.5" />
                           <div>
                             <span className="text-xs text-indigo-300 font-medium">{s.documentName}</span>
-                            <span className="text-xs text-gray-500 ml-1">({s.documentType})</span>
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{s.chunkText}</p>
+                            <span className="text-xs text-surface-500 dark:text-gray-500 ml-1">({s.documentType})</span>
+                            <p className="text-xs text-surface-500 dark:text-gray-500 mt-0.5 line-clamp-2">{s.chunkText}</p>
                           </div>
                         </div>
                       ))}
@@ -457,7 +457,7 @@ export default function VoicePage() {
             <div className="mt-4 flex justify-center gap-3">
               <button
                 onClick={() => setIsMuted(!isMuted)}
-                className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-xs text-surface-500 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-gray-700"
+                className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-xs text-surface-500 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700"
               >
                 {isMuted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
                 {isMuted ? 'Unmute' : 'Mute'}
@@ -483,7 +483,7 @@ export default function VoicePage() {
                   key={q}
                   onClick={() => { setTranscript(q); askBackend(q); }}
                   disabled={isActive}
-                  className="flex items-center justify-between w-full rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-3 text-left text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  className="flex items-center justify-between w-full rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-3 text-left text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 disabled:opacity-50 transition-colors"
                 >
                   <span>{q}</span>
                   <ChevronRight className="h-4 w-4 text-surface-400 dark:text-gray-500 flex-shrink-0" />
@@ -501,11 +501,11 @@ export default function VoicePage() {
               <BookOpen className="h-4 w-4 text-indigo-400" />
               <h3 className="text-sm font-semibold text-surface-900 dark:text-white">
                 Knowledge Base
-                {!kbLoading && <span className="ml-1 text-gray-500 font-normal">({kbDocs.length})</span>}
+                {!kbLoading && <span className="ml-1 text-surface-500 dark:text-gray-500 font-normal">({kbDocs.length})</span>}
               </h3>
             </div>
             {kbLoading ? (
-              <div className="flex items-center gap-2 py-4 text-xs text-gray-500">
+              <div className="flex items-center gap-2 py-4 text-xs text-surface-500 dark:text-gray-500">
                 <Loader2 className="h-3 w-3 animate-spin" /> Loading…
               </div>
             ) : kbDocs.length === 0 ? (
@@ -519,7 +519,7 @@ export default function VoicePage() {
                     <FileText className="h-3 w-3 text-indigo-400 flex-shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <p className="text-xs text-surface-800 dark:text-gray-200 truncate font-medium">{doc.name || doc.original_name}</p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-surface-500 dark:text-gray-500">
                         {doc.type?.toUpperCase()}
                         {doc.wordCount > 0 && ` · ${doc.wordCount} words`}
                         {doc.pageCount > 0 && ` · ${doc.pageCount}p`}
@@ -528,7 +528,7 @@ export default function VoicePage() {
                   </div>
                 ))}
                 {kbDocs.length > 20 && (
-                  <p className="text-xs text-gray-500 text-center pt-1">+{kbDocs.length - 20} more</p>
+                  <p className="text-xs text-surface-500 dark:text-gray-500 text-center pt-1">+{kbDocs.length - 20} more</p>
                 )}
               </div>
             )}

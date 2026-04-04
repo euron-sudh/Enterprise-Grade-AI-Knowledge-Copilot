@@ -158,7 +158,7 @@ export default function WorkflowsPage() {
           <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">Automate tasks triggered by events, schedules, or webhooks</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchWorkflows} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
+          <button onClick={fetchWorkflows} className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button onClick={() => setShowCreate(!showCreate)}
@@ -233,12 +233,12 @@ export default function WorkflowsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => runWorkflow(wf.id)} disabled={running === wf.id}
-                        className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700 disabled:opacity-50">
+                        className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700 disabled:opacity-50">
                         {running === wf.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                         Run
                       </button>
                       <button onClick={() => toggleWorkflow(wf)}
-                        className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
+                        className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700">
                         {wf.status === 'active' ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                         {wf.status === 'active' ? 'Pause' : 'Resume'}
                       </button>
@@ -262,7 +262,7 @@ export default function WorkflowsPage() {
           {TEMPLATES.map(t => {
             const Icon = t.icon;
             return (
-              <div key={t.name} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 hover:border-surface-300 dark:hover:border-gray-700 transition-colors">
+              <div key={t.name} className="rounded-xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 hover:border-surface-300 dark:hover:border-surface-200 dark:border-gray-700 transition-colors">
                 <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${t.color} mb-3`}>
                   <Icon className="h-4 w-4 text-surface-900 dark:text-white" />
                 </div>

@@ -37,9 +37,9 @@ export default function AuditLogsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Audit Logs</h1>
-          <p className="text-gray-400 text-sm mt-1">Track all security-relevant events and administrative actions</p>
+          <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Track all security-relevant events and administrative actions</p>
         </div>
-        <button className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white font-medium px-4 py-2 rounded-xl border border-white/10 transition-colors text-sm">
+        <button className="flex items-center gap-2 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white font-medium px-4 py-2 rounded-xl border border-surface-200 dark:border-white/10 transition-colors text-sm">
           <Download className="w-4 h-4" /> Export
         </button>
       </div>
@@ -52,9 +52,9 @@ export default function AuditLogsPage() {
           { label: 'Warnings', value: '12', color: 'text-amber-400' },
           { label: 'Failed Logins', value: '5', color: 'text-orange-400' },
         ].map(s => (
-          <div key={s.label} className="bg-gray-900 border border-white/5 rounded-xl p-4">
+          <div key={s.label} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-4">
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-            <div className="text-gray-500 text-xs mt-1">{s.label}</div>
+            <div className="text-surface-500 dark:text-gray-500 text-xs mt-1">{s.label}</div>
           </div>
         ))}
       </div>
@@ -62,28 +62,28 @@ export default function AuditLogsPage() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search logs..." className="w-full bg-gray-900 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition-colors" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500 dark:text-gray-500" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search logs..." className="w-full bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition-colors" />
         </div>
-        <select value={severity} onChange={e => setSeverity(e.target.value)} className="bg-gray-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+        <select value={severity} onChange={e => setSeverity(e.target.value)} className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
           {['All', 'Critical', 'Warning', 'Info'].map(s => <option key={s}>{s}</option>)}
         </select>
-        <select className="bg-gray-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+        <select className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
           {['Last 24 hours', 'Last 7 days', 'Last 30 days', 'Custom range'].map(s => <option key={s}>{s}</option>)}
         </select>
       </div>
 
       {/* Table */}
-      <div className="bg-gray-900 border border-white/5 rounded-2xl overflow-hidden">
+      <div className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-white/5">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Severity</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">User</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Resource</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden xl:table-cell">IP Address</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Time</th>
+            <tr className="border-b border-surface-100 dark:border-white/5">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-surface-500 dark:text-gray-500 uppercase tracking-wider">Severity</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-surface-500 dark:text-gray-500 uppercase tracking-wider">Action</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-surface-500 dark:text-gray-500 uppercase tracking-wider hidden md:table-cell">User</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-surface-500 dark:text-gray-500 uppercase tracking-wider hidden lg:table-cell">Resource</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-surface-500 dark:text-gray-500 uppercase tracking-wider hidden xl:table-cell">IP Address</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-surface-500 dark:text-gray-500 uppercase tracking-wider">Time</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -91,7 +91,7 @@ export default function AuditLogsPage() {
               const cfg = severityConfig[log.severity as keyof typeof severityConfig] || severityConfig.info;
               const Icon = cfg.icon;
               return (
-                <tr key={log.id} className="hover:bg-gray-800/50 transition-colors group">
+                <tr key={log.id} className="hover:bg-surface-100/50 dark:bg-gray-800/50 transition-colors group">
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.color}`}>
                       <Icon className="w-3 h-3" /> {cfg.label}
@@ -99,26 +99,26 @@ export default function AuditLogsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="text-white text-sm font-mono">{log.action}</div>
-                    <div className="text-gray-500 text-xs mt-0.5 hidden group-hover:block">{log.detail}</div>
+                    <div className="text-surface-500 dark:text-gray-500 text-xs mt-0.5 hidden group-hover:block">{log.detail}</div>
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell">
                     <div className="text-white text-sm">{log.user}</div>
-                    <div className="text-gray-500 text-xs">{log.email}</div>
+                    <div className="text-surface-500 dark:text-gray-500 text-xs">{log.email}</div>
                   </td>
-                  <td className="px-4 py-3 text-gray-400 text-sm hidden lg:table-cell">{log.resource}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs font-mono hidden xl:table-cell">{log.ip}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{log.time}</td>
+                  <td className="px-4 py-3 text-surface-600 dark:text-gray-400 text-sm hidden lg:table-cell">{log.resource}</td>
+                  <td className="px-4 py-3 text-surface-500 dark:text-gray-500 text-xs font-mono hidden xl:table-cell">{log.ip}</td>
+                  <td className="px-4 py-3 text-surface-500 dark:text-gray-500 text-xs whitespace-nowrap">{log.time}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        <div className="flex items-center justify-between px-4 py-3 border-t border-white/5">
-          <span className="text-gray-500 text-sm">Showing {filtered.length} of {LOGS.length} events</span>
+        <div className="flex items-center justify-between px-4 py-3 border-t border-surface-100 dark:border-white/5">
+          <span className="text-surface-500 dark:text-gray-500 text-sm">Showing {filtered.length} of {LOGS.length} events</span>
           <div className="flex items-center gap-2">
-            <button className="p-1.5 rounded-lg bg-gray-800 border border-white/10 text-gray-400 hover:text-white transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-            <span className="text-gray-400 text-sm px-2">1 / 1</span>
-            <button className="p-1.5 rounded-lg bg-gray-800 border border-white/10 text-gray-400 hover:text-white transition-colors"><ChevronRight className="w-4 h-4" /></button>
+            <button className="p-1.5 rounded-lg bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 text-surface-600 dark:text-gray-400 hover:text-white transition-colors"><ChevronLeft className="w-4 h-4" /></button>
+            <span className="text-surface-600 dark:text-gray-400 text-sm px-2">1 / 1</span>
+            <button className="p-1.5 rounded-lg bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 text-surface-600 dark:text-gray-400 hover:text-white transition-colors"><ChevronRight className="w-4 h-4" /></button>
           </div>
         </div>
       </div>

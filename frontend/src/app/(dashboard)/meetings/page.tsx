@@ -147,7 +147,7 @@ export default function MeetingsPage() {
           <p className="mt-1 text-sm text-surface-500 dark:text-gray-400">AI-powered meeting intelligence and recaps</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchMeetings} className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
+          <button onClick={fetchMeetings} className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button
@@ -184,7 +184,7 @@ export default function MeetingsPage() {
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Create
             </button>
-            <button onClick={() => setShowCreate(false)} className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">Cancel</button>
+            <button onClick={() => setShowCreate(false)} className="rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-4 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700">Cancel</button>
           </div>
         </div>
       )}
@@ -251,7 +251,7 @@ export default function MeetingsPage() {
                   )}
                   {tab === 'past' && (
                     <button onClick={() => loadRecap(m.id)}
-                      className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-gray-700">
+                      className="flex items-center gap-1 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700">
                       <Zap className="h-3 w-3" /> {selectedMeeting === m.id ? 'Hide Recap' : 'AI Recap'}
                     </button>
                   )}

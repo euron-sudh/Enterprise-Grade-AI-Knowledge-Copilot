@@ -48,48 +48,48 @@ export default function TranscriptPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-4 px-6 py-4 border-b border-white/5">
-        <Link href="/meetings/1/recap" className="p-2 rounded-xl hover:bg-gray-800 text-gray-400 hover:text-white transition-colors">
+      <div className="flex items-center gap-4 px-6 py-4 border-b border-surface-100 dark:border-white/5">
+        <Link href="/meetings/1/recap" className="p-2 rounded-xl hover:bg-surface-100 dark:bg-gray-800 text-surface-600 dark:text-gray-400 hover:text-white transition-colors">
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div className="flex-1">
           <h1 className="text-white font-bold">Full Transcript</h1>
-          <p className="text-gray-500 text-xs flex items-center gap-3 mt-0.5">
+          <p className="text-surface-500 dark:text-gray-500 text-xs flex items-center gap-3 mt-0.5">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />52 minutes</span>
             <span className="flex items-center gap-1"><Users className="w-3 h-3" />48 participants</span>
           </p>
         </div>
-        <button className="flex items-center gap-1.5 text-sm bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-xl border border-white/10 transition-colors">
+        <button className="flex items-center gap-1.5 text-sm bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white px-3 py-2 rounded-xl border border-surface-200 dark:border-white/10 transition-colors">
           <Download className="w-3.5 h-3.5" /> Export
         </button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-white/5">
+      <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-surface-100 dark:border-white/5">
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search transcript..." className="w-full bg-gray-900 border border-white/10 rounded-xl pl-8 pr-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-500 dark:text-gray-500" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search transcript..." className="w-full bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl pl-8 pr-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
         </div>
-        <select value={speaker} onChange={e => setSpeaker(e.target.value)} className="bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+        <select value={speaker} onChange={e => setSpeaker(e.target.value)} className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
           {SPEAKERS.map(s => <option key={s}>{s}</option>)}
         </select>
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={highlightsOnly} onChange={e => setHighlightsOnly(e.target.checked)} className="rounded" />
-          <span className="text-gray-400 text-sm">Highlights only</span>
+          <span className="text-surface-600 dark:text-gray-400 text-sm">Highlights only</span>
         </label>
-        <span className="text-gray-600 text-xs ml-auto">{filtered.length} segments</span>
+        <span className="text-surface-500 dark:text-gray-600 text-xs ml-auto">{filtered.length} segments</span>
       </div>
 
       {/* Transcript */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {filtered.map((seg, i) => (
           <div key={i} className={`flex gap-4 group ${seg.isHighlight ? 'bg-indigo-500/5 -mx-2 px-2 py-2 rounded-xl' : ''}`}>
-            <button className="text-gray-600 text-xs font-mono w-10 flex-shrink-0 mt-1 hover:text-indigo-400 transition-colors">
+            <button className="text-surface-500 dark:text-gray-600 text-xs font-mono w-10 flex-shrink-0 mt-1 hover:text-indigo-400 transition-colors">
               {seg.time}
             </button>
             <div className="flex-1">
-              <span className={`text-xs font-semibold ${speakerColors[seg.speaker] || 'text-gray-400'}`}>{seg.speaker}</span>
-              <p className="text-gray-300 text-sm mt-0.5 leading-relaxed">
+              <span className={`text-xs font-semibold ${speakerColors[seg.speaker] || 'text-surface-600 dark:text-gray-400'}`}>{seg.speaker}</span>
+              <p className="text-surface-700 dark:text-gray-300 text-sm mt-0.5 leading-relaxed">
                 {search ? (
                   seg.text.split(new RegExp(`(${search})`, 'gi')).map((part, j) =>
                     part.toLowerCase() === search.toLowerCase()
@@ -103,7 +103,7 @@ export default function TranscriptPage() {
           </div>
         ))}
         {filtered.length === 0 && (
-          <div className="text-center py-12 text-gray-600">No transcript segments match your filters</div>
+          <div className="text-center py-12 text-surface-500 dark:text-gray-600">No transcript segments match your filters</div>
         )}
       </div>
     </div>

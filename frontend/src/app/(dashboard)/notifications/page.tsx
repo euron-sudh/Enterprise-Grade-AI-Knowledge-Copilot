@@ -160,7 +160,7 @@ export default function NotificationsPage() {
             const Icon = meta.icon;
             return (
               <div key={n.id} onClick={() => markRead(n.id)}
-                className={`group flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer ${n.read ? 'bg-white dark:bg-gray-900 border-surface-200 dark:border-gray-800 hover:border-surface-300 dark:hover:border-gray-700' : 'bg-white dark:bg-gray-900 border-indigo-500/30 hover:border-indigo-500/50'}`}>
+                className={`group flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer ${n.read ? 'bg-white dark:bg-gray-900 border-surface-200 dark:border-gray-800 hover:border-surface-300 dark:hover:border-surface-200 dark:border-gray-700' : 'bg-white dark:bg-gray-900 border-indigo-500/30 hover:border-indigo-500/50'}`}>
                 {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500 mt-2 shrink-0" />}
                 {n.read && <div className="w-2 h-2 mt-2 shrink-0" />}
                 <div className={`w-9 h-9 rounded-lg ${meta.bg} flex items-center justify-center shrink-0`}>

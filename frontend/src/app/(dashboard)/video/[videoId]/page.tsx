@@ -32,7 +32,7 @@ export default function VideoPlayerPage() {
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
             <div className="text-center">
               <span className="text-6xl">🎬</span>
-              <p className="text-gray-500 text-sm mt-2">Q1 2026 OKR Review</p>
+              <p className="text-surface-500 dark:text-gray-500 text-sm mt-2">Q1 2026 OKR Review</p>
             </div>
           </div>
           {/* Controls overlay */}
@@ -46,44 +46,44 @@ export default function VideoPlayerPage() {
               </button>
               <span className="text-white text-sm font-mono">17:22 / 52:00</span>
               <div className="flex-1" />
-              <Volume2 className="w-4 h-4 text-gray-400" />
-              <Download className="w-4 h-4 text-gray-400 cursor-pointer hover:text-white transition-colors" />
-              <Share2 className="w-4 h-4 text-gray-400 cursor-pointer hover:text-white transition-colors" />
-              <Maximize2 className="w-4 h-4 text-gray-400 cursor-pointer hover:text-white transition-colors" />
+              <Volume2 className="w-4 h-4 text-surface-600 dark:text-gray-400" />
+              <Download className="w-4 h-4 text-surface-600 dark:text-gray-400 cursor-pointer hover:text-white transition-colors" />
+              <Share2 className="w-4 h-4 text-surface-600 dark:text-gray-400 cursor-pointer hover:text-white transition-colors" />
+              <Maximize2 className="w-4 h-4 text-surface-600 dark:text-gray-400 cursor-pointer hover:text-white transition-colors" />
             </div>
           </div>
         </div>
 
         {/* Video info */}
-        <div className="p-5 border-b border-white/5">
+        <div className="p-5 border-b border-surface-100 dark:border-white/5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-white font-bold text-lg">Q1 2026 OKR Review — All Hands</h1>
               <div className="flex items-center gap-3 mt-1">
-                <span className="text-gray-500 text-sm flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 52:00</span>
-                <span className="text-gray-500 text-sm">Mar 25, 2026</span>
-                <span className="text-gray-500 text-sm">48 participants</span>
+                <span className="text-surface-500 dark:text-gray-500 text-sm flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 52:00</span>
+                <span className="text-surface-500 dark:text-gray-500 text-sm">Mar 25, 2026</span>
+                <span className="text-surface-500 dark:text-gray-500 text-sm">48 participants</span>
               </div>
             </div>
-            <button className="text-gray-500 hover:text-white transition-colors"><MoreHorizontal className="w-5 h-5" /></button>
+            <button className="text-surface-500 dark:text-gray-500 hover:text-white transition-colors"><MoreHorizontal className="w-5 h-5" /></button>
           </div>
         </div>
 
         {/* AI Q&A box */}
-        <div className="p-5 bg-indigo-500/5 border-b border-white/5">
+        <div className="p-5 bg-indigo-500/5 border-b border-surface-100 dark:border-white/5">
           <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2"><MessageSquare className="w-4 h-4 text-indigo-400" /> Ask about this video</h3>
           <div className="flex gap-2">
-            <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="What were the Q1 revenue results?" className="flex-1 bg-gray-800 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+            <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="What were the Q1 revenue results?" className="flex-1 bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
             <button className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-1">Ask <ChevronRight className="w-3.5 h-3.5" /></button>
           </div>
         </div>
       </div>
 
       {/* Side panel */}
-      <div className="w-full lg:w-96 border-l border-white/5 flex flex-col bg-gray-950/30">
-        <div className="flex gap-1 p-3 border-b border-white/5">
+      <div className="w-full lg:w-96 border-l border-surface-100 dark:border-white/5 flex flex-col bg-surface-50/30 dark:bg-gray-950/30">
+        <div className="flex gap-1 p-3 border-b border-surface-100 dark:border-white/5">
           {[['chapters', 'Chapters'], ['transcript', 'Transcript'], ['qa', 'Notes']].map(([t, label]) => (
-            <button key={t} onClick={() => setActiveTab(t as any)} className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === t ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}>{label}</button>
+            <button key={t} onClick={() => setActiveTab(t as any)} className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === t ? 'bg-indigo-600 text-white' : 'text-surface-600 dark:text-gray-400 hover:text-white'}`}>{label}</button>
           ))}
         </div>
 
@@ -91,12 +91,12 @@ export default function VideoPlayerPage() {
           {activeTab === 'chapters' && (
             <div className="space-y-2">
               {CHAPTERS.map(ch => (
-                <button key={ch.id} className="w-full text-left p-3 rounded-xl hover:bg-gray-800/50 transition-colors group border border-transparent hover:border-white/10">
+                <button key={ch.id} className="w-full text-left p-3 rounded-xl hover:bg-surface-100/50 dark:bg-gray-800/50 transition-colors group border border-transparent hover:border-surface-200 dark:border-white/10">
                   <div className="flex items-center gap-2">
                     <span className="text-indigo-400 text-xs font-mono">{ch.start}</span>
                     <span className="text-white text-sm font-medium flex-1 truncate">{ch.title}</span>
                   </div>
-                  <p className="text-gray-500 text-xs mt-1 line-clamp-2">{ch.summary}</p>
+                  <p className="text-surface-500 dark:text-gray-500 text-xs mt-1 line-clamp-2">{ch.summary}</p>
                 </button>
               ))}
             </div>
@@ -107,25 +107,25 @@ export default function VideoPlayerPage() {
                 <div key={i} className="flex gap-2">
                   <button className="text-indigo-400 text-xs font-mono flex-shrink-0 mt-0.5 hover:text-indigo-300">{seg.time}</button>
                   <div>
-                    <span className="text-gray-400 text-xs font-medium">{seg.speaker}: </span>
-                    <span className="text-gray-300 text-sm">{seg.text}</span>
+                    <span className="text-surface-600 dark:text-gray-400 text-xs font-medium">{seg.speaker}: </span>
+                    <span className="text-surface-700 dark:text-gray-300 text-sm">{seg.text}</span>
                   </div>
                 </div>
               ))}
-              <p className="text-gray-600 text-xs text-center py-4">Full transcript — 52 minutes</p>
+              <p className="text-surface-500 dark:text-gray-600 text-xs text-center py-4">Full transcript — 52 minutes</p>
             </div>
           )}
           {activeTab === 'qa' && (
             <div className="space-y-3">
               <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3">
-                <p className="text-gray-400 text-xs font-medium mb-1">AI Summary</p>
-                <p className="text-gray-300 text-sm">Q1 OKR review shows strong performance: Engineering hit 99.8% uptime, product shipped ahead of schedule, and Sales hit 118% of ARR target ($2.4M). Q2 focus areas: mobile app, API v2, HIPAA.</p>
+                <p className="text-surface-600 dark:text-gray-400 text-xs font-medium mb-1">AI Summary</p>
+                <p className="text-surface-700 dark:text-gray-300 text-sm">Q1 OKR review shows strong performance: Engineering hit 99.8% uptime, product shipped ahead of schedule, and Sales hit 118% of ARR target ($2.4M). Q2 focus areas: mobile app, API v2, HIPAA.</p>
               </div>
-              <div className="bg-gray-900 border border-white/5 rounded-xl p-3">
-                <p className="text-gray-400 text-xs font-medium mb-2">Key Action Items</p>
+              <div className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-3">
+                <p className="text-surface-600 dark:text-gray-400 text-xs font-medium mb-2">Key Action Items</p>
                 <ul className="space-y-1.5">
                   {['James to lead API v2 scoping (due Apr 15)', 'Maya to kick off mobile app discovery sprint', 'Legal to review HIPAA requirements'].map(item => (
-                    <li key={item} className="flex items-start gap-2 text-xs text-gray-300"><span className="text-indigo-400 mt-0.5">→</span>{item}</li>
+                    <li key={item} className="flex items-start gap-2 text-xs text-surface-700 dark:text-gray-300"><span className="text-indigo-400 mt-0.5">→</span>{item}</li>
                   ))}
                 </ul>
               </div>

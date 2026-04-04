@@ -125,7 +125,7 @@ export default function CrawlersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Web Crawlers</h1>
-          <p className="text-gray-400 text-sm mt-1">Automatically crawl and index web content into your knowledge base</p>
+          <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Automatically crawl and index web content into your knowledge base</p>
         </div>
         <button onClick={() => { setShowCreate(true); setCreateError(''); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-xl transition-colors text-sm">
           <Plus className="w-4 h-4" /> New Crawler
@@ -139,9 +139,9 @@ export default function CrawlersPage() {
           { label: 'Pages Indexed', value: totalPages.toLocaleString(), color: 'text-indigo-400' },
           { label: 'Errors', value: crawlers.filter(c => c.status === 'error').length.toString(), color: 'text-red-400' },
         ].map(s => (
-          <div key={s.label} className="bg-gray-900 border border-white/5 rounded-xl p-4">
+          <div key={s.label} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-4">
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-            <div className="text-gray-500 text-xs mt-1">{s.label}</div>
+            <div className="text-surface-500 dark:text-gray-500 text-xs mt-1">{s.label}</div>
           </div>
         ))}
       </div>
@@ -151,10 +151,10 @@ export default function CrawlersPage() {
       {loading ? (
         <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
       ) : crawlers.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 p-12 text-center">
-          <Globe className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+        <div className="rounded-2xl border border-dashed border-surface-200 dark:border-white/10 p-12 text-center">
+          <Globe className="w-10 h-10 text-surface-500 dark:text-gray-600 mx-auto mb-3" />
           <p className="text-white font-semibold mb-1">No crawlers yet</p>
-          <p className="text-gray-500 text-sm">Create a crawler to automatically index web content</p>
+          <p className="text-surface-500 dark:text-gray-500 text-sm">Create a crawler to automatically index web content</p>
           <button onClick={() => setShowCreate(true)} className="mt-4 text-sm text-indigo-400 hover:text-indigo-300">+ New Crawler</button>
         </div>
       ) : (
@@ -163,7 +163,7 @@ export default function CrawlersPage() {
             const cfg = statusConfig[crawler.status] ?? statusConfig.disconnected;
             const StatusIcon = cfg.icon;
             return (
-              <div key={crawler.id} className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+              <div key={crawler.id} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center flex-shrink-0">
                     <Globe className="w-5 h-5 text-white" />
@@ -175,21 +175,21 @@ export default function CrawlersPage() {
                         <StatusIcon className={`w-3 h-3 ${crawler.status === 'syncing' ? 'animate-spin' : ''}`} /> {cfg.label}
                       </span>
                     </div>
-                    {crawler.config?.url && <p className="text-gray-500 text-sm font-mono mt-0.5 truncate">{crawler.config.url}</p>}
+                    {crawler.config?.url && <p className="text-surface-500 dark:text-gray-500 text-sm font-mono mt-0.5 truncate">{crawler.config.url}</p>}
                     <div className="flex items-center gap-4 mt-2">
-                      <span className="text-gray-600 text-xs">Pages: <span className="text-gray-400">{crawler.documentCount}</span></span>
-                      {crawler.config?.depth && <span className="text-gray-600 text-xs">Depth: <span className="text-gray-400">{crawler.config.depth}</span></span>}
-                      {crawler.config?.frequency && <span className="text-gray-600 text-xs">Freq: <span className="text-gray-400">{crawler.config.frequency}</span></span>}
-                      {crawler.lastSyncAt && <span className="text-gray-600 text-xs">Last: <span className="text-gray-400">{new Date(crawler.lastSyncAt).toLocaleDateString()}</span></span>}
+                      <span className="text-surface-500 dark:text-gray-600 text-xs">Pages: <span className="text-surface-600 dark:text-gray-400">{crawler.documentCount}</span></span>
+                      {crawler.config?.depth && <span className="text-surface-500 dark:text-gray-600 text-xs">Depth: <span className="text-surface-600 dark:text-gray-400">{crawler.config.depth}</span></span>}
+                      {crawler.config?.frequency && <span className="text-surface-500 dark:text-gray-600 text-xs">Freq: <span className="text-surface-600 dark:text-gray-400">{crawler.config.frequency}</span></span>}
+                      {crawler.lastSyncAt && <span className="text-surface-500 dark:text-gray-600 text-xs">Last: <span className="text-surface-600 dark:text-gray-400">{new Date(crawler.lastSyncAt).toLocaleDateString()}</span></span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button onClick={() => void syncCrawler(crawler.id)} disabled={syncing === crawler.id || crawler.status === 'syncing'}
-                      className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white transition-colors disabled:opacity-50" title="Run now">
+                      className="p-1.5 rounded-lg hover:bg-surface-200 dark:bg-gray-700 text-surface-600 dark:text-gray-400 hover:text-white transition-colors disabled:opacity-50" title="Run now">
                       {syncing === crawler.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                     </button>
                     <button onClick={() => void deleteCrawler(crawler.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors">
+                      className="p-1.5 rounded-lg hover:bg-red-500/20 text-surface-600 dark:text-gray-400 hover:text-red-400 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -202,43 +202,43 @@ export default function CrawlersPage() {
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg">
+          <div className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-2xl p-6 w-full max-w-lg">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-white font-bold text-lg">New Web Crawler</h3>
-              <button onClick={() => setShowCreate(false)} className="text-gray-500 hover:text-white"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowCreate(false)} className="text-surface-500 dark:text-gray-500 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Crawler Name</label>
+                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Crawler Name</label>
                 <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
                   placeholder="e.g. Company Help Center"
-                  className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Start URL</label>
+                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Start URL</label>
                 <input type="url" value={newUrl} onChange={e => setNewUrl(e.target.value)}
                   placeholder="https://docs.example.com"
-                  className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1.5">Crawl Depth</label>
+                  <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Crawl Depth</label>
                   <select value={newDepth} onChange={e => setNewDepth(e.target.value)}
-                    className="w-full bg-gray-800 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                     {['1', '2', '3', '4', '5'].map(d => <option key={d} value={d}>{d} level{d !== '1' ? 's' : ''}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1.5">Frequency</label>
+                  <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Frequency</label>
                   <select value={newFrequency} onChange={e => setNewFrequency(e.target.value)}
-                    className="w-full bg-gray-800 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                     {['Once', 'Hourly', 'Daily', 'Weekly', 'Monthly'].map(f => <option key={f}>{f}</option>)}
                   </select>
                 </div>
               </div>
               {createError && <p className="text-red-400 text-xs">{createError}</p>}
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowCreate(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
+                <button onClick={() => setShowCreate(false)} className="flex-1 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
                 <button onClick={() => void createCrawler()} disabled={creating}
                   className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
                   {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

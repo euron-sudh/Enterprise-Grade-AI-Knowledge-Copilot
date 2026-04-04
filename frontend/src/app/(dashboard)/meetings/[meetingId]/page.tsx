@@ -113,18 +113,18 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 overflow-hidden">
+    <div className="flex flex-col h-full bg-surface-50 dark:bg-gray-950 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 bg-gray-900 border-b border-white/10 flex-shrink-0">
+      <div className="flex items-center justify-between px-5 py-3 bg-white dark:bg-gray-900 border-b border-surface-200 dark:border-white/10 flex-shrink-0">
         <div>
           <h1 className="text-white font-semibold text-sm">{meetingTitle}</h1>
-          <p className="text-gray-500 text-xs mt-0.5 font-mono">{fmt(elapsed)}</p>
+          <p className="text-surface-500 dark:text-gray-500 text-xs mt-0.5 font-mono">{fmt(elapsed)}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Invite link */}
-          <div className="flex items-center gap-1 rounded-lg bg-gray-800 border border-white/10 px-3 py-1.5">
-            <Link2 className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-            <span className="text-xs text-gray-400 max-w-48 truncate hidden sm:block">{inviteLink}</span>
+          <div className="flex items-center gap-1 rounded-lg bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 px-3 py-1.5">
+            <Link2 className="h-3.5 w-3.5 text-surface-600 dark:text-gray-400 flex-shrink-0" />
+            <span className="text-xs text-surface-600 dark:text-gray-400 max-w-48 truncate hidden sm:block">{inviteLink}</span>
             <button
               onClick={copyInvite}
               className="ml-1 flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0"
@@ -133,7 +133,7 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
               {copied ? 'Copied!' : 'Copy invite'}
             </button>
           </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500 bg-gray-800 border border-white/10 rounded-lg px-3 py-1.5">
+          <div className="flex items-center gap-1 text-xs text-surface-500 dark:text-gray-500 bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-lg px-3 py-1.5">
             <Users className="h-3.5 w-3.5" />
             <span>1 participant</span>
           </div>
@@ -145,7 +145,7 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
         {cameraLoading ? (
           <div className="flex flex-col items-center gap-3 text-center">
             <Loader2 className="h-10 w-10 text-indigo-400 animate-spin" />
-            <p className="text-gray-400 text-sm">Starting camera...</p>
+            <p className="text-surface-600 dark:text-gray-400 text-sm">Starting camera...</p>
           </div>
         ) : cameraError ? (
           <div className="flex flex-col items-center gap-4 text-center max-w-md">
@@ -154,14 +154,14 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
             </div>
             <p className="text-red-400 text-sm">{cameraError}</p>
             {/* Still show the room controls even without camera */}
-            <div className="w-64 h-48 rounded-2xl bg-gray-800 border border-white/10 flex items-center justify-center">
+            <div className="w-64 h-48 rounded-2xl bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 flex items-center justify-center">
               <div className="text-center">
                 <div className="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center mx-auto mb-2">
                   <span className="text-white text-xl font-bold">
                     {session?.user?.name?.charAt(0)?.toUpperCase() ?? 'Y'}
                   </span>
                 </div>
-                <p className="text-gray-400 text-xs">{session?.user?.name ?? 'You'}</p>
+                <p className="text-surface-600 dark:text-gray-400 text-xs">{session?.user?.name ?? 'You'}</p>
               </div>
             </div>
           </div>
@@ -172,18 +172,18 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
               autoPlay
               playsInline
               muted // muted so you don't hear yourself
-              className={`w-full rounded-2xl bg-gray-900 aspect-video object-cover ${isVideoOff ? 'hidden' : 'block'}`}
+              className={`w-full rounded-2xl bg-white dark:bg-gray-900 aspect-video object-cover ${isVideoOff ? 'hidden' : 'block'}`}
             />
             {isVideoOff && (
-              <div className="w-full aspect-video rounded-2xl bg-gray-800 border border-white/10 flex items-center justify-center">
+              <div className="w-full aspect-video rounded-2xl bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 flex items-center justify-center">
                 <div className="text-center">
                   <div className="w-20 h-20 rounded-full bg-indigo-600 flex items-center justify-center mx-auto mb-3">
                     <span className="text-white text-3xl font-bold">
                       {session?.user?.name?.charAt(0)?.toUpperCase() ?? 'Y'}
                     </span>
                   </div>
-                  <p className="text-gray-400 text-sm">{session?.user?.name ?? 'You'}</p>
-                  <p className="text-gray-600 text-xs mt-1">Camera off</p>
+                  <p className="text-surface-600 dark:text-gray-400 text-sm">{session?.user?.name ?? 'You'}</p>
+                  <p className="text-surface-500 dark:text-gray-600 text-xs mt-1">Camera off</p>
                 </div>
               </div>
             )}
@@ -217,7 +217,7 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
           onClick={toggleMic}
           title={isMuted ? 'Unmute' : 'Mute'}
           className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
-            isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'
+            isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-surface-200 dark:bg-gray-700 hover:bg-gray-600'
           }`}
         >
           {isMuted ? <MicOff className="h-6 w-6 text-white" /> : <Mic className="h-6 w-6 text-white" />}
@@ -227,7 +227,7 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
           onClick={toggleVideo}
           title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
           className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
-            isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'
+            isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-surface-200 dark:bg-gray-700 hover:bg-gray-600'
           }`}
         >
           {isVideoOff ? <VideoOff className="h-6 w-6 text-white" /> : <Video className="h-6 w-6 text-white" />}

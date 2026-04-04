@@ -29,8 +29,8 @@ const TYPE_COLORS: Record<string, string> = {
   XLS: 'bg-green-500/20 text-green-400',
   PPTX: 'bg-orange-500/20 text-orange-400',
   PPTX2: 'bg-orange-500/20 text-orange-400',
-  MD: 'bg-gray-700 text-gray-300',
-  TXT: 'bg-gray-700 text-gray-300',
+  MD: 'bg-surface-200 dark:bg-gray-700 text-surface-700 dark:text-gray-300',
+  TXT: 'bg-surface-200 dark:bg-gray-700 text-surface-700 dark:text-gray-300',
   CSV: 'bg-emerald-500/20 text-emerald-400',
   JSON: 'bg-yellow-500/20 text-yellow-400',
 };
@@ -119,14 +119,14 @@ export default function UploadPage() {
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">Upload Documents</h1>
-        <p className="text-gray-400 text-sm mt-1">Add files to your knowledge base — PDFs, Word docs, spreadsheets, and more</p>
+        <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Add files to your knowledge base — PDFs, Word docs, spreadsheets, and more</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-900 border border-white/10 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl p-1 w-fit">
         {([['file', 'Upload Files'], ['url', 'Import URL']] as const).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-indigo-600 text-white' : 'text-surface-600 dark:text-gray-400 hover:text-white'}`}>
             {label}
           </button>
         ))}
@@ -140,7 +140,7 @@ export default function UploadPage() {
             onDragLeave={() => setDragging(false)}
             onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}
             onClick={() => inputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/15 hover:border-indigo-500/50 hover:bg-gray-900/50'}`}
+            className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/15 hover:border-indigo-500/50 hover:bg-white/50 dark:bg-gray-900/50'}`}
           >
             <input
               ref={inputRef}
@@ -150,9 +150,9 @@ export default function UploadPage() {
               className="hidden"
               onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
             />
-            <Upload className="w-10 h-10 text-gray-500 mx-auto mb-4" />
+            <Upload className="w-10 h-10 text-surface-500 dark:text-gray-500 mx-auto mb-4" />
             <p className="text-white font-semibold">Drop files here or click to browse</p>
-            <p className="text-gray-500 text-sm mt-1">PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, HTML, JSON up to 100MB each</p>
+            <p className="text-surface-500 dark:text-gray-500 text-sm mt-1">PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, HTML, JSON up to 100MB each</p>
           </div>
 
           {/* Progress summary */}
@@ -172,16 +172,16 @@ export default function UploadPage() {
       ) : (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">URL to Import</label>
+            <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">URL to Import</label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500 dark:text-gray-500" />
                 <input
                   value={url}
                   onChange={e => setUrl(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }}
                   placeholder="https://docs.example.com/guide"
-                  className="w-full bg-gray-900 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <button
@@ -195,7 +195,7 @@ export default function UploadPage() {
             </div>
             {urlError && <p className="text-red-400 text-xs mt-1.5">{urlError}</p>}
           </div>
-          <p className="text-gray-600 text-xs">Supports web pages, public docs, Confluence pages, GitHub README files</p>
+          <p className="text-surface-500 dark:text-gray-600 text-xs">Supports web pages, public docs, Confluence pages, GitHub README files</p>
         </div>
       )}
 
@@ -204,24 +204,24 @@ export default function UploadPage() {
         <div className="space-y-2">
           <h3 className="text-white font-semibold text-sm">Files ({files.length})</h3>
           {files.map(file => (
-            <div key={file.id} className="bg-gray-900 border border-white/5 rounded-xl p-4 flex items-center gap-3">
-              <FileText className="w-5 h-5 text-gray-500 flex-shrink-0" />
+            <div key={file.id} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-4 flex items-center gap-3">
+              <FileText className="w-5 h-5 text-surface-500 dark:text-gray-500 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-white text-sm font-medium truncate">{file.name}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[file.type] || 'bg-gray-700 text-gray-400'}`}>{file.type}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[file.type] || 'bg-surface-200 dark:bg-gray-700 text-surface-600 dark:text-gray-400'}`}>{file.type}</span>
                 </div>
                 <div className="flex items-center gap-2 mt-1.5">
                   {file.status === 'uploading' && (
                     <Loader2 className="h-3.5 w-3.5 text-indigo-400 animate-spin" />
                   )}
-                  <span className={`text-xs ${file.status === 'done' ? 'text-emerald-400' : file.status === 'error' ? 'text-red-400' : 'text-gray-500'}`}>
+                  <span className={`text-xs ${file.status === 'done' ? 'text-emerald-400' : file.status === 'error' ? 'text-red-400' : 'text-surface-500 dark:text-gray-500'}`}>
                     {file.status === 'uploading' ? 'Uploading & indexing...'
                       : file.status === 'done' ? '✓ Indexed'
                       : file.status === 'error' ? `✗ ${file.errorMsg || 'Error'}`
                       : file.status}
                   </span>
-                  <span className="text-gray-600 text-xs">{file.size}</span>
+                  <span className="text-surface-500 dark:text-gray-600 text-xs">{file.size}</span>
                 </div>
               </div>
               {file.status === 'done'
@@ -230,7 +230,7 @@ export default function UploadPage() {
                 ? <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                 : file.status === 'uploading'
                 ? <Loader2 className="w-4 h-4 text-indigo-400 animate-spin flex-shrink-0" />
-                : <button onClick={() => setFiles(f => f.filter(x => x.id !== file.id))} className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0"><X className="w-4 h-4" /></button>
+                : <button onClick={() => setFiles(f => f.filter(x => x.id !== file.id))} className="text-surface-500 dark:text-gray-600 hover:text-red-400 transition-colors flex-shrink-0"><X className="w-4 h-4" /></button>
               }
             </div>
           ))}

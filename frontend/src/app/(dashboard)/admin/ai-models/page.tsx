@@ -62,7 +62,7 @@ export default function AIModelsPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">AI Model Configuration</h1>
-        <p className="text-gray-400 text-sm mt-1">Enable, disable, and configure AI models for your organization</p>
+        <p className="text-surface-600 dark:text-gray-400 text-sm mt-1">Enable, disable, and configure AI models for your organization</p>
       </div>
 
       {/* Stats */}
@@ -73,9 +73,9 @@ export default function AIModelsPage() {
           { label: 'Total Queries (30d)', value: '38.4K', color: 'text-white' },
           { label: 'Est. Monthly Cost', value: '$127', color: 'text-amber-400' },
         ].map(s => (
-          <div key={s.label} className="bg-gray-900 border border-white/5 rounded-xl p-4">
+          <div key={s.label} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-4">
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-            <div className="text-gray-500 text-xs mt-1">{s.label}</div>
+            <div className="text-surface-500 dark:text-gray-500 text-xs mt-1">{s.label}</div>
           </div>
         ))}
       </div>
@@ -86,7 +86,7 @@ export default function AIModelsPage() {
           <button
             key={f}
             onClick={() => setActiveFilter(f)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeFilter === f ? 'bg-indigo-600 text-white' : 'bg-gray-900 border border-white/10 text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeFilter === f ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 text-surface-600 dark:text-gray-400 hover:text-white'}`}
           >
             {f}
           </button>
@@ -96,7 +96,7 @@ export default function AIModelsPage() {
       {/* Model cards */}
       <div className="space-y-3">
         {filtered.map(model => (
-          <div key={model.id} className={`bg-gray-900 border rounded-2xl p-5 transition-colors ${model.status === 'active' ? 'border-white/10' : 'border-white/5 opacity-60'}`}>
+          <div key={model.id} className={`bg-white dark:bg-gray-900 border rounded-2xl p-5 transition-colors ${model.status === 'active' ? 'border-surface-200 dark:border-white/10' : 'border-surface-100 dark:border-white/5 opacity-60'}`}>
             <div className="flex items-start gap-4">
               <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${model.color} flex items-center justify-center flex-shrink-0`}>
                 <Zap className="w-5 h-5 text-white" />
@@ -104,29 +104,29 @@ export default function AIModelsPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-white font-semibold">{model.name}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${providerColors[model.provider] || 'bg-gray-500/20 text-gray-400'}`}>{model.provider}</span>
-                  <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{model.type}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${providerColors[model.provider] || 'bg-gray-500/20 text-surface-600 dark:text-gray-400'}`}>{model.provider}</span>
+                  <span className="text-xs bg-surface-100 dark:bg-gray-800 text-surface-600 dark:text-gray-400 px-2 py-0.5 rounded-full">{model.type}</span>
                   {model.isDefault && <span className="text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full">Default</span>}
                   {model.status === 'active'
                     ? <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle className="w-3 h-3" />Active</span>
-                    : <span className="text-xs text-gray-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" />Inactive</span>
+                    : <span className="text-xs text-surface-500 dark:text-gray-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" />Inactive</span>
                   }
                 </div>
-                <p className="text-gray-500 text-sm mt-1">{model.description}</p>
+                <p className="text-surface-500 dark:text-gray-500 text-sm mt-1">{model.description}</p>
                 <div className="flex items-center gap-4 mt-2">
-                  <span className="text-gray-600 text-xs">Context: <span className="text-gray-400">{model.contextWindow}</span></span>
-                  <span className="text-gray-600 text-xs">Cost: <span className="text-gray-400">{model.costPer1k}/1K tokens</span></span>
-                  <span className="text-gray-600 text-xs font-mono text-[10px]">ID: {model.id}</span>
+                  <span className="text-surface-500 dark:text-gray-600 text-xs">Context: <span className="text-surface-600 dark:text-gray-400">{model.contextWindow}</span></span>
+                  <span className="text-surface-500 dark:text-gray-600 text-xs">Cost: <span className="text-surface-600 dark:text-gray-400">{model.costPer1k}/1K tokens</span></span>
+                  <span className="text-surface-500 dark:text-gray-600 text-xs font-mono text-[10px]">ID: {model.id}</span>
                 </div>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
-                <button className="p-2 rounded-lg bg-gray-800 border border-white/10 text-gray-400 hover:text-white transition-colors">
+                <button className="p-2 rounded-lg bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 text-surface-600 dark:text-gray-400 hover:text-white transition-colors">
                   <Settings className="w-4 h-4" />
                 </button>
                 <button onClick={() => toggle(model.id)} className="p-1">
                   {model.status === 'active'
                     ? <ToggleRight className="w-8 h-8 text-indigo-400" />
-                    : <ToggleLeft className="w-8 h-8 text-gray-600" />
+                    : <ToggleLeft className="w-8 h-8 text-surface-500 dark:text-gray-600" />
                   }
                 </button>
               </div>
@@ -136,31 +136,31 @@ export default function AIModelsPage() {
       </div>
 
       {/* Global settings */}
-      <div className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+      <div className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
         <h3 className="text-white font-semibold mb-4 flex items-center gap-2"><Settings className="w-4 h-4" /> Global AI Settings</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">Default Temperature</label>
+            <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Default Temperature</label>
             <input type="range" min="0" max="1" step="0.1" defaultValue="0.1" className="w-full" />
-            <div className="flex justify-between text-xs text-gray-600 mt-1"><span>Precise</span><span>Creative</span></div>
+            <div className="flex justify-between text-xs text-surface-500 dark:text-gray-600 mt-1"><span>Precise</span><span>Creative</span></div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">Max Response Tokens</label>
-            <select className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Max Response Tokens</label>
+            <select className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
               {['1024', '2048', '4096', '8192', '16384'].map(v => <option key={v}>{v} tokens</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">Guardrails</label>
-            <select className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Guardrails</label>
+            <select className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
               <option>Strict (recommended)</option>
               <option>Moderate</option>
               <option>Minimal</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">PII Masking</label>
-            <select className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">PII Masking</label>
+            <select className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
               <option>Auto-detect & mask</option>
               <option>Detect only (alert)</option>
               <option>Disabled</option>
