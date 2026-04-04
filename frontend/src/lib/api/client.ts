@@ -2,7 +2,13 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse 
 
 import type { ApiError } from '@/types';
 
-const BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8010';
+// In the browser, always use the Next.js proxy (/api/backend → ALB) to avoid
+// mixed-content blocking (frontend is HTTPS, ALB is HTTP).
+// In server-side code (SSR/Lambda), hit the ALB directly.
+const BASE_URL =
+  typeof window !== 'undefined'
+    ? '/api/backend'
+    : (process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8010');
 
 let isRefreshing = false;
 let failedQueue: Array<{

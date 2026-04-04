@@ -72,6 +72,7 @@ export default function MeetingsPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
   const [creating, setCreating] = useState(false);
+  const [startingNow, setStartingNow] = useState(false);
 
   const authHeader = session?.accessToken
     ? { Authorization: `Bearer ${session.accessToken}` }
@@ -138,6 +139,27 @@ export default function MeetingsPage() {
     }
   };
 
+  const startNow = async () => {
+    setStartingNow(true);
+    setError('');
+    try {
+      const title = `Meeting — ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+      const res = await fetch('/api/backend/meetings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({ title, scheduledAt: new Date().toISOString(), status: 'live' }),
+      });
+      if (!res.ok) throw new Error('Failed to start meeting');
+      const meeting = await res.json();
+      const meetingId = meeting.id ?? meeting.meetingId;
+      if (!meetingId) throw new Error('No meeting ID returned');
+      router.push(`/meetings/${meetingId}`);
+    } catch {
+      setError('Failed to start meeting. Please try again.');
+      setStartingNow(false);
+    }
+  };
+
   return (
     <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6">
       {/* Header */}
@@ -149,6 +171,14 @@ export default function MeetingsPage() {
         <div className="flex gap-2">
           <button onClick={fetchMeetings} className="flex items-center gap-2 rounded-lg border border-surface-300 dark:border-gray-700 bg-surface-100 dark:bg-gray-800 px-3 py-2 text-sm text-surface-600 dark:text-gray-300 hover:bg-surface-200 dark:hover:bg-surface-200 dark:bg-gray-700">
             <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={startNow}
+            disabled={startingNow}
+            className="flex items-center gap-2 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-60 px-4 py-2 text-sm font-medium text-white transition-colors"
+          >
+            {startingNow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            Start Now
           </button>
           <button
             onClick={() => setShowCreate(!showCreate)}
@@ -213,9 +243,16 @@ export default function MeetingsPage() {
           <Video className="h-10 w-10 text-surface-400 dark:text-gray-600 mx-auto mb-3" />
           <p className="text-surface-500 dark:text-gray-400 text-sm">No {tab} meetings</p>
           {tab === 'upcoming' && (
-            <button onClick={() => setShowCreate(true)} className="mt-3 text-indigo-400 hover:text-indigo-300 text-sm">
-              Schedule your first meeting →
-            </button>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button onClick={startNow} disabled={startingNow}
+                className="flex items-center gap-2 rounded-lg bg-green-600 hover:bg-green-500 px-4 py-2 text-sm text-white font-medium disabled:opacity-60">
+                {startingNow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                Start Now
+              </button>
+              <button onClick={() => setShowCreate(true)} className="text-indigo-400 hover:text-indigo-300 text-sm">
+                Schedule a meeting →
+              </button>
+            </div>
           )}
         </div>
       ) : (

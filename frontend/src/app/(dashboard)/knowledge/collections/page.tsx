@@ -136,27 +136,27 @@ export default function CollectionsPage() {
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-2xl p-6 w-full max-w-md">
+          <div className="bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-2xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-white font-bold text-lg">New Collection</h3>
-              <button onClick={() => setShowCreate(false)} className="text-surface-500 dark:text-gray-500 hover:text-white">✕</button>
+              <h3 className="text-surface-900 dark:text-surface-100 font-bold text-lg">New Collection</h3>
+              <button onClick={() => setShowCreate(false)} className="text-surface-400 hover:text-surface-700 dark:hover:text-surface-200">✕</button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Name</label>
+                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">Name</label>
                 <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Marketing Assets"
-                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-600 rounded-xl px-4 py-3 text-sm text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:border-brand-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Description</label>
+                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">Description</label>
                 <textarea rows={3} value={newDesc} onChange={e => setNewDesc(e.target.value)}
                   placeholder="What documents belong in this collection?"
-                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 resize-none" />
+                  className="w-full bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-600 rounded-xl px-4 py-3 text-sm text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:border-brand-500 resize-none" />
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowCreate(false)} className="flex-1 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
+                <button onClick={() => setShowCreate(false)} className="flex-1 bg-surface-100 dark:bg-surface-800 hover:bg-surface-200 dark:hover:bg-surface-700 text-surface-700 dark:text-surface-300 py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
                 <button onClick={handleCreate} disabled={creating || !newName.trim()}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                   {creating && <Loader2 className="w-4 h-4 animate-spin" />} Create
                 </button>
               </div>

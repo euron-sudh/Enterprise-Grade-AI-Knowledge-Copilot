@@ -117,7 +117,7 @@ export default function MeetingRoomPage({ params }: MeetingRoomPageProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 bg-white dark:bg-gray-900 border-b border-surface-200 dark:border-white/10 flex-shrink-0">
         <div>
-          <h1 className="text-white font-semibold text-sm">{meetingTitle}</h1>
+          <h1 className="text-surface-900 dark:text-white font-semibold text-sm">{meetingTitle}</h1>
           <p className="text-surface-500 dark:text-gray-500 text-xs mt-0.5 font-mono">{fmt(elapsed)}</p>
         </div>
         <div className="flex items-center gap-2">

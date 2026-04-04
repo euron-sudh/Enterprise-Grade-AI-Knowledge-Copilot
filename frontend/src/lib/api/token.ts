@@ -9,7 +9,11 @@
  */
 
 const STORAGE_KEY = 'kf_backend_token';
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
+// Use the Next.js proxy path in the browser to avoid mixed-content blocking.
+const API_URL =
+  typeof window !== 'undefined'
+    ? '/api/backend'
+    : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010');
 
 /** Return the cached backend token (if any). */
 export function getCachedToken(): string | null {
