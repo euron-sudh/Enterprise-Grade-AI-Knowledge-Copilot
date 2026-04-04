@@ -32,7 +32,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
-    GOOGLE_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""          # Google Custom Search API key
+    GOOGLE_CSE_ID: str = ""           # Google Custom Search Engine ID (cx parameter)
 
     # Stripe billing
     STRIPE_SECRET_KEY: str = ""
@@ -118,6 +119,14 @@ class Settings(BaseSettings):
     @property
     def has_google_key(self) -> bool:
         return bool(self.GOOGLE_API_KEY and self.GOOGLE_API_KEY.strip())
+
+    @property
+    def has_google_search(self) -> bool:
+        """True only when both the API key and CSE ID are configured."""
+        return bool(
+            self.GOOGLE_API_KEY and self.GOOGLE_API_KEY.strip()
+            and self.GOOGLE_CSE_ID and self.GOOGLE_CSE_ID.strip()
+        )
 
     @property
     def max_upload_size_bytes(self) -> int:

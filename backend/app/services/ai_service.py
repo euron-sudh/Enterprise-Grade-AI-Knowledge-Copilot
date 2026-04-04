@@ -139,6 +139,45 @@ async def _tavily_web_search(query: str, max_results: int = 5) -> list:
     return sources
 
 
+async def _google_web_search(query: str, max_results: int = 5) -> list:
+    """Call Google Custom Search API and return sources in the same shape as KB/Tavily sources."""
+    import httpx
+
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        "key": settings.GOOGLE_API_KEY,
+        "cx": settings.GOOGLE_CSE_ID,
+        "q": query,
+        "num": min(max_results, 10),  # Google CSE max is 10 per request
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+    except Exception as e:
+        logger.warning(f"Google web search failed: {e}")
+        return []
+
+    sources = []
+    for item in data.get("items", []):
+        snippet = item.get("snippet", "")
+        sources.append({
+            "id": str(uuid.uuid4()),
+            "documentId": str(uuid.uuid4()),
+            "documentName": item.get("title", "Google Result"),
+            "documentType": "web",
+            "pageNumber": None,
+            "chunkText": snippet[:300],
+            "relevanceScore": 0.75,
+            "url": item.get("link"),
+            "connectorType": "google_search",
+            "sourceType": "web",
+        })
+    return sources
+
+
 _STOP_WORDS = {
     "what", "which", "where", "when", "who", "how", "why", "the", "are",
     "was", "were", "has", "have", "had", "this", "that", "these", "those",
@@ -439,11 +478,32 @@ async def stream_chat_response(
 
     # --- 1b. Decide whether to also query the web ---
     web_sources: list = []
-    if settings.has_tavily_key and (use_web_search or _needs_web_search(user_message_content, kb_sources)):
+    should_search_web = use_web_search or _needs_web_search(user_message_content, kb_sources)
+
+    if should_search_web:
         logger.info("Web search triggered (forced=%s) for query: %s", use_web_search, user_message_content[:80])
-        web_sources = await _tavily_web_search(user_message_content)
-    elif use_web_search and not settings.has_tavily_key:
-        logger.info("Web search requested but TAVILY_API_KEY not configured")
+        search_tasks = []
+        if settings.has_tavily_key:
+            search_tasks.append(_tavily_web_search(user_message_content))
+        if settings.has_google_search:
+            search_tasks.append(_google_web_search(user_message_content))
+
+        if search_tasks:
+            results = await asyncio.gather(*search_tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, list):
+                    web_sources.extend(r)
+            # De-duplicate by URL
+            seen_urls: set = set()
+            deduped = []
+            for s in web_sources:
+                url = s.get("url") or s["id"]
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    deduped.append(s)
+            web_sources = deduped
+        else:
+            logger.info("Web search requested but neither TAVILY_API_KEY nor GOOGLE_API_KEY+GOOGLE_CSE_ID are configured")
 
     sources = kb_sources + web_sources
     yield {"type": "sources", "sources": sources}
@@ -464,19 +524,26 @@ async def stream_chat_response(
 
     # Build system prompt with RAG context from both KB and web sources
     effective_system = system_prompt or (
-        "You are KnowledgeForge AI, an intelligent knowledge assistant. "
-        "You help users search, analyze, and extract insights from their document library, "
-        "and you can also answer general knowledge questions from your training data. "
-        "Be concise, accurate, and professional. "
-        "Do not use emojis in your responses. "
-        "Do not use informal language or filler phrases.\n\n"
-        "## Answering guidelines:\n"
-        "- If relevant documents are found in the knowledge base, prioritize that content and cite the source.\n"
-        "- If the question is not covered by the knowledge base, answer from your general training knowledge "
-        "and clearly state that the answer is from general knowledge, not from uploaded documents.\n"
-        "- NEVER refuse to answer a question simply because it is not in the knowledge base. "
-        "Always try to be helpful using your general knowledge as a fallback.\n"
-        "- For current events or real-time information, use any web search results provided."
+        "You are KnowledgeForge AI, a helpful AI assistant and knowledge copilot. "
+        "You have two capabilities: (1) searching the user's private knowledge base of uploaded documents, "
+        "and (2) answering any general question using your broad training knowledge.\n\n"
+        "## STRICT rules — never break these:\n"
+        "1. NEVER say a question is 'outside your scope' or that you 'cannot help' with it. "
+        "You are a general-purpose AI assistant that ALWAYS tries to answer.\n"
+        "2. NEVER tell the user to go check an external news site (Reuters, BBC, AP, etc.) instead of answering. "
+        "Always give the best answer you can first, then optionally mention where to get more.\n"
+        "3. NEVER refuse a question just because it is not in the knowledge base. "
+        "Answer from your training knowledge and say so briefly.\n"
+        "4. For current events or real-time questions: answer with what you know from your training data "
+        "(state your knowledge cutoff if relevant), summarise the situation, "
+        "and let the user know they can select the 'Web' tab in the chat for live search results.\n"
+        "5. If web search results are provided below, use them as the primary source for time-sensitive questions "
+        "and cite the URLs.\n\n"
+        "## Answering priority:\n"
+        "- Knowledge base excerpts provided → cite them and answer from them.\n"
+        "- Web search results provided → use them for current/live information.\n"
+        "- Neither available → answer confidently from your training knowledge.\n\n"
+        "Be concise, accurate, and professional. Do not use emojis or filler phrases."
     )
 
     # Include document inventory so the AI knows ALL files in the user's KB
