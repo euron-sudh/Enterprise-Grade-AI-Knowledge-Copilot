@@ -88,15 +88,22 @@ _WEB_SEARCH_KEYWORDS = {
 
 
 def _needs_web_search(query: str, kb_sources: list) -> bool:
-    """Return True when the query should trigger a Tavily web search.
+    """Return True when the query should be augmented with a web search.
 
     Rules (in priority order):
-    1. If the query contains time-sensitive keywords → always search the web.
-    2. If the knowledge base returned no results → fall back to web search.
+    1. Time-sensitive keywords (latest, now, today, news…) → always search web.
+    2. KB returned no chunks at all → search web.
+    3. KB returned only low-relevance filler (score ≤ 0.4) — i.e. no chunk
+       actually keyword-matched the query → search web as fallback.
     """
     query_lower = query.lower()
-    is_time_sensitive = any(kw in query_lower for kw in _WEB_SEARCH_KEYWORDS)
-    return is_time_sensitive or len(kb_sources) == 0
+    if any(kw in query_lower for kw in _WEB_SEARCH_KEYWORDS):
+        return True
+    if not kb_sources:
+        return True
+    # Fill-only chunks all have score 0.4; keyword-matched chunks score > 0.4
+    has_relevant_match = any(s.get("relevanceScore", 0) > 0.4 for s in kb_sources)
+    return not has_relevant_match
 
 
 async def _tavily_web_search(query: str, max_results: int = 5) -> list:
