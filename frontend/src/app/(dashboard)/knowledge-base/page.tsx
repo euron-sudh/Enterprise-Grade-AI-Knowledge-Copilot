@@ -1009,10 +1009,13 @@ export default function KnowledgeBasePage() {
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {connectors.map(connector => (
-            <button
+            <div
               key={connector.id}
+              role="button"
+              tabIndex={0}
               onClick={() => setSelectedConnector(connector)}
-              className={`rounded-2xl border bg-white dark:bg-gray-900 p-4 text-left transition-all hover:scale-[1.02] hover:shadow-lg ${
+              onKeyDown={e => e.key === 'Enter' && setSelectedConnector(connector)}
+              className={`cursor-pointer rounded-2xl border bg-white dark:bg-gray-900 p-4 text-left transition-all hover:scale-[1.02] hover:shadow-lg ${
                 connector.status === 'disconnected'
                   ? 'border-surface-200 dark:border-gray-800 opacity-70 hover:opacity-100 hover:border-indigo-500/50'
                   : connector.status === 'synced'
@@ -1053,7 +1056,7 @@ export default function KnowledgeBasePage() {
                   <RefreshCw className="h-2.5 w-2.5" />Reconnect
                 </button>
               )}
-            </button>
+            </div>
           ))}
         </div>
       </div>
