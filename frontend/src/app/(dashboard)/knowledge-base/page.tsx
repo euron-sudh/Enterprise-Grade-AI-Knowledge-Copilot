@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import { authFetch } from '@/lib/api/token';
 import {
   Upload, FileText, Database, Link2, Plus, CheckCircle2, AlertCircle,
@@ -689,6 +690,7 @@ function ConnectorsPanel({
 /* ─── Main Page ──────────────────────────────────────────── */
 export default function KnowledgeBasePage() {
   const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   const [, setUploadStatus] = useState<Record<string, 'uploading' | 'done' | 'error'>>({});
@@ -697,9 +699,22 @@ export default function KnowledgeBasePage() {
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [connectors, setConnectors] = useState<Connector[]>(CONNECTORS);
   const [connectorsLoaded, setConnectorsLoaded] = useState(false);
+  const [connectorsRefreshKey, setConnectorsRefreshKey] = useState(0);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
   const [showConnectorsPanel, setShowConnectorsPanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // After Google OAuth callback, force connectors to refresh
+  useEffect(() => {
+    const connected = searchParams?.get('connected');
+    if (connected) {
+      setConnectorsRefreshKey(k => k + 1);
+      // Remove the query param from URL without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete('connected');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [searchParams]);
 
   const activeConnectors = connectors.filter(c => c.status !== 'disconnected').length;
   const totalDocs = connectors.reduce((a, c) => a + c.docs, 0) + totalDocsCount;
@@ -729,7 +744,8 @@ export default function KnowledgeBasePage() {
 
   // Load persisted connector statuses from backend
   useEffect(() => {
-    if (status !== 'authenticated' || connectorsLoaded) return;
+    if (status !== 'authenticated') return;
+    if (connectorsLoaded && connectorsRefreshKey === 0) return;
     authFetch('/api/backend/knowledge/connectors', {}, (session as any)?.accessToken, getUser())
       .then(r => r.ok ? r.json() : null)
       .then((data: Array<{ id: string; type: string; name: string; status: string; documentCount: number; lastSyncAt: string | null }> | null) => {
@@ -756,7 +772,7 @@ export default function KnowledgeBasePage() {
         setConnectorsLoaded(true);
       })
       .catch(() => {});
-  }, [status, session?.user?.email]);
+  }, [status, session?.user?.email, connectorsRefreshKey]);
 
   // Real-time sync simulation: syncing connectors poll every 8s
   useEffect(() => {
