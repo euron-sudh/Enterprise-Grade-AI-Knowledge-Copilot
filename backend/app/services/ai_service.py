@@ -225,6 +225,38 @@ async def _search_relevant_chunks(
             if len(sources) >= limit * 3:
                 break
 
+        # Fallback: if keyword search found nothing, fetch chunks from ALL indexed docs
+        # so the AI always has document content to reason over (not just metadata)
+        if not sources and words and user_id:
+            fallback_q = (
+                select(DocumentChunk, Document)
+                .join(Document, DocumentChunk.document_id == Document.id)
+                .where(Document.user_id == user_id, Document.status == "indexed")
+                .order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
+                .limit(limit * 5)
+            )
+            fallback_result = await db.execute(fallback_q)
+            fallback_rows = fallback_result.all()
+            seen_doc2: dict[str, int] = {}
+            for chunk, doc in fallback_rows:
+                doc_id = str(doc.id)
+                if seen_doc2.get(doc_id, 0) >= 5:
+                    continue
+                seen_doc2[doc_id] = seen_doc2.get(doc_id, 0) + 1
+                display_name = doc.original_name or doc.name
+                sources.append({
+                    "id": str(uuid.uuid4()),
+                    "documentId": doc_id,
+                    "documentName": display_name,
+                    "documentType": doc.file_type,
+                    "pageNumber": None,
+                    "chunkText": chunk.content,
+                    "relevanceScore": 0.5,
+                    "url": None,
+                    "connectorType": None,
+                    "sourceType": "knowledge_base",
+                })
+
         return sources
     except Exception as e:
         logger.warning(f"Chunk search failed: {e}")
