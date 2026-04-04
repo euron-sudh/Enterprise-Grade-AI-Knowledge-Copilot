@@ -152,75 +152,77 @@ _STOP_WORDS = {
 
 
 async def _search_relevant_chunks(
-    query: str, db: AsyncSession, limit: int = 5, user_id: Optional[uuid.UUID] = None
+    query: str, db: AsyncSession, limit: int = 8, user_id: Optional[uuid.UUID] = None
 ) -> list:
     """Full-text search over document chunks owned by the user.
-    Returns up to 2 chunks per document so a single large document cannot
-    crowd out other sources (e.g. videos).
-    Only matches on meaningful (non-stop-word) query terms to avoid
-    returning irrelevant documents that happen to contain common words."""
+    Returns all chunks for matched documents so the AI has full document content.
+    Uses broad keyword matching to maximise recall."""
     from sqlalchemy import or_
 
     try:
         # Strip stop words and short words — only search on meaningful terms
         words = [
             w.strip().lower() for w in query.split()
-            if len(w.strip()) > 3 and w.strip().lower() not in _STOP_WORDS
+            if len(w.strip()) > 2 and w.strip().lower() not in _STOP_WORDS
         ]
-        if not words:
-            return []
 
-        # Build OR filter across meaningful query words only
-        filters = [DocumentChunk.content.ilike(f"%{w}%") for w in words[:6]]
-        q = (
-            select(DocumentChunk, Document)
-            .join(Document, DocumentChunk.document_id == Document.id)
-            .where(or_(*filters))
-        )
-        # Restrict to current user's documents only
-        if user_id:
-            q = q.where(Document.user_id == user_id)
-        q = q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
-        q = q.limit(limit * 8)  # fetch more then de-duplicate per doc below
+        # If no meaningful words, fall back to fetching all recent docs
+        if not words:
+            q = (
+                select(DocumentChunk, Document)
+                .join(Document, DocumentChunk.document_id == Document.id)
+            )
+            if user_id:
+                q = q.where(Document.user_id == user_id)
+            q = q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
+            q = q.limit(limit * 4)
+        else:
+            # Build OR filter — match any word (broad recall)
+            filters = [DocumentChunk.content.ilike(f"%{w}%") for w in words[:8]]
+            # Also try document name match
+            name_filters = [Document.name.ilike(f"%{w}%") for w in words[:4]]
+            q = (
+                select(DocumentChunk, Document)
+                .join(Document, DocumentChunk.document_id == Document.id)
+                .where(or_(*filters, *name_filters))
+            )
+            if user_id:
+                q = q.where(Document.user_id == user_id)
+            q = q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
+            q = q.limit(limit * 6)
 
         result = await db.execute(q)
         rows = result.all()
 
-        # Cap at 2 chunks per document so diverse sources are represented
+        # Allow up to 5 chunks per document to capture full content
         seen_doc: dict[str, int] = {}
         sources = []
         for chunk, doc in rows:
             doc_id = str(doc.id)
-            if seen_doc.get(doc_id, 0) >= 2:
-                continue
-
-            # Relevance guard: chunk must contain at least one meaningful query word
-            chunk_lower = chunk.content.lower()
-            matched_words = [w for w in words if w in chunk_lower]
-            if not matched_words:
-                continue
-
-            # Score by fraction of query words matched
-            relevance_score = round(len(matched_words) / max(len(words), 1), 3)
-            # Require at least 30% of meaningful words to match
-            if relevance_score < 0.3 and len(words) > 1:
+            if seen_doc.get(doc_id, 0) >= 5:
                 continue
 
             seen_doc[doc_id] = seen_doc.get(doc_id, 0) + 1
             display_name = doc.original_name or doc.name
+
+            # Score: prefer chunks that match more words
+            chunk_lower = chunk.content.lower()
+            matched = [w for w in words if w in chunk_lower] if words else []
+            relevance_score = round(len(matched) / max(len(words), 1), 3) if words else 0.5
+
             sources.append({
                 "id": str(uuid.uuid4()),
                 "documentId": doc_id,
                 "documentName": display_name,
                 "documentType": doc.file_type,
                 "pageNumber": None,
-                "chunkText": chunk.content[:400],
+                "chunkText": chunk.content,  # full chunk — no truncation
                 "relevanceScore": min(0.95, round(0.5 + relevance_score * 0.5, 3)),
                 "url": None,
                 "connectorType": None,
                 "sourceType": "knowledge_base",
             })
-            if len(sources) >= limit:
+            if len(sources) >= limit * 3:
                 break
 
         return sources
