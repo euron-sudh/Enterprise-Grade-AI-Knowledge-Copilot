@@ -5,7 +5,7 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_register_success(client: AsyncClient, db):
-    response = await client.post("/api/v1/auth/register", json={
+    response = await client.post("/auth/register", json={
         "email": "newuser@example.com",
         "password": "SecurePass123!",
         "name": "New User",
@@ -17,7 +17,7 @@ async def test_register_success(client: AsyncClient, db):
 
 @pytest.mark.asyncio
 async def test_register_duplicate_email(client: AsyncClient, test_user):
-    response = await client.post("/api/v1/auth/register", json={
+    response = await client.post("/auth/register", json={
         "email": test_user.email,
         "password": "AnotherPass123!",
         "name": "Duplicate",
@@ -27,7 +27,7 @@ async def test_register_duplicate_email(client: AsyncClient, test_user):
 
 @pytest.mark.asyncio
 async def test_login_success(client: AsyncClient, test_user):
-    response = await client.post("/api/v1/auth/login", json={
+    response = await client.post("/auth/login", json={
         "email": "test@example.com",
         "password": "TestPass123!",
     })
@@ -39,7 +39,7 @@ async def test_login_success(client: AsyncClient, test_user):
 
 @pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient, test_user):
-    response = await client.post("/api/v1/auth/login", json={
+    response = await client.post("/auth/login", json={
         "email": "test@example.com",
         "password": "WrongPassword!",
     })
@@ -48,7 +48,7 @@ async def test_login_wrong_password(client: AsyncClient, test_user):
 
 @pytest.mark.asyncio
 async def test_login_unknown_email(client: AsyncClient):
-    response = await client.post("/api/v1/auth/login", json={
+    response = await client.post("/auth/login", json={
         "email": "nobody@example.com",
         "password": "TestPass123!",
     })
@@ -57,7 +57,7 @@ async def test_login_unknown_email(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_me_authenticated(client: AsyncClient, auth_headers: dict, test_user):
-    response = await client.get("/api/v1/auth/me", headers=auth_headers)
+    response = await client.get("/auth/me", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["email"] == test_user.email
@@ -65,13 +65,13 @@ async def test_get_me_authenticated(client: AsyncClient, auth_headers: dict, tes
 
 @pytest.mark.asyncio
 async def test_get_me_unauthenticated(client: AsyncClient):
-    response = await client.get("/api/v1/auth/me")
+    response = await client.get("/auth/me")
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_mfa_status_default_disabled(client: AsyncClient, auth_headers: dict):
-    response = await client.get("/api/v1/auth/mfa/status", headers=auth_headers)
+    response = await client.get("/auth/mfa/status", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["enabled"] is False
 
@@ -79,7 +79,7 @@ async def test_mfa_status_default_disabled(client: AsyncClient, auth_headers: di
 @pytest.mark.asyncio
 async def test_mfa_setup_returns_secret_and_backup_codes(client: AsyncClient, auth_headers: dict):
     pytest.importorskip("pyotp")
-    response = await client.post("/api/v1/auth/mfa/setup", headers=auth_headers)
+    response = await client.post("/auth/mfa/setup", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "secret" in data
@@ -92,8 +92,8 @@ async def test_mfa_setup_returns_secret_and_backup_codes(client: AsyncClient, au
 async def test_mfa_verify_invalid_code(client: AsyncClient, auth_headers: dict):
     pytest.importorskip("pyotp")
     # Setup first
-    await client.post("/api/v1/auth/mfa/setup", headers=auth_headers)
+    await client.post("/auth/mfa/setup", headers=auth_headers)
     # Verify with wrong code
-    response = await client.post("/api/v1/auth/mfa/verify",
+    response = await client.post("/auth/mfa/verify",
         json={"code": "000000"}, headers=auth_headers)
     assert response.status_code == 400

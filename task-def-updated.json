@@ -1,0 +1,61 @@
+{
+  "family": "knowledgeforge-backend-prod",
+  "taskRoleArn": "arn:aws:iam::971037436717:role/knowledgeforge-task-role",
+  "executionRoleArn": "arn:aws:iam::971037436717:role/knowledgeforge-execution-role",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "volumes": [],
+  "placementConstraints": [],
+  "containerDefinitions": [
+    {
+      "name": "knowledgeforge-backend",
+      "image": "971037436717.dkr.ecr.ap-south-1.amazonaws.com/knowledgeforge-backend-prod:ed7c1aba2ff86b6a6f5e422dd6ff2c332564998f",
+      "cpu": 0,
+      "portMappings": [{"containerPort": 8000, "hostPort": 8000, "protocol": "tcp"}],
+      "essential": true,
+      "environment": [
+        {"name": "DATABASE_SSL", "value": "true"},
+        {"name": "AWS_REGION", "value": "ap-south-1"},
+        {"name": "CONNECTOR_OAUTH_REDIRECT_BASE", "value": "https://dev.d2dg07mc33522q.amplifyapp.com"},
+        {"name": "APP_ENV", "value": "production"},
+        {"name": "AWS_S3_BUCKET", "value": "knowledgeforge-documents-prod"},
+        {"name": "DEBUG", "value": "false"},
+        {"name": "FRONTEND_URL", "value": "https://dev.d2dg07mc33522q.amplifyapp.com"}
+      ],
+      "secrets": [
+        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/database-url-iZfhra"},
+        {"name": "SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/app-secret-key-0STshJ"},
+        {"name": "JWT_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/jwt-secret-2qHhZV"},
+        {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/anthropic-api-key-oeub8v"},
+        {"name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/openai-api-key-EOHJCX"},
+        {"name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/redis-url-Ztkv6H"},
+        {"name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/stripe-secret-key-z5CaOR"},
+        {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/stripe-webhook-secret-fxyWOc"},
+        {"name": "GITHUB_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/github-client-secret-2La4nT"},
+        {"name": "SLACK_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/slack-client-secret-xrXkXP"},
+        {"name": "NOTION_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/notion-client-secret-FoJDTA"}
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "user": "1001",
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/knowledgeforge-backend-prod",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "systemControls": []
+    }
+  ]
+}
