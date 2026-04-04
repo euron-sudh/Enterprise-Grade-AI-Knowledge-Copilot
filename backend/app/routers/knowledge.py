@@ -1347,14 +1347,13 @@ async def google_oauth_start(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Redirect browser to Google's OAuth consent screen.
+    """Return the Google OAuth consent URL as JSON.
 
-    The JWT is validated via the standard get_current_user dependency.
-    The user_id is encoded in the OAuth state parameter so the callback
-    can identify the user without needing a session cookie.
+    The frontend fetches this via authFetch (with JWT header) then redirects
+    the browser to the returned URL.  The user_id is encoded in the OAuth state
+    parameter so the callback can identify the user without a session cookie.
     """
     import urllib.parse, base64, json as _json
-    from fastapi.responses import RedirectResponse
 
     scope = _GOOGLE_SCOPES.get(connector_type)
     if not scope:
@@ -1366,9 +1365,10 @@ async def google_oauth_start(
         _json.dumps({"uid": str(current_user.id), "type": connector_type}).encode()
     ).decode()
 
-    # Callback must point to the BACKEND (FastAPI handles the code exchange)
-    backend_base = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
-    redirect_uri = f"{backend_base}/api/v1/knowledge/connectors/oauth/google/callback"
+    # The callback goes through the Next.js proxy (/api/backend/*) which
+    # forwards to FastAPI — this is the URL registered in Google Cloud Console
+    frontend_base = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    redirect_uri = f"{frontend_base}/api/backend/knowledge/connectors/oauth/google/callback"
 
     params = urllib.parse.urlencode({
         "client_id":     settings.GOOGLE_CLIENT_ID,
@@ -1379,7 +1379,7 @@ async def google_oauth_start(
         "prompt":        "consent",
         "state":         state,
     })
-    return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+    return {"url": f"https://accounts.google.com/o/oauth2/v2/auth?{params}"}
 
 
 @router.get("/connectors/oauth/google/callback")
@@ -1399,8 +1399,8 @@ async def google_oauth_callback(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
-    backend_url = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
-    redirect_uri = f"{backend_url}/api/v1/knowledge/connectors/oauth/google/callback"
+    frontend_base = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    redirect_uri = f"{frontend_base}/api/backend/knowledge/connectors/oauth/google/callback"
 
     async with httpx.AsyncClient(timeout=15) as client:
         token_resp = await client.post(

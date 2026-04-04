@@ -774,6 +774,22 @@ export default function KnowledgeBasePage() {
     return () => clearInterval(interval);
   }, []);
 
+  const startGoogleOAuth = useCallback(async (connectorType: string) => {
+    try {
+      const res = await authFetch(
+        `/api/backend/knowledge/connectors/oauth/google/start?connector_type=${connectorType}`,
+        {},
+        (session as any)?.accessToken,
+        getUser(),
+      );
+      if (!res.ok) throw new Error('Failed to get OAuth URL');
+      const data = await res.json() as { url: string };
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('OAuth start failed:', err);
+    }
+  }, [session]);
+
   const handleConnect = useCallback((id: string, fields: Record<string, string>) => {
     const connector = connectors.find(c => c.id === id);
     if (!connector) return;
@@ -783,10 +799,9 @@ export default function KnowledgeBasePage() {
     };
     const connectorType = nameToType[connector.name] ?? connector.name.toLowerCase().replace(/\s+/g, '_');
 
-    // Google Drive and Gmail use real OAuth redirect — send user to Google consent screen
+    // Google Drive and Gmail use real OAuth redirect — fetch URL via authFetch then redirect
     if (connectorType === 'google_drive' || connectorType === 'gmail') {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
-      window.location.href = `${apiBase}/api/v1/knowledge/connectors/oauth/google/start?connector_type=${connectorType}`;
+      void startGoogleOAuth(connectorType);
       return;
     }
 
@@ -1009,6 +1024,19 @@ export default function KnowledgeBasePage() {
                 </p>
               )}
               <p className="text-[10px] text-surface-600 dark:text-gray-600 mt-1">{connector.lastSync}</p>
+              {connector.status === 'synced' && connector.docs === 0 && (connector.name === 'Google Drive' || connector.name === 'Gmail') && (
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    const typeMap: Record<string, string> = { 'Google Drive': 'google_drive', 'Gmail': 'gmail' };
+                    const t = typeMap[connector.name];
+                    if (t) void startGoogleOAuth(t);
+                  }}
+                  className="mt-2 w-full flex items-center justify-center gap-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 text-[10px] font-medium py-1 transition-colors"
+                >
+                  <RefreshCw className="h-2.5 w-2.5" />Reconnect
+                </button>
+              )}
             </button>
           ))}
         </div>
