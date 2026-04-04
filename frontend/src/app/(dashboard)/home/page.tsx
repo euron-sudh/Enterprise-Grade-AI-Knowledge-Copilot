@@ -61,8 +61,11 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   const firstName = session?.user?.name?.split(' ')[0] ?? 'there';
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const [greeting, setGreeting] = useState('Good morning');
+  useEffect(() => {
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening');
+  }, []);
 
   useEffect(() => {
     if (status === 'loading') return; // session not resolved yet
@@ -212,8 +215,8 @@ export default function HomePage() {
           ) : (
             <ul className="divide-y divide-surface-100 dark:divide-surface-700/50">
               {stats.recentActivity.map((item, i) => {
-                const cfg = ACTIVITY_ICONS[item.type] ?? ACTIVITY_ICONS['chat'];
-                const Icon = cfg.icon;
+                const cfg = ACTIVITY_ICONS[item.type] ?? ACTIVITY_ICONS['chat']!;
+                const Icon = cfg!.icon;
                 return (
                   <li key={i} className="flex items-start gap-3 px-5 py-3.5 hover:bg-surface-50 dark:hover:bg-surface-800/50 transition-colors">
                     <div className={`mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${cfg.color}`}>

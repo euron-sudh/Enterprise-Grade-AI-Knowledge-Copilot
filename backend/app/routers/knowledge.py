@@ -77,7 +77,14 @@ async def get_presigned_upload_url(
         raise HTTPException(status_code=501, detail="S3 not configured")
     try:
         import boto3
-        s3 = boto3.client("s3", region_name=settings.AWS_S3_REGION or "ap-south-1")
+        from botocore.config import Config
+        region = settings.AWS_S3_REGION or "ap-south-1"
+        # SigV4 is required for S3 buckets in newer regions (ap-south-1, eu-central-1, etc.)
+        s3 = boto3.client(
+            "s3",
+            region_name=region,
+            config=Config(signature_version="s3v4"),
+        )
         key = f"uploads/{current_user.id}/{uuid.uuid4()}_{filename}"
         presigned = s3.generate_presigned_url(
             "put_object",
@@ -315,7 +322,9 @@ async def register_s3_document(
         raise HTTPException(status_code=501, detail="S3 not configured")
     try:
         import boto3
-        s3 = boto3.client("s3", region_name=settings.AWS_S3_REGION or "ap-south-1")
+        from botocore.config import Config
+        region = settings.AWS_S3_REGION or "ap-south-1"
+        s3 = boto3.client("s3", region_name=region, config=Config(signature_version="s3v4"))
         obj = s3.get_object(Bucket=settings.AWS_S3_BUCKET, Key=s3_key)
         content = obj["Body"].read()
     except Exception as e:
