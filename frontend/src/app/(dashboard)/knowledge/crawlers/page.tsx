@@ -160,7 +160,7 @@ export default function CrawlersPage() {
       ) : (
         <div className="space-y-3">
           {crawlers.map(crawler => {
-            const cfg = statusConfig[crawler.status] ?? statusConfig.disconnected;
+            const cfg = statusConfig[crawler.status] ?? statusConfig['disconnected']!;
             const StatusIcon = cfg.icon;
             return (
               <div key={crawler.id} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-2xl p-5">
@@ -204,41 +204,41 @@ export default function CrawlersPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-900 border border-surface-200 dark:border-white/10 rounded-2xl p-6 w-full max-w-lg">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-white font-bold text-lg">New Web Crawler</h3>
-              <button onClick={() => setShowCreate(false)} className="text-surface-500 dark:text-gray-500 hover:text-white"><X className="w-5 h-5" /></button>
+              <h3 className="text-surface-900 dark:text-white font-bold text-lg">New Web Crawler</h3>
+              <button onClick={() => setShowCreate(false)} className="text-surface-400 dark:text-gray-500 hover:text-surface-700 dark:hover:text-white transition-colors"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Crawler Name</label>
+                <label className="block text-sm font-medium text-surface-700 dark:text-gray-400 mb-1.5">Crawler Name</label>
                 <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
                   placeholder="e.g. Company Help Center"
-                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-surface-900 dark:text-white placeholder-surface-400 dark:placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Start URL</label>
+                <label className="block text-sm font-medium text-surface-700 dark:text-gray-400 mb-1.5">Start URL</label>
                 <input type="url" value={newUrl} onChange={e => setNewUrl(e.target.value)}
                   placeholder="https://docs.example.com"
-                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-surface-900 dark:text-white placeholder-surface-400 dark:placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Crawl Depth</label>
+                  <label className="block text-sm font-medium text-surface-700 dark:text-gray-400 mb-1.5">Crawl Depth</label>
                   <select value={newDepth} onChange={e => setNewDepth(e.target.value)}
-                    className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-surface-900 dark:text-white focus:outline-none focus:border-indigo-500">
                     {['1', '2', '3', '4', '5'].map(d => <option key={d} value={d}>{d} level{d !== '1' ? 's' : ''}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-surface-600 dark:text-gray-400 mb-1.5">Frequency</label>
+                  <label className="block text-sm font-medium text-surface-700 dark:text-gray-400 mb-1.5">Frequency</label>
                   <select value={newFrequency} onChange={e => setNewFrequency(e.target.value)}
-                    className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-surface-100 dark:bg-gray-800 border border-surface-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-surface-900 dark:text-white focus:outline-none focus:border-indigo-500">
                     {['Once', 'Hourly', 'Daily', 'Weekly', 'Monthly'].map(f => <option key={f}>{f}</option>)}
                   </select>
                 </div>
               </div>
               {createError && <p className="text-red-400 text-xs">{createError}</p>}
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowCreate(false)} className="flex-1 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:bg-gray-700 text-white py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
+                <button onClick={() => setShowCreate(false)} className="flex-1 bg-surface-100 dark:bg-gray-800 hover:bg-surface-200 dark:hover:bg-gray-700 text-surface-700 dark:text-white py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
                 <button onClick={() => void createCrawler()} disabled={creating}
                   className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
                   {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
