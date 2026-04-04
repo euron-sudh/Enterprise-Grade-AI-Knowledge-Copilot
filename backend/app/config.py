@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     STRIPE_PRO_PRICE_ID: str = ""
 
     # Connector OAuth
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
     SLACK_CLIENT_ID: str = ""

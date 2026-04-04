@@ -1333,6 +1333,201 @@ async def delete_connector(
     await db.flush()
 
 
+# ── Google OAuth for connectors ───────────────────────────────────────────────
+
+_GOOGLE_SCOPES = {
+    "google_drive": "https://www.googleapis.com/auth/drive.readonly",
+    "gmail":        "https://www.googleapis.com/auth/gmail.readonly",
+}
+
+
+@router.get("/connectors/oauth/google/start")
+async def google_oauth_start(
+    connector_type: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Redirect browser to Google's OAuth consent screen.
+
+    The JWT is validated via the standard get_current_user dependency.
+    The user_id is encoded in the OAuth state parameter so the callback
+    can identify the user without needing a session cookie.
+    """
+    import urllib.parse, base64, json as _json
+    from fastapi.responses import RedirectResponse
+
+    scope = _GOOGLE_SCOPES.get(connector_type)
+    if not scope:
+        raise HTTPException(status_code=400, detail=f"Unsupported connector type: {connector_type}")
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
+
+    state = base64.urlsafe_b64encode(
+        _json.dumps({"uid": str(current_user.id), "type": connector_type}).encode()
+    ).decode()
+
+    # Callback must point to the BACKEND (FastAPI handles the code exchange)
+    backend_base = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    redirect_uri = f"{backend_base}/api/v1/knowledge/connectors/oauth/google/callback"
+
+    params = urllib.parse.urlencode({
+        "client_id":     settings.GOOGLE_CLIENT_ID,
+        "redirect_uri":  redirect_uri,
+        "response_type": "code",
+        "scope":         scope,
+        "access_type":   "offline",
+        "prompt":        "consent",
+        "state":         state,
+    })
+    return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+
+
+@router.get("/connectors/oauth/google/callback")
+async def google_oauth_callback(
+    code: str,
+    state: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange auth code → tokens → create connector → trigger sync → redirect to frontend."""
+    import base64, json as _json, httpx
+    from fastapi.responses import RedirectResponse
+
+    try:
+        payload = _json.loads(base64.urlsafe_b64decode(state + "=="))
+        user_id = uuid.UUID(payload["uid"])
+        connector_type = payload["type"]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+
+    backend_url = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    redirect_uri = f"{backend_url}/api/v1/knowledge/connectors/oauth/google/callback"
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        token_resp = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code":          code,
+                "client_id":     settings.GOOGLE_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "redirect_uri":  redirect_uri,
+                "grant_type":    "authorization_code",
+            },
+        )
+    if token_resp.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {token_resp.text[:200]}")
+
+    token_data = token_resp.json()
+    access_token  = token_data.get("access_token", "")
+    refresh_token = token_data.get("refresh_token", "")
+
+    # Upsert connector
+    result = await db.execute(
+        select(Connector).where(Connector.user_id == user_id, Connector.type == connector_type)
+    )
+    connector = result.scalar_one_or_none()
+    label = "Google Drive" if connector_type == "google_drive" else "Gmail"
+    if connector is None:
+        connector = Connector(
+            user_id=user_id, type=connector_type, name=label,
+            status=ConnectorStatus.syncing,
+            config={"accessToken": access_token, "refreshToken": refresh_token, "folderId": "root"},
+        )
+        db.add(connector)
+    else:
+        connector.config = {**(connector.config or {}), "accessToken": access_token, "refreshToken": refresh_token}
+        connector.status = ConnectorStatus.syncing
+
+    await db.flush()
+    await db.refresh(connector)
+
+    # Trigger sync immediately
+    try:
+        if connector_type == "google_drive":
+            chunks = await _sync_google_drive(connector, user_id, db)
+        else:
+            chunks = await _sync_gmail(connector, user_id, db)
+        connector.status = ConnectorStatus.connected
+        connector.document_count = chunks
+    except Exception as exc:
+        logger.warning("Post-OAuth sync failed: %s", exc)
+        connector.status = ConnectorStatus.connected
+
+    await db.flush()
+    frontend_url = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    return RedirectResponse(f"{frontend_url}/knowledge-base?connected={connector_type}")
+
+
+async def _sync_gmail(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
+    """Fetch recent Gmail messages and index them as searchable document chunks."""
+    import httpx
+
+    cfg: Dict[str, Any] = connector.config or {}
+    access_token: str = cfg.get("accessToken", "")
+    if not access_token:
+        raise ValueError("Gmail OAuth access token is required")
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        list_resp = await client.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+            headers=headers,
+            params={"maxResults": "20", "labelIds": "INBOX"},
+        )
+        if list_resp.status_code == 401:
+            raise ValueError("Invalid or expired Gmail token. Please reconnect.")
+        if list_resp.status_code != 200:
+            raise ValueError(f"Gmail API error {list_resp.status_code}")
+
+        messages = list_resp.json().get("messages", [])
+        if not messages:
+            return 0
+
+        chunks_text: List[str] = []
+        for msg in messages[:20]:
+            msg_resp = await client.get(
+                f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg['id']}",
+                headers=headers,
+                params={"format": "metadata", "metadataHeaders": ["Subject", "From", "Date"]},
+            )
+            if msg_resp.status_code != 200:
+                continue
+            data = msg_resp.json()
+            hdrs = {h["name"]: h["value"] for h in data.get("payload", {}).get("headers", [])}
+            snippet = data.get("snippet", "")
+            if snippet:
+                chunks_text.append(
+                    f"[Email] Subject: {hdrs.get('Subject', '(no subject)')} | "
+                    f"From: {hdrs.get('From', '')} | {snippet}"
+                )
+
+    if not chunks_text:
+        return 0
+
+    # Delete old Gmail doc for this user
+    existing = await db.execute(select(Document).where(Document.user_id == user_id, Document.name == "[Gmail] Inbox"))
+    for old in existing.scalars().all():
+        old_chunks = await db.execute(select(DocumentChunk).where(DocumentChunk.document_id == old.id))
+        for c in old_chunks.scalars().all():
+            await db.delete(c)
+        await db.delete(old)
+    await db.flush()
+
+    doc = Document(
+        user_id=user_id, name="[Gmail] Inbox", original_name="Gmail Inbox",
+        file_type="gmail", status="indexed",
+        word_count=sum(len(t.split()) for t in chunks_text),
+    )
+    db.add(doc)
+    await db.flush()
+    await db.refresh(doc)
+
+    for i, text in enumerate(chunks_text):
+        db.add(DocumentChunk(document_id=doc.id, chunk_index=i, content=text, token_count=len(text.split())))
+    await db.flush()
+    connector.document_count = len(chunks_text)
+    return len(chunks_text)
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @router.get("/stats", response_model=KnowledgeStats)

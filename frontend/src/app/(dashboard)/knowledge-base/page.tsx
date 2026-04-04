@@ -781,15 +781,23 @@ export default function KnowledgeBasePage() {
       'Google Drive': 'google_drive', 'Confluence': 'confluence', 'Slack': 'slack',
       'GitHub': 'github', 'Notion': 'notion', 'Jira': 'jira', 'Salesforce': 'salesforce', 'Gmail': 'gmail',
     };
-    // Optimistically update UI
+    const connectorType = nameToType[connector.name] ?? connector.name.toLowerCase().replace(/\s+/g, '_');
+
+    // Google Drive and Gmail use real OAuth redirect — send user to Google consent screen
+    if (connectorType === 'google_drive' || connectorType === 'gmail') {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
+      window.location.href = `${apiBase}/api/v1/knowledge/connectors/oauth/google/start?connector_type=${connectorType}`;
+      return;
+    }
+
+    // Optimistically update UI for other connectors
     setConnectors(prev => prev.map(c =>
       c.id === id ? { ...c, status: 'syncing', lastSync: 'Syncing...' } : c
     ));
-    // Persist to backend (fire-and-forget; UI already updated optimistically)
     authFetch('/api/backend/knowledge/connectors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: nameToType[connector.name] ?? connector.name.toLowerCase().replace(' ', '_'), name: connector.name, config: fields }),
+      body: JSON.stringify({ type: connectorType, name: connector.name, config: fields }),
     }, (session as any)?.accessToken, getUser()).catch(() => {});
   }, [connectors, session]);
 
