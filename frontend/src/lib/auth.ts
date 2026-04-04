@@ -28,6 +28,12 @@ import GoogleProvider from 'next-auth/providers/google';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
+
+// NEXTAUTH_URL isn't injected into Amplify SSR Lambda at runtime — set fallback so
+// NextAuth can construct correct OAuth callback URLs in production.
+if (!process.env.NEXTAUTH_URL && process.env.NODE_ENV === 'production') {
+  process.env.NEXTAUTH_URL = 'https://dev.d2dg07mc33522q.amplifyapp.com';
+}
 // Refresh 2 minutes before expiry
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
 
