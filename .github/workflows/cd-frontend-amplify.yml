@@ -60,14 +60,28 @@ jobs:
       - name: Trigger Amplify build
         id: trigger
         run: |
+          APP_ID=${{ secrets.AMPLIFY_APP_ID }}
+          BRANCH=${{ needs.setup.outputs.amplify_branch }}
+          # If a build is already running, reuse it instead of failing
           JOB=$(aws amplify start-job \
-            --app-id ${{ secrets.AMPLIFY_APP_ID }} \
-            --branch-name ${{ needs.setup.outputs.amplify_branch }} \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH" \
             --job-type RELEASE \
             --query 'jobSummary.jobId' \
-            --output text)
+            --output text 2>/dev/null) || true
+          if [ -z "$JOB" ] || [ "$JOB" = "None" ]; then
+            echo "A build is already running — fetching latest job ID..."
+            JOB=$(aws amplify list-jobs \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH" \
+              --max-results 1 \
+              --query 'jobSummaries[0].jobId' \
+              --output text)
+            echo "Reusing existing Amplify job: $JOB"
+          else
+            echo "Amplify build triggered: job $JOB"
+          fi
           echo "job_id=$JOB" >> $GITHUB_OUTPUT
-          echo "Amplify build triggered: job $JOB"
 
       - name: Wait for Amplify build to complete
         run: |
