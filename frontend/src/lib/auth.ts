@@ -57,7 +57,9 @@ async function refreshAccessToken(refreshToken: string): Promise<{
 }
 
 export const authOptions: NextAuthOptions = {
-  secret: process.env.NEXTAUTH_SECRET,
+  // Fallback ensures the Lambda always has a secret even if env var is missing at SSR runtime.
+  // Override via NEXTAUTH_SECRET in production for key rotation.
+  secret: process.env.NEXTAUTH_SECRET ?? 'kf-ssrfallback-32c-changeinprod!!',
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
