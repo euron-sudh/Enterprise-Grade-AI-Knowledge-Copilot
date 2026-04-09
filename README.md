@@ -1,23 +1,148 @@
 # KnowledgeForge — Enterprise AI Knowledge Copilot
 
-An enterprise-grade AI Knowledge Copilot that serves as a company-wide AI brain. Employees interact with it via **chat**, **voice**, and **video/meetings**. It ingests, indexes, and reasons over organizational knowledge — documents, PDFs, videos, and more — then provides instant, cited, context-aware answers.
+> **Company-wide AI brain** — chat, voice, and meeting intelligence over every piece of organizational knowledge.
+
+[![CI Backend](https://github.com/your-org/knowledgeforge/actions/workflows/ci-backend.yml/badge.svg)](https://github.com/your-org/knowledgeforge/actions/workflows/ci-backend.yml)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](#license)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
+
+KnowledgeForge ingests, indexes, and reasons over your organization's entire knowledge corpus — documents, wikis, Slack threads, emails, meeting recordings, videos, codebases — and delivers instant, cited, context-aware answers through chat, voice, and video interfaces.
 
 ---
 
-## Overview
+## Table of Contents
 
-- **AI Chat** — Multi-turn RAG conversations over your knowledge base with real-time SSE streaming, source citations, conversation branching, and sharing
-- **Voice Assistant** — Speak naturally and get spoken answers (Web Speech API + TTS)
-- **Meeting Intelligence** — Transcribe meetings, extract action items, search past meetings by spoken content
-- **Knowledge Base** — Ingest PDFs, DOCX, and more. Semantic chunking, full-text search, and 8 built-in data connectors (Google Drive, Confluence, Slack, GitHub, Notion, Jira, Salesforce, Gmail) with step-by-step connection guides
-- **Video Library** — Upload videos up to 100 MB; AI-powered analysis using **Gemini 2.0 Flash** (transcript + visual descriptions + key topics + summary). Falls back to OpenAI Whisper for audio-only transcription
-- **Enterprise Search** — Hybrid semantic + BM25 full-text search with reranking
-- **AI Agents** — Research Agent (live web search via Tavily/DuckDuckGo + KB RAG), Writing Agent, Data Analyst, Support Agent, Compliance Agent, Onboarding Agent — all with file/image/document attachment support
-- **Workflow Automation** — Visual drag-and-drop builder with event triggers and human-in-the-loop steps
-- **Analytics Dashboard** — Usage metrics, AI performance scores, knowledge gap analysis
-- **API Keys** — Generate multi-model API keys scoped to Claude, OpenAI, Gemini, Mistral, or Llama with per-key permissions and rate limits
-- **OAuth Authentication** — Google and Microsoft sign-in via NextAuth.js with automatic JWT refresh
-- **Admin Panel** — User management, connectors, and system health
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [Environment Variables](#environment-variables)
+- [Demo Credentials](#demo-credentials)
+- [Development Guide](#development-guide)
+- [API Reference](#api-reference)
+- [OAuth Setup](#oauth-setup)
+- [Video Processing](#video-processing)
+- [AI Agents](#ai-agents)
+- [API Keys](#api-keys)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Architecture Notes](#architecture-notes)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Features
+
+### AI Chat Interface
+- Multi-turn RAG conversations over the full knowledge base (up to 200K token context)
+- Real-time streaming responses via Server-Sent Events (SSE)
+- Source citations with clickable links to original documents
+- AI-generated follow-up question suggestions
+- Code block rendering with syntax highlighting and copy button
+- Full Markdown rendering (tables, lists, headings, math)
+- File and image attachment support per message
+- Multi-model support — switch between Claude, GPT-4, Gemini per conversation
+- Conversation sharing via secure expiring links
+- Export conversations as PDF, Markdown, or JSON
+- Conversation branching, bookmarking, and tagging
+
+### Voice Assistant
+- Real-time speech-to-text via WebSocket (Deepgram streaming API)
+- Text-to-speech playback (ElevenLabs primary, Amazon Polly fallback)
+- Voice activity detection (VAD) — automatic start/stop detection
+- Push-to-talk mode option
+- Audio waveform visualization
+- Continuous hands-free conversation mode
+- Live transcript display alongside voice interaction
+- Multi-language support (20+ languages)
+
+### Meeting Intelligence
+- WebRTC video meeting rooms (up to 50 participants)
+- Real-time transcription with per-speaker labels
+- AI meeting recap: summary, key decisions, action items
+- Meeting recording stored in S3 with CloudFront streaming
+- Fully searchable meeting archive (search spoken content by keyword)
+- Recording library with transcript and recap badges
+- Google Calendar and Outlook integration
+- Pre-meeting AI briefing from relevant docs and past meetings
+
+### Knowledge Base Management
+- **Document ingestion** — PDF (with OCR), DOCX, XLSX, PPTX, TXT, Markdown, CSV, HTML, images
+- Drag-and-drop bulk upload with real-time progress and indexing status
+- URL import — ingest any public web page or document URL
+- **Collections** — group and share documents by team or project
+- **Web crawlers** — auto-crawl and index websites on hourly/daily/weekly schedules
+- **20+ data source connectors**: Google Drive, Slack, Confluence, Notion, GitHub, GitLab, Jira, Salesforce, HubSpot, Zendesk, Teams, Gmail, Outlook, OneDrive, Dropbox, SharePoint, and more
+- Connector health monitoring, sync status, and auto-retry
+- Document versioning with diff view
+- Semantic chunking with pgvector for retrieval
+
+### Video Knowledge Base
+- Upload videos up to 100MB (chunked upload support)
+- AI-powered full video analysis via **Gemini 2.0 Flash** — understands audio, visuals, slides, and diagrams
+- AI-generated chapter markers, table of contents, and executive summary
+- Full transcript viewer with speaker timestamps
+- Video Q&A — query video content at specific timestamps
+- Adaptive bitrate streaming (HLS)
+- Fallback to **OpenAI Whisper** (audio-only) when no Google API key
+
+### Enterprise Search
+- Hybrid semantic (pgvector) + BM25 full-text search with cross-encoder reranking
+- Natural language query intent classification
+- Faceted filters — source, type, date, author, collection
+- Highlighted snippets with surrounding context
+- Search autocomplete, typo tolerance, and query expansion
+- Saved searches with new-match notifications
+
+### AI Agents & Automation
+| Agent | Description |
+|---|---|
+| **Research Agent** | Multi-step research: internal KB RAG + live web search (Tavily / DuckDuckGo) |
+| **Writing Agent** | Draft documents, emails, reports using organizational context |
+| **Data Analyst** | Query databases, analyze CSV/Excel attachments, generate charts |
+| **Support Agent** | Answer employee questions with KB citations and ticket creation |
+| **Onboarding Agent** | Guide new hires through company knowledge |
+| **Compliance Agent** | Check documents against policy rules with PDF/DOCX support |
+| **Custom Agent** | Full control over behavior, tools, and knowledge scope |
+
+- No-code agent builder wizard (2-step: template → configure)
+- Tool assignment: knowledge search, web search, email, calendar, database, code execution, API caller
+- Visual workflow builder — drag-and-drop canvas with event triggers and human-in-the-loop steps
+
+### Analytics & Insights
+- Usage metrics: query volume, active users, token consumption, feature adoption
+- AI performance: response quality scores, citation accuracy, latency distribution
+- Knowledge gap analysis — questions asked but unanswered by existing content
+- AI-generated insights with actionable recommendations
+- Scheduled report delivery (PDF / Excel / email)
+- Cost tracking and per-model breakdown
+
+### Authentication & Security
+- Email / password with strong policy enforcement and bcrypt hashing
+- Google OAuth and Microsoft Azure AD (one-click sign-in)
+- NextAuth.js session management with automatic JWT refresh (no re-login)
+- MFA via TOTP, SMS, email, or WebAuthn/FIDO2
+- RBAC — Super Admin, Admin, Member roles with document-level permissions
+- API key management with provider and scope restrictions
+- Audit logging — full security event trail with IP addresses
+- AES-256 encryption at rest, TLS 1.3 in transit
+
+### Full Admin Panel
+| Page | Highlights |
+|---|---|
+| User Management | Invite, search, filter, bulk suspend/delete, role assignment |
+| Role Management | RBAC with per-permission matrix and custom role creation |
+| Organizations | Multi-tenant table with plan, status, user count, storage |
+| Integrations | Connect/disconnect 20+ tools, sync status, error detection |
+| Billing | Stripe integration, usage meters, invoice history |
+| Compliance | SOC 2, GDPR, HIPAA, ISO 27001, CCPA tracking with scores |
+| Audit Logs | Full event log with severity levels, IP filtering, export |
+| AI Models | Enable/disable models, set defaults, configure guardrails |
+| Security | MFA enforcement, SSO-only mode, IP allowlisting, password policy |
+| Data Governance | Retention policies, PII masking, classification levels, legal hold |
+| System Health | Real-time status for 12 infrastructure services, CPU/memory/disk |
 
 ---
 
@@ -26,27 +151,34 @@ An enterprise-grade AI Knowledge Copilot that serves as a company-wide AI brain.
 ### Backend
 | Layer | Technology |
 |---|---|
-| Framework | FastAPI 0.111 + Uvicorn (async) |
-| Database | PostgreSQL (Supabase) via SQLAlchemy 2.0 async + asyncpg |
+| Framework | FastAPI 0.111 + Uvicorn (async, Python 3.12) |
+| Database | PostgreSQL via SQLAlchemy 2.0 async + asyncpg |
 | Migrations | Alembic |
 | Cache | Redis 7 |
-| AI / LLM | Anthropic Claude (`claude-sonnet-4-6`) |
-| Video AI | Google Gemini 2.0 Flash (`gemini-2.0-flash`) via `google-generativeai` |
-| Audio Transcription | OpenAI Whisper (fallback when no Google key) |
+| Vector Search | pgvector (primary) + Pinecone (production scale) |
+| AI — Chat | Anthropic Claude (`claude-sonnet-4-6`) |
+| AI — Video | Google Gemini 2.0 Flash (`gemini-2.0-flash`) |
+| AI — Audio | OpenAI Whisper (Deepgram for real-time streaming) |
 | Web Search | Tavily API (primary) + DuckDuckGo (free fallback) |
-| Auth | JWT (python-jose) + bcrypt + automatic refresh token rotation |
-| File Parsing | PyPDF2, python-docx |
+| Voice TTS | ElevenLabs (primary) + Amazon Polly (fallback) |
+| File Parsing | PyPDF2, python-docx, openpyxl, python-pptx, pytesseract |
+| Web Crawling | trafilatura + BeautifulSoup |
+| Auth | JWT (python-jose) + bcrypt + refresh token rotation |
+| Task Queue | Celery + Redis broker |
+| Object Storage | AWS S3 + boto3 |
 
 ### Frontend
 | Layer | Technology |
 |---|---|
 | Framework | Next.js 14 (App Router, standalone output) |
-| Language | TypeScript 5 |
+| Language | TypeScript 5 (strict mode) |
 | Styling | Tailwind CSS 3 |
-| Auth | NextAuth.js (credentials + Google OAuth + Microsoft OAuth) |
+| Auth | NextAuth.js (credentials + Google OAuth + Microsoft Azure AD) |
 | State | Zustand + TanStack React Query 5 |
 | Charts | Recharts |
 | Animations | Framer Motion |
+| Testing | Vitest + Playwright + React Testing Library |
+| Build | Turbopack (dev) |
 
 ### Infrastructure (AWS)
 | Layer | Technology |
@@ -54,134 +186,14 @@ An enterprise-grade AI Knowledge Copilot that serves as a company-wide AI brain.
 | Orchestration | Amazon EKS (Kubernetes) |
 | CI/CD | GitHub Actions → ArgoCD (GitOps) |
 | IaC | Terraform + Terragrunt |
+| Container Registry | Amazon ECR |
 | CDN | CloudFront |
+| DNS | Route 53 + ACM (SSL) |
+| Secrets | AWS Secrets Manager |
 | Monitoring | Prometheus + Grafana + CloudWatch |
 | Logging | ELK Stack (OpenSearch) |
 | Tracing | OpenTelemetry + AWS X-Ray |
-
----
-
-## Features Implemented
-
-### AI Chat Interface
-- Multi-turn conversational AI with full context retention (up to 200K tokens)
-- Real-time streaming responses via SSE
-- Source citations with clickable links to original documents
-- Follow-up question suggestions generated by AI
-- Conversation history, search, and management
-- Code block rendering with syntax highlighting
-- Markdown rendering (tables, lists, headings, code)
-- File/image attachment support
-- Multi-model support (switch between Claude, GPT-4, etc.)
-- Conversation sharing via secure links
-- Conversation export and bookmarking
-
-### Voice Assistant
-- Real-time speech-to-text via WebSocket (Deepgram streaming)
-- Text-to-speech response playback (ElevenLabs / Amazon Polly)
-- Voice activity detection (VAD) for auto start/stop
-- Push-to-talk mode
-- Audio waveform visualization
-- Continuous conversation mode (hands-free)
-- Live transcription display
-- Multi-language support
-
-### Meeting Intelligence
-- Video meeting rooms (WebRTC, up to 50 participants)
-- Real-time meeting transcription with speaker labels
-- AI meeting recap generation (summary, key decisions, action items)
-- Meeting recording with cloud storage
-- Searchable meeting archive by spoken content
-- Recording library with transcript and recap badges
-- Calendar integration (Google Calendar, Outlook)
-
-### Knowledge Base Management
-- Document upload with drag-and-drop (PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, HTML)
-- Real-time upload progress tracking with indexing status
-- URL import from web pages and public docs
-- Collections — organize documents into curated groups with team-level access control
-- Web crawlers — auto-crawl and index web content on configurable schedules (hourly/daily/weekly)
-- 20+ data source connectors: Google Drive, Slack, Confluence, Notion, GitHub, GitLab, Jira, Salesforce, HubSpot, Zendesk, Teams, Gmail, Outlook, OneDrive, Dropbox, SharePoint, and more
-- Connector health monitoring and sync status tracking
-- Document version history
-- Global document view — all documents visible regardless of uploader (no per-user filter)
-- AI chat is aware of the full document inventory (injects KB file list into system prompt)
-- Per-document chunk cap in RAG search (max 2 chunks/doc) prevents large docs dominating results
-- Video analysis via Google Gemini 2.0 Flash (`GOOGLE_API_KEY`) for visual understanding of silent/non-speech videos
-
-### Video Knowledge Base
-- Video library with search and filtering
-- AI-generated chapter markers with summaries
-- Full video transcript viewer with speaker timestamps
-- Video Q&A — ask questions about video content at specific moments
-- Meeting recordings integration
-- Adaptive bitrate streaming (HLS)
-
-### Enterprise Search
-- Hybrid semantic vector search + BM25 full-text search
-- Natural language query understanding
-- Faceted search filters (source, type, date, author, collection)
-- Highlighted search snippets with context
-- Search autocomplete and suggestions
-
-### AI Agents & Automation
-- Agent marketplace with 6 pre-built templates:
-  - **Research Agent** — deep multi-step research across knowledge base
-  - **Writing Agent** — draft documents, emails, reports from org context
-  - **Support Agent** — answer questions and create tickets automatically
-  - **Onboarding Agent** — guide new employees through company knowledge
-  - **Data Analyst** — query databases, generate charts, analyze trends
-  - **Custom Agent** — full control over behavior and tools
-- No-code 2-step agent builder wizard (template → configure)
-- Tool assignment: knowledge search, email, database, web search, code execution, calendar, API caller, document creator
-- Visual workflow builder with drag-and-drop canvas
-- Event triggers: new document, Slack message, schedule (CRON), webhook, email, database row
-- Action steps: AI summarize, send email, Slack notification, Jira ticket, HTTP request, condition/branch logic
-- Workflow draft saving and publishing
-
-### Analytics & Insights
-- Usage analytics: query volume, active users, tokens used, feature adoption breakdown
-- Top users leaderboard with per-user usage bars
-- AI-generated insights with actionable recommendations (opportunity, trend, cost-saving types)
-- Automated reports: scheduled PDF/Excel/email reports with 5 built-in templates
-- Cost tracking and model usage breakdown per 30-day period
-- Analytics queries run sequentially (SQLAlchemy async session safe — no concurrent execute errors)
-
-### Team Management
-- Create, list, and delete teams with full CRUD API (`/teams`)
-- Creator is automatically assigned as team owner
-- Member count tracking with cascading deletes
-- Functional Create Team modal with name and description fields
-- Delete team with owner-only authorization check
-
-### Authentication & Security
-- Email/password with strong password policy enforcement
-- Google OAuth and Microsoft OAuth (one-click setup with setup instructions modal)
-- NextAuth.js session management with JWT
-- Auto-refresh of expired backend JWT tokens
-- Multi-factor authentication (TOTP, SMS, email, WebAuthn)
-- Session timeout management (configurable)
-- Account lockout after failed login attempts
-- Login audit trail with IP address logging
-- **Demo Quick Login** — one-click login buttons on the login page for Admin and Demo User accounts
-
-### Full Admin Panel (10 pages)
-| Page | Features |
-|------|---------|
-| **User Management** | Invite, search, filter by role/status, bulk suspend/delete, role badges |
-| **Role Management** | RBAC with per-permission control, custom roles, expandable permission matrix |
-| **Organizations** | Multi-tenant org table with plan, status, user count, storage |
-| **Integrations** | Connect/disconnect 20+ third-party tools, sync status, error detection |
-| **Billing** | Plan overview, usage meters (queries/storage/users), invoice history, Stripe |
-| **Compliance** | SOC 2, GDPR, HIPAA, ISO 27001, CCPA, CSA STAR tracking with scores |
-| **Audit Logs** | Full security event log with severity (critical/warning/info), IP, filtering, export |
-| **AI Models** | Enable/disable models, set defaults, configure temperature/tokens/guardrails |
-| **Security** | MFA enforcement, SSO-only mode, IP allowlisting, password policy, encryption status |
-| **Data Governance** | Retention policies, PII masking, data classification levels, legal hold, upcoming deletions |
-| **System Health** | Real-time status for 12 infrastructure services, CPU/memory/disk metrics, incident history |
-
-### Marketing & Public Pages (11 pages)
-Landing page, About, Blog, Careers, Changelog, Docs, Security, Privacy Policy, Terms of Service, Roadmap, Status Page, Contact
+| Auto-scaling | Kubernetes HPA + Karpenter |
 
 ---
 
@@ -189,135 +201,178 @@ Landing page, About, Blog, Careers, Changelog, Docs, Security, Privacy Policy, T
 
 ```
 Enterprise-Grade-AI-Knowledge-Copilot/
-├── frontend/                          # Next.js 14 App Router frontend
+├── frontend/                          # Next.js 14 App Router
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── (auth)/                # Login, Register, Forgot Password, Reset Password
-│   │   │   ├── (dashboard)/           # All authenticated app routes
+│   │   │   ├── (auth)/                # Login, Register, Forgot/Reset Password
+│   │   │   ├── (dashboard)/           # All authenticated routes
 │   │   │   │   ├── home/              # Main dashboard with KPIs
-│   │   │   │   ├── chat/              # AI chat interface
+│   │   │   │   ├── chat/              # AI chat interface + conversation history
 │   │   │   │   ├── voice/             # Voice assistant
 │   │   │   │   ├── playground/        # AI prompt playground
-│   │   │   │   ├── meetings/          # Meetings list + recordings
+│   │   │   │   ├── meetings/          # Meeting rooms + recordings library
 │   │   │   │   ├── knowledge/         # Documents, collections, upload, crawlers
 │   │   │   │   ├── knowledge-base/    # Knowledge base home
-│   │   │   │   ├── video/             # Video library + player
-│   │   │   │   ├── search/            # Enterprise search
-│   │   │   │   ├── workflows/         # Workflows list + visual builder
-│   │   │   │   ├── agents/            # Agents list + builder wizard
+│   │   │   │   ├── video/             # Video library + AI player
+│   │   │   │   ├── search/            # Enterprise search with filters
+│   │   │   │   ├── workflows/         # Workflow list + visual builder
+│   │   │   │   ├── agents/            # Agent marketplace + builder wizard
 │   │   │   │   ├── analytics/         # Usage, AI insights, knowledge gaps, reports
 │   │   │   │   ├── notifications/     # Notification center
 │   │   │   │   ├── teams/             # Team management
-│   │   │   │   ├── profile/           # User profile settings
+│   │   │   │   ├── profile/           # User profile + settings
 │   │   │   │   ├── api-keys/          # API key management
-│   │   │   │   └── admin/             # Full admin panel (11 sub-pages)
+│   │   │   │   └── admin/             # Admin panel (11 sub-pages)
 │   │   │   ├── (marketing)/           # 11 public marketing pages
-│   │   │   └── page.tsx               # Landing page
+│   │   │   └── api/                   # Next.js API routes (NextAuth, webhooks)
 │   │   ├── components/
-│   │   │   ├── ui/                    # Reusable UI components
+│   │   │   ├── ui/                    # Base UI component library
 │   │   │   ├── layout/                # Sidebar, topbar, command palette
 │   │   │   ├── chat/                  # Chat interface components
 │   │   │   ├── voice/                 # Voice assistant components
 │   │   │   ├── knowledge/             # Knowledge management components
 │   │   │   ├── analytics/             # Analytics chart components
 │   │   │   ├── search/                # Search interface components
-│   │   │   └── providers/             # Auth and query providers
+│   │   │   └── providers/             # Auth and React Query providers
 │   │   ├── hooks/                     # Custom React hooks
-│   │   ├── lib/                       # API client, auth config, utils
+│   │   ├── lib/                       # API client, auth config, utilities
 │   │   ├── stores/                    # Zustand state stores
 │   │   └── types/                     # TypeScript type definitions
+│   ├── tests/
+│   │   ├── unit/                      # Vitest unit tests
+│   │   └── e2e/                       # Playwright end-to-end tests
 │   └── Dockerfile
+│
 ├── backend/                           # FastAPI Python backend
 │   ├── app/
-│   │   ├── main.py              # FastAPI entry point
-│   │   ├── config.py            # Settings (pydantic-settings)
-│   │   │                        # Includes: GOOGLE_API_KEY, TAVILY_API_KEY
-│   │   ├── database.py          # SQLAlchemy engine + indexes
-│   │   ├── dependencies.py      # Auth + DB dependency injection
-│   │   ├── models/              # SQLAlchemy ORM models
-│   │   ├── routers/
+│   │   ├── main.py                    # FastAPI application entry point
+│   │   ├── config.py                  # Settings via pydantic-settings
+│   │   ├── database.py                # SQLAlchemy async engine + indexes
+│   │   ├── dependencies.py            # Auth + DB dependency injection
+│   │   ├── models/                    # SQLAlchemy ORM models
+│   │   │   ├── user.py
+│   │   │   ├── conversation.py
+│   │   │   ├── knowledge.py
+│   │   │   ├── search.py
+│   │   │   └── workflow.py
+│   │   ├── routers/                   # FastAPI route handlers
 │   │   │   ├── auth.py
-│   │   │   ├── conversations.py
-│   │   │   ├── knowledge.py     # Document upload + Gemini 2.0 video processing
-│   │   │   ├── analytics.py
+│   │   │   ├── conversations.py       # Chat + SSE streaming
+│   │   │   ├── knowledge.py           # Document upload + video processing
 │   │   │   ├── search.py
 │   │   │   ├── voice.py
 │   │   │   ├── meetings.py
-│   │   │   ├── agents.py        # Research agent with live web search
+│   │   │   ├── agents.py              # Research agent with live web search
 │   │   │   ├── workflows.py
+│   │   │   ├── analytics.py
 │   │   │   ├── admin.py
-│   │   │   └── api_keys.py
-│   │   ├── schemas/             # Pydantic request/response schemas
+│   │   │   ├── billing.py
+│   │   │   ├── teams.py
+│   │   │   ├── video.py
+│   │   │   ├── websocket.py           # WebSocket handlers
+│   │   │   ├── connectors_oauth.py    # Connector OAuth flows
+│   │   │   └── knowledge_oauth_sync.py
+│   │   ├── schemas/                   # Pydantic request/response schemas
 │   │   ├── services/
-│   │   │   ├── ai_service.py    # Claude streaming + RAG
-│   │   │   └── document_service.py
+│   │   │   ├── ai_service.py          # Claude streaming + RAG pipeline
+│   │   │   ├── auth_service.py
+│   │   │   ├── document_service.py    # Chunking + embedding + indexing
+│   │   │   ├── search_service.py      # Hybrid search orchestration
+│   │   │   ├── vector_store.py        # pgvector + Pinecone abstraction
+│   │   │   └── workflow_service.py
 │   │   └── core/
-│   │       └── security.py      # JWT + password hashing
-│   ├── alembic/                 # Database migrations
-│   ├── uploads/                 # Uploaded file storage
+│   │       └── security.py            # JWT + password hashing
+│   ├── alembic/                       # Database migration scripts
+│   ├── tests/                         # pytest test suite
+│   ├── uploads/                       # Local file storage (dev only)
 │   ├── requirements.txt
-│   └── .env                     # Environment variables
-└── docker-compose.yml           # Local development orchestration
+│   └── seed.py                        # Database seeder (demo accounts)
+│
+├── infrastructure/
+│   ├── terraform/                     # AWS infrastructure as code
+│   │   ├── environments/              # dev / staging / production configs
+│   │   └── modules/                   # vpc, eks, rds, elasticache, s3, etc.
+│   └── ecs/                           # ECS task definitions
+│
+├── docs/
+│   └── PROJECT_STATUS.md              # Feature completion tracker
+│
+├── .github/
+│   └── workflows/
+│       ├── ci-backend.yml             # Backend CI pipeline
+│       ├── cd-backend.yml             # Backend CD pipeline
+│       └── cd-frontend-amplify.yml    # Frontend CD to AWS Amplify
+│
+├── docker-compose.yml                 # Local development orchestration
+├── CLAUDE.md                          # Full PRD and project spec
+├── DEPLOYMENT.md                      # AWS deployment guide
+└── Makefile                           # Common commands
 ```
 
 ---
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
-- Python 3.12
-- Node.js 18+
-- Docker Desktop (for Redis)
-- Supabase project (PostgreSQL database)
-- Anthropic API key
-- Google AI Studio API key (Gemini 2.0 video processing)
-- OpenAI API key (Whisper fallback, optional if Google key set)
-- Tavily API key (web search in Research Agent, optional — falls back to DuckDuckGo)
-- Google OAuth credentials (for Google sign-in, optional)
-- Microsoft Azure AD credentials (for Microsoft sign-in, optional)
 
-### Quick Start with Docker
+| Requirement | Version |
+|---|---|
+| Python | 3.12+ |
+| Node.js | 18+ |
+| Docker Desktop | Latest (for Redis) |
+| PostgreSQL | 16+ (or Supabase project) |
+| Anthropic API key | Required for AI chat |
+| Google AI Studio key | Recommended (Gemini video analysis) |
+| OpenAI API key | Optional (Whisper fallback) |
+| Tavily API key | Optional (web search, falls back to DuckDuckGo) |
+
+### Docker (All Services)
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/your-org/Enterprise-Grade-AI-Knowledge-Copilot.git
 cd Enterprise-Grade-AI-Knowledge-Copilot
+cp backend/.env.example backend/.env      # Add your API keys
+cp frontend/.env.example frontend/.env.local
 docker-compose up -d
 ```
 
-Services:
-- Frontend: http://localhost:3001
-- Backend API: http://localhost:8010
-- API Docs: http://localhost:8010/docs
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:3001 |
+| Backend API | http://localhost:8010 |
+| Swagger UI | http://localhost:8010/docs |
+| ReDoc | http://localhost:8010/redoc |
 
-### Frontend Development
+### Manual Setup
 
-```bash
-cd frontend
-cp .env.example .env.local
-# Edit .env.local with your credentials (see Environment Variables section)
-
-# Build (required for standalone output)
-npm run build
-
-# Copy static assets (required after every build)
-cp -r .next/static .next/standalone/.next/static
-cp -r public .next/standalone/public
-
-# Start (loads env vars at runtime)
-export $(cat .env.local | grep -v '^#' | grep '=' | xargs) && PORT=3001 node .next/standalone/server.js
-```
-
-### Backend Development
+#### Backend
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate     # Windows: venv\Scripts\activate
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-# Fill in your database and API keys in .env
-alembic upgrade head         # Run migrations
+cp .env.example .env            # Fill in required keys
+alembic upgrade head            # Run migrations
+python seed.py                  # Seed demo accounts
 uvicorn app.main:app --reload --port 8010
+```
+
+#### Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local      # Fill in required values
+npm run build                   # Required for standalone output
+
+# Copy static assets after every build
+cp -r .next/static .next/standalone/.next/static
+cp -r public .next/standalone/public
+
+# Start server
+export $(cat .env.local | grep -v '^#' | grep '=' | xargs)
+PORT=3001 node .next/standalone/server.js
 ```
 
 ---
@@ -327,24 +382,39 @@ uvicorn app.main:app --reload --port 8010
 ### Backend (`backend/.env`)
 
 ```env
-# Database (Supabase PostgreSQL)
-DATABASE_URL=postgresql+asyncpg://user:password@host:5432/dbname
+# ── Database ──────────────────────────────────────────────────────────────────
+DATABASE_URL=postgresql+asyncpg://user:password@host:5432/knowledgeforge
 
-# Redis
+# ── Redis ─────────────────────────────────────────────────────────────────────
 REDIS_URL=redis://localhost:6379
 
-# Security
-SECRET_KEY=your-secret-key-here   # Generate: openssl rand -hex 32
+# ── Security ──────────────────────────────────────────────────────────────────
+SECRET_KEY=                             # openssl rand -hex 32
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 REFRESH_TOKEN_EXPIRE_DAYS=30
 
-# AI APIs
-ANTHROPIC_API_KEY=sk-ant-...                # Claude (chat + agents)
-OPENAI_API_KEY=sk-...                       # Whisper transcription fallback
-GOOGLE_API_KEY=AIza...                      # Gemini 2.0 Flash (video processing)
-TAVILY_API_KEY=tvly-...                     # Web search (optional, DuckDuckGo fallback)
+# ── AI APIs ───────────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY=sk-ant-...            # Required — Claude chat + agents
+OPENAI_API_KEY=sk-...                   # Optional — Whisper fallback
+GOOGLE_API_KEY=AIza...                  # Recommended — Gemini video processing
+TAVILY_API_KEY=tvly-...                 # Optional — web search (DuckDuckGo fallback)
 
-# App
+# ── Voice ─────────────────────────────────────────────────────────────────────
+DEEPGRAM_API_KEY=                       # Real-time voice transcription
+ELEVENLABS_API_KEY=                     # TTS voice synthesis
+
+# ── Storage ───────────────────────────────────────────────────────────────────
+AWS_S3_BUCKET=knowledgeforge-documents
+AWS_S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+
+# ── Vector DB ─────────────────────────────────────────────────────────────────
+PINECONE_API_KEY=                       # Optional — production-scale vector search
+PINECONE_ENVIRONMENT=
+PINECONE_INDEX_NAME=knowledgeforge
+
+# ── App ───────────────────────────────────────────────────────────────────────
 CORS_ORIGINS=["http://localhost:3001"]
 MAX_UPLOAD_SIZE_MB=50
 ```
@@ -352,18 +422,20 @@ MAX_UPLOAD_SIZE_MB=50
 ### Frontend (`frontend/.env.local`)
 
 ```env
+# ── API ───────────────────────────────────────────────────────────────────────
 NEXT_PUBLIC_API_URL=http://localhost:8010
 NEXT_PUBLIC_WS_URL=ws://localhost:8010
-NEXTAUTH_URL=http://localhost:3001
-NEXTAUTH_SECRET=your-nextauth-secret        # Generate: openssl rand -hex 32
 
-# Google OAuth (optional — https://console.cloud.google.com)
+# ── Auth ──────────────────────────────────────────────────────────────────────
+NEXTAUTH_URL=http://localhost:3001
+NEXTAUTH_SECRET=                        # openssl rand -hex 32
+
+# ── Google OAuth ──────────────────────────────────────────────────────────────
 # Redirect URI: http://localhost:3001/api/auth/callback/google
-# Set OAuth consent screen to "External" to allow any Google account
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 
-# Microsoft OAuth (optional — https://portal.azure.com)
+# ── Microsoft OAuth ───────────────────────────────────────────────────────────
 # Redirect URI: http://localhost:3001/api/auth/callback/azure-ad
 AZURE_AD_CLIENT_ID=
 AZURE_AD_CLIENT_SECRET=
@@ -374,81 +446,107 @@ AZURE_AD_TENANT_ID=common
 
 ## Demo Credentials
 
-The backend auto-seeds two accounts on first startup:
+The backend auto-seeds two accounts on first startup (`python seed.py`). Quick-login buttons for both are available directly on the login page.
 
 | Role | Email | Password |
 |---|---|---|
 | Demo User | `demo@knowledgeforge.ai` | `demo12345` |
 | Super Admin | `admin@knowledgeforge.ai` | `Admin1234!` |
 
-Quick login buttons for both accounts are available directly on the login page.
-
 ---
 
-## Video Processing
+## Development Guide
 
-Videos are processed with **Gemini 2.0 Flash** when `GOOGLE_API_KEY` is set. Gemini understands the full video — audio, visuals, slides, and diagrams — and returns:
-
-1. Timestamped verbatim transcript
-2. Visual content descriptions (slides, on-screen text, diagrams)
-3. Key topics bullet list
-4. Executive summary
-
-All content is chunked and indexed into the RAG pipeline for instant retrieval in chat.
-
-If `GOOGLE_API_KEY` is not set, the system falls back to **OpenAI Whisper** (audio-only transcription).
-
----
-
-## AI Agents
-
-### Research Agent
-Combines live web search with internal knowledge base RAG:
-1. Searches the internal knowledge base (vector + full-text)
-2. Runs live web search via Tavily (or DuckDuckGo if no Tavily key)
-3. Synthesizes both into a cited report with web and internal source tabs
-
-Supports file/image/document attachments — drag-and-drop or click to attach PDFs, DOCX, CSVs, images, and more. Text is extracted client-side and appended to the query context.
-
-### Other Agents
-- **Writing Agent** — Draft documents, emails, and reports using org context
-- **Data Analyst** — Query data, generate analysis from CSV/Excel attachments
-- **Support Agent** — Answer employee questions with KB citations
-- **Compliance Agent** — Check documents against policy with PDF/DOCX support
-- **Onboarding Agent** — Guide new employees through company knowledge
-
----
-
-## API Keys
-
-Generate multi-model API keys at `/api-keys` to access KnowledgeForge programmatically:
-
-- Select one or more providers: **Claude**, **OpenAI**, **Gemini**, **Mistral**, **Llama**
-- Scope to specific models (e.g. only `claude-sonnet-4-6` and `gpt-4o`)
-- Set granular permissions (chat, search, agents, knowledge, analytics, admin)
-- Configure rate limits and expiration
-- Switch models by changing the `model` field — same key works across all providers
+### Common Commands
 
 ```bash
-curl -X POST https://api.knowledgeforge.ai/v1/chat \
-  -H "Authorization: Bearer kf_YOUR_API_KEY" \
-  -d '{"model": "claude-sonnet-4-6", "messages": [...]}'
+# Start all services
+docker-compose up -d
+
+# Backend — run tests
+cd backend && pytest tests/ -v
+
+# Backend — create a new migration
+alembic revision --autogenerate -m "add_feature_x"
+alembic upgrade head
+
+# Frontend — development server
+cd frontend && npm run dev
+
+# Frontend — run unit tests
+npm run test
+
+# Frontend — run e2e tests
+npm run test:e2e
+
+# Lint all code
+cd frontend && npm run lint
+cd backend && ruff check app/
 ```
+
+### Code Style
+
+- **Backend**: [Ruff](https://docs.astral.sh/ruff/) for linting, Black for formatting, strict type hints throughout
+- **Frontend**: ESLint + Prettier, TypeScript strict mode, component-per-file convention
+
+### Adding a New API Endpoint
+
+1. Define Pydantic schemas in `backend/app/schemas/`
+2. Add business logic to `backend/app/services/`
+3. Create or extend a router in `backend/app/routers/`
+4. Register the router in `backend/app/main.py`
+5. Write tests in `backend/tests/`
+
+### Adding a New Frontend Page
+
+1. Create a directory under `frontend/src/app/(dashboard)/your-page/`
+2. Add `page.tsx` with the page component
+3. Add the route to the sidebar in `frontend/src/components/layout/sidebar.tsx`
+
+---
+
+## API Reference
+
+Interactive documentation is available at:
+
+| Interface | URL |
+|---|---|
+| Swagger UI | http://localhost:8010/docs |
+| ReDoc | http://localhost:8010/redoc |
+
+### Endpoint Groups
+
+| Prefix | Description |
+|---|---|
+| `/auth` | Login, register, token refresh, OAuth2, MFA |
+| `/conversations` | Chat conversations and SSE streaming |
+| `/knowledge` | Document upload, collections, connectors, video |
+| `/search` | Full-text and semantic search |
+| `/voice` | Voice session management, TTS, STT |
+| `/meetings` | Meeting rooms, recordings, transcripts, recaps |
+| `/agents` | AI agent execution (research, writing, analysis) |
+| `/workflows` | Workflow automation CRUD and execution |
+| `/analytics` | Usage stats, AI performance, knowledge gaps |
+| `/admin` | User and system administration |
+| `/billing` | Subscription management, invoices, Stripe |
+| `/teams` | Team management |
+| `/ws` | WebSocket endpoints (chat, voice, meetings) |
 
 ---
 
 ## OAuth Setup
 
 ### Google Sign-In
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials
-2. Create OAuth 2.0 Client ID (Web Application)
-3. Add authorized redirect URI: `http://localhost:3001/api/auth/callback/google`
-4. Set OAuth consent screen to **External**
-5. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `frontend/.env.local`
-6. Rebuild the frontend
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials → Create OAuth 2.0 Client ID (Web Application)
+2. Add authorized redirect URI: `http://localhost:3001/api/auth/callback/google`
+3. Set OAuth consent screen to **External**
+4. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `frontend/.env.local`
+5. Rebuild the frontend
 
 ### Microsoft Sign-In
-1. Go to [portal.azure.com](https://portal.azure.com) → App registrations → New registration
+
+1. [portal.azure.com](https://portal.azure.com) → App registrations → New registration
 2. Add redirect URI: `http://localhost:3001/api/auth/callback/azure-ad`
 3. Create a client secret under Certificates & Secrets
 4. Add `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET`, `AZURE_AD_TENANT_ID=common` to `frontend/.env.local`
@@ -456,87 +554,146 @@ curl -X POST https://api.knowledgeforge.ai/v1/chat \
 
 ---
 
-## API Reference
+## Video Processing
 
-Interactive docs available at:
-- **Swagger UI**: `http://localhost:8010/docs`
-- **ReDoc**: `http://localhost:8010/redoc`
+Videos are processed by **Gemini 2.0 Flash** when `GOOGLE_API_KEY` is set. Gemini understands the full video — audio, visuals, slides, on-screen text, and diagrams — and returns:
 
-| Prefix | Description |
+1. Timestamped verbatim transcript
+2. Visual content descriptions (slides, diagrams, on-screen text)
+3. Key topics list
+4. Executive summary
+
+All content is chunked and indexed into the RAG pipeline for instant retrieval in chat. If `GOOGLE_API_KEY` is not set, the system falls back to **OpenAI Whisper** (audio-only transcription).
+
+---
+
+## AI Agents
+
+### Research Agent
+
+Combines internal KB retrieval with live web search:
+
+1. Searches the internal knowledge base (vector + full-text)
+2. Runs live web search via Tavily API (DuckDuckGo fallback if no Tavily key)
+3. Synthesizes both into a cited report with separate web and internal source tabs
+
+Supports file/image/document attachments — drag-and-drop or click to attach PDFs, DOCX, CSVs, and images. Text is extracted and appended to the query context.
+
+### Other Agents
+
+| Agent | Best For |
 |---|---|
-| `/auth` | Login, register, token refresh, OAuth |
-| `/conversations` | Chat conversations + SSE streaming |
-| `/knowledge` | Document upload, collections, connectors, video upload |
-| `/analytics` | Usage stats, AI performance, dashboard |
-| `/search` | Full-text + semantic search |
-| `/voice` | Voice session management |
-| `/meetings` | Meeting rooms and transcripts |
-| `/agents` | AI agent execution (research, writing, analysis) |
-| `/workflows` | Workflow automation |
-| `/admin` | User and system administration |
+| Writing Agent | Draft documents, emails, reports from org context |
+| Data Analyst | Analyze CSV/Excel attachments, generate data insights |
+| Support Agent | Answer employee questions, cite knowledge base |
+| Compliance Agent | Check documents against policy rules |
+| Onboarding Agent | Guide new hires through company knowledge |
+| Custom Agent | Full control over behavior, tools, knowledge scope |
+
+---
+
+## API Keys
+
+Generate multi-model API keys at `/api-keys`:
+
+- Select provider(s): **Claude**, **OpenAI**, **Gemini**, **Mistral**, **Llama**
+- Scope to specific models (e.g. only `claude-sonnet-4-6`)
+- Set granular permissions: chat, search, agents, knowledge, analytics, admin
+- Configure rate limits and key expiration
+
+```bash
+curl -X POST http://localhost:8010/v1/chat \
+  -H "Authorization: Bearer kf_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4-6", "messages": [{"role": "user", "content": "Summarize our Q4 strategy"}]}'
+```
+
+---
+
+## Testing
+
+### Backend
+
+```bash
+cd backend
+pytest tests/ -v                        # All tests
+pytest tests/test_auth.py -v            # Specific module
+pytest tests/ --cov=app --cov-report=html  # Coverage report
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm run test                            # Vitest unit tests
+npm run test:e2e                        # Playwright e2e tests
+npm run test:coverage                   # Coverage report
+```
+
+---
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for full AWS deployment instructions including:
+
+- ECS task definition setup
+- RDS PostgreSQL provisioning
+- Amplify frontend deployment
+- GitHub Actions CI/CD pipeline configuration
+- Environment variable management via AWS Secrets Manager
+
+For Kubernetes / EKS deployment, see the Terraform configs in `infrastructure/terraform/` and Kubernetes manifests under `infrastructure/ecs/`.
 
 ---
 
 ## Architecture Notes
 
 ### RAG Pipeline
-1. **Ingest** — Documents are uploaded, parsed (PDF/DOCX/video), chunked, and stored in `document_chunks`
-2. **Retrieve** — On each chat message: vector search (pgvector) + full-text search (PostgreSQL GIN index) run in parallel
-3. **Generate** — Claude `claude-sonnet-4-6` streams the response via SSE with cited sources
+
+```
+Upload → Parse → Chunk → Embed → Store (pgvector)
+                                         ↓
+Query → Embed → Vector Search ──────────→ Retrieve chunks
+      → BM25  → Full-text Search ────────→ Rerank → Claude → SSE stream
+```
+
+1. **Ingest** — Documents are uploaded, parsed (PDF/DOCX/video/OCR), semantically chunked, and stored in `document_chunks` with pgvector embeddings
+2. **Retrieve** — On each chat message: vector similarity search + PostgreSQL GIN full-text search run in parallel; results are merged and reranked
+3. **Generate** — Claude `claude-sonnet-4-6` streams the response via SSE with cited source chunks
 
 ### Authentication Flow
-- JWT access tokens (60-min expiry) + refresh tokens (30-day expiry)
-- NextAuth automatically refreshes the backend JWT 2 minutes before expiry using the stored refresh token — no re-login required
-- Supports credentials, Google OAuth, and Microsoft Azure AD
-- Passwords hashed with bcrypt; user records cached in Redis (5 min)
 
-### Performance
-- Redis caching — analytics dashboard (120s), home stats (60s), sessions (5 min)
-- Connection pooling — SQLAlchemy pool_size=20, max_overflow=40
-- SSE streaming — chat responses stream token-by-token
-- DB indexes — GIN full-text, vector, conversation, message indexes
+```
+Login → Backend JWT (60 min) + Refresh Token (30 days)
+     → NextAuth session stores both tokens
+     → 2 min before expiry → auto-refresh via stored refresh token
+     → No re-login required for 30 days
+```
 
----
+### Performance Optimizations
 
-## Pending Implementation
+| Optimization | Detail |
+|---|---|
+| Redis caching | Analytics (120s TTL), home stats (60s), sessions (5 min) |
+| Connection pooling | SQLAlchemy pool_size=20, max_overflow=40 |
+| SSE streaming | Chat responses stream token-by-token, no buffering |
+| DB indexes | GIN full-text, pgvector IVFFLAT, conversation and message indexes |
+| Per-doc chunk cap | Max 2 chunks per document in RAG results (prevents dominance) |
+| Stop-word filtering | 40+ common words excluded from full-text ILIKE matching |
 
-### High Priority
-- **Backend API restructure** — organize into `app/api/v1/` per spec with full middleware layer
-- **AI/LLM provider abstraction** — `core/ai/` with LangChain RAG chains, multi-provider routing
-- **Document parsers** — PDF (with OCR), DOCX, XLSX, PPTX, code, email, image parsers
-- **Data source connector implementations** — all 20+ connectors with OAuth2 and incremental sync
-- **Celery workers** — async ingestion, embedding generation, video processing, notifications
-- **Complete SQLAlchemy models** — all 20+ entities with relationships and migrations
-- **WebSocket handlers** — real-time chat streaming, voice STT, meeting signaling
+### Multi-Tenancy
 
-### Medium Priority
-- **Meeting detail pages** — transcript viewer, recap page
-- **Workflow detail editor** — node editing and execution history
-- **Agent detail page** — config, logs, and chat interface
-- **Video upload** — chunked upload with processing queue
-- **UI component library** — toast system, dialog, command palette (Cmd+K), data-table, skeleton loaders
-
-### Recently Fixed
-- ✅ Analytics dashboard HTTP 500 — replaced concurrent `asyncio.gather()` with sequential queries
-- ✅ AI chat document awareness — injected full knowledge base inventory into system prompt; added per-doc chunk cap (2 max)
-- ✅ Teams CRUD — fully functional create/delete with owner authorization
-- ✅ Login quick-access — demo credential buttons on login page
-- ✅ Global document list — knowledge base documents shown regardless of uploader
+Data isolation is enforced at the application layer with per-organization filtering on all database queries. Each organization gets its own Pinecone namespace for vector search isolation.
 
 ---
 
-## Key Architecture Decisions
+## Contributing
 
-1. **FastAPI over Django** — Async-native, excellent WebSocket support, automatic OpenAPI generation, higher throughput for AI/streaming workloads.
-2. **Pinecone + pgvector** — Pinecone for managed production-scale vector search; pgvector as cost-effective fallback.
-3. **Hybrid search** — Combining dense vector search + sparse BM25 with cross-encoder reranking consistently outperforms either alone.
-4. **Kafka over RabbitMQ** — Event replay for document ingestion, higher throughput, built-in partitioning for multi-tenant pipelines.
-5. **EKS over ECS** — Kubernetes ecosystem (Helm, ArgoCD, Karpenter) gives more control and is cloud-portable.
-6. **Multi-model AI abstraction** — Switching between Claude / GPT-4 / Bedrock requires zero code changes in consumers.
-7. **Schema-per-tenant PostgreSQL** — Logical isolation without the operational complexity of separate databases.
-8. **GitOps with ArgoCD** — Git as single source of truth; automatic drift detection; full deployment audit trail.
-9. **Next.js App Router route groups** — `(auth)`, `(dashboard)`, `(marketing)` groups share separate layouts without URL nesting.
-10. **Turbopack dev server** — Significantly faster HMR during development vs. webpack; production builds use standard Next.js.
+1. Fork the repository and create a feature branch from `dev`
+2. Write tests for any new functionality
+3. Ensure all tests pass: `pytest tests/ -v` and `npm run test`
+4. Submit a pull request to `dev` (not `main`)
+5. PRs to `main` trigger the CD pipeline — all PRs must pass CI
 
 ---
 
