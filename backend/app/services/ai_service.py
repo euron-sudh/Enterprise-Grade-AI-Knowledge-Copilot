@@ -207,7 +207,11 @@ def _is_extraction_placeholder(text: str) -> bool:
 
 
 async def _search_relevant_chunks(
-    query: str, db: AsyncSession, limit: int = 8, user_id: Optional[uuid.UUID] = None
+    query: str,
+    db: AsyncSession,
+    limit: int = 8,
+    user_id: Optional[uuid.UUID] = None,
+    source_filter: Optional[str] = None,
 ) -> list:
     """Retrieve only the most relevant document chunks for RAG context.
 
@@ -238,6 +242,9 @@ async def _search_relevant_chunks(
             )
             if user_id:
                 kw_q = kw_q.where(Document.user_id == user_id, Document.status == "indexed")
+            normalized_source = _normalize_source_filter(source_filter)
+            if normalized_source:
+                kw_q = kw_q.where(Document.file_type == normalized_source)
             kw_q = kw_q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
             kw_q = kw_q.limit(limit * 8)
 
@@ -277,6 +284,9 @@ async def _search_relevant_chunks(
                 .join(Document, DocumentChunk.document_id == Document.id)
             )
             fill_q = fill_q.where(Document.user_id == user_id, Document.status == "indexed")
+            normalized_source = _normalize_source_filter(source_filter)
+            if normalized_source:
+                fill_q = fill_q.where(Document.file_type == normalized_source)
             fill_q = fill_q.order_by(Document.created_at.desc(), DocumentChunk.chunk_index.asc())
             fill_q = fill_q.limit(12)
 
@@ -317,10 +327,17 @@ def _detect_requested_connector_type(query: str) -> Optional[str]:
         "google drive": "google_drive",
         "drive": "google_drive",
         "gmail": "gmail",
+        "mail": "gmail",
         "email": "gmail",
+        "emails": "gmail",
+        "inbox": "gmail",
+        "message": "gmail",
+        "messages": "gmail",
         "github": "github",
         "repo": "github",
         "repos": "github",
+        "slack": "slack",
+        "confluence": "confluence",
     }
     for phrase, connector_type in mapping.items():
         if phrase in query_lower:
@@ -328,20 +345,46 @@ def _detect_requested_connector_type(query: str) -> Optional[str]:
     return None
 
 
-def _is_recent_document_query(query: str) -> bool:
+def _normalize_source_filter(source_filter: Optional[str]) -> Optional[str]:
+    if not source_filter:
+        return None
+    normalized = source_filter.strip().lower()
+    mapping = {
+        "google drive": "google_drive",
+        "gmail": "gmail",
+        "mail": "gmail",
+        "email": "gmail",
+        "slack": "slack",
+        "github": "github",
+        "confluence": "confluence",
+        "web": None,
+        "all sources": None,
+    }
+    return mapping.get(normalized, normalized.replace(" ", "_"))
+
+
+def _is_recent_document_query(query: str, source_filter: Optional[str] = None) -> bool:
     query_lower = query.lower()
     recency_terms = ["latest", "recent", "newest", "most recent", "last"]
     doc_terms = ["document", "file", "upload", "uploaded", "indexed", "index"]
-    return any(term in query_lower for term in recency_terms) and any(term in query_lower for term in doc_terms)
+    if not any(term in query_lower for term in recency_terms):
+        return False
+
+    requested_connector = _normalize_source_filter(source_filter) or _detect_requested_connector_type(query)
+    if requested_connector in {"gmail", "google_drive", "github", "slack", "confluence"}:
+        return True
+
+    return any(term in query_lower for term in doc_terms)
 
 
 async def _get_recent_document_sources(
     db: AsyncSession,
     user_id: uuid.UUID,
     query: str,
+    source_filter: Optional[str] = None,
     limit: int = 3,
 ) -> list:
-    connector_type = _detect_requested_connector_type(query)
+    connector_type = _normalize_source_filter(source_filter) or _detect_requested_connector_type(query)
     words = [
         w.strip().lower() for w in query.split()
         if len(w.strip()) > 2 and w.strip().lower() not in _STOP_WORDS
@@ -352,7 +395,7 @@ async def _get_recent_document_sources(
         q = q.where(Document.file_type == connector_type)
 
     # If the query hints a specific filename/topic (e.g. "resume"), prefer those docs first.
-    if words:
+    if words and connector_type != "gmail":
         from sqlalchemy import or_
 
         name_filters = [Document.original_name.ilike(f"%{w}%") for w in words[:4]]
@@ -600,6 +643,7 @@ async def stream_chat_response(
     images: Optional[List[str]] = None,
     user_id: Optional[uuid.UUID] = None,
     use_web_search: bool = False,
+    source_filter: Optional[str] = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Main streaming generator. Yields dicts that will be serialized to SSE frames.
@@ -617,10 +661,10 @@ async def stream_chat_response(
         doc_inventory = await _list_user_documents(user_id, db)
 
     # --- 1. Search knowledge base (scoped to this user) ---
-    if user_id and _is_recent_document_query(user_message_content):
-        kb_sources = await _get_recent_document_sources(db, user_id, user_message_content)
+    if user_id and _is_recent_document_query(user_message_content, source_filter):
+        kb_sources = await _get_recent_document_sources(db, user_id, user_message_content, source_filter=source_filter)
     else:
-        kb_sources = await _search_relevant_chunks(user_message_content, db, user_id=user_id)
+        kb_sources = await _search_relevant_chunks(user_message_content, db, user_id=user_id, source_filter=source_filter)
 
     # --- 1b. Decide whether to also query the web ---
     web_sources: list = []

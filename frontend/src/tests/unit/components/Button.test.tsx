@@ -21,13 +21,13 @@ describe('Button', () => {
   it('renders ghost variant', () => {
     render(<Button variant="ghost">Ghost</Button>);
     const btn = screen.getByRole('button');
-    expect(btn).toHaveClass('text-surface-700');
+    expect(btn).toHaveClass('text-surface-600');
   });
 
   it('renders danger variant', () => {
-    render(<Button variant="danger">Delete</Button>);
+    render(<Button variant="destructive">Delete</Button>);
     const btn = screen.getByRole('button');
-    expect(btn).toHaveClass('bg-red-600');
+    expect(btn).toHaveClass('bg-red-500');
   });
 
   it('renders small size', () => {
@@ -105,6 +105,6 @@ describe('Button', () => {
       </Button>
     );
     const btn = screen.getByRole('button', { name: /icon button/i });
-    expect(btn).toHaveClass('h-10', 'w-10');
+    expect(btn).toHaveClass('h-9', 'w-9');
   });
 });

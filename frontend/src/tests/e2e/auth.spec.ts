@@ -122,7 +122,7 @@ test.describe('Authentication flows', () => {
       await page.getByLabel(/^password$/i).fill('Password1');
       await page.getByLabel(/confirm password/i).fill('DifferentPass1');
       await page.getByRole('button', { name: /create account/i }).click();
-      await expect(page.getByText(/passwords do not match/i)).toBeVisible();
+      await expect(page.getByText(/passwords do(?:n't| not) match/i)).toBeVisible();
     });
 
     test('links back to login', async ({ page }) => {

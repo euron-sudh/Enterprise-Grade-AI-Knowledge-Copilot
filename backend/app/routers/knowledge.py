@@ -466,6 +466,20 @@ async def upload_video(
     no_ai_key = not settings.has_google_key and not (settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip())
 
     original_name = file.filename or f"video{suffix}"
+    duplicate_key = document_service.build_duplicate_key(
+        "video",
+        file_content=content,
+        original_name=original_name,
+        file_size=file_size,
+    )
+    existing_doc = await document_service.find_duplicate_document(
+        db,
+        user_id=current_user.id,
+        duplicate_key=duplicate_key,
+    )
+    if existing_doc is not None:
+        logger.info("Skipping duplicate video upload '%s' for user %s", original_name, current_user.id)
+        return DocumentOut.from_orm(existing_doc)
 
     # ── Save file to disk ──────────────────────────────────────────────────────
     upload_dir = Path(settings.UPLOAD_DIR) / str(current_user.id)
@@ -480,6 +494,7 @@ async def upload_video(
         name=original_name,
         original_name=original_name,
         file_path=str(file_path),
+        duplicate_key=duplicate_key,
         file_type="video",
         file_size=file_size,
         status="processing",
@@ -1094,6 +1109,7 @@ async def _sync_figma(connector: "Connector", user_id: uuid.UUID, db: AsyncSessi
         name=f"[Figma] {file_name}",
         original_name=f"{file_name}.figma",
         file_path=f"figma://{file_key}",
+        duplicate_key=document_service.build_duplicate_key("figma", file_path=f"figma://{file_key}"),
         file_type="figma",
         file_size=len("\n".join(chunks_text)),
         status=DocumentStatus.indexed,
@@ -1435,6 +1451,10 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
                     name=doc_name,
                     original_name=file_path_str,
                     file_path=f"github://{owner}/{repo}/{file_path_str}",
+                    duplicate_key=document_service.build_duplicate_key(
+                        "github",
+                        file_path=f"github://{owner}/{repo}/{file_path_str}",
+                    ),
                     file_type="github",
                     file_size=len(raw.encode("utf-8")),
                     status=DocumentStatus.indexed,
@@ -1691,6 +1711,10 @@ async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: Asy
                     name=f"[Google Drive] {file_name}",
                     original_name=file_name,
                     file_path=f"gdrive://{folder_id}/{file_id}",
+                    duplicate_key=document_service.build_duplicate_key(
+                        "google_drive",
+                        file_path=f"gdrive://{folder_id}/{file_id}",
+                    ),
                     file_type="google_drive",
                     file_size=max(raw_size, len(full_text)),
                     status=DocumentStatus.indexed,
@@ -1993,6 +2017,7 @@ async def _sync_web_crawler(connector: "Connector", user_id: uuid.UUID, db: Asyn
             name=f"{doc_name_prefix}: {page['title'][:80]}",
             original_name=page["url"],
             file_path=page["url"],
+            duplicate_key=document_service.build_duplicate_key("web", file_path=page["url"]),
             file_type="web",
             file_size=len(page["text"].encode()),
             status="indexed",
@@ -2352,6 +2377,10 @@ async def _sync_gmail(connector: "Connector", user_id: uuid.UUID, db: AsyncSessi
                         name=doc_name,
                         original_name=subject,
                         file_path=f"gmail://inbox/{msg_id}",
+                        duplicate_key=document_service.build_duplicate_key(
+                            "gmail",
+                            file_path=f"gmail://inbox/{msg_id}",
+                        ),
                         file_type="gmail",
                         file_size=len(content),
                         status=DocumentStatus.indexed,

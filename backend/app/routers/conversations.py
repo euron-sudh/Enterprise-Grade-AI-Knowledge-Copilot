@@ -220,6 +220,7 @@ async def stream_messages(
                 images=body.images,
                 user_id=current_user.id,
                 use_web_search=force_web_search,
+                source_filter=body.sourceFilter,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

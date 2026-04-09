@@ -69,6 +69,7 @@ class Document(Base):
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     original_name: Mapped[str] = mapped_column(String(500), nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    duplicate_key: Mapped[str | None] = mapped_column(String(1024), nullable=True, index=True)
     file_type: Mapped[str] = mapped_column(String(50), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[DocumentStatus] = mapped_column(

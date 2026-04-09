@@ -1,5 +1,7 @@
 """Shared pytest fixtures for all backend tests."""
 import asyncio
+import json
+import sqlite3
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -55,6 +57,8 @@ from sqlalchemy import event as sa_event  # noqa: E402
 
 # Use in-memory SQLite for tests (no PostgreSQL required)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+sqlite3.register_adapter(list, json.dumps)
 
 test_engine = create_async_engine(
     TEST_DATABASE_URL,
@@ -121,12 +125,14 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture(scope="function")
 async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     from app.main import app
-    from app.database import get_db
+    from app import database as app_database
+    from app import dependencies as app_dependencies
 
     async def override_get_db():
         yield db
 
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[app_database.get_db] = override_get_db
+    app.dependency_overrides[app_dependencies.get_db] = override_get_db
 
     # Disable lifespan (it runs Alembic + PG-specific seed SQL)
     # We already create tables via the db fixture above.
@@ -151,7 +157,8 @@ async def test_user(db: AsyncSession):
         is_verified=True,
     )
     db.add(user)
-    await db.flush()
+    await db.commit()
+    await db.refresh(user)
     return user
 
 
@@ -169,7 +176,8 @@ async def admin_user(db: AsyncSession):
         is_verified=True,
     )
     db.add(user)
-    await db.flush()
+    await db.commit()
+    await db.refresh(user)
     return user
 
 

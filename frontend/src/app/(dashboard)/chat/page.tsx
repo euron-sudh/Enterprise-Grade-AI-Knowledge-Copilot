@@ -610,6 +610,7 @@ export default function ChatPage() {
             {[
               { label: 'All sources', icon: null },
               { label: 'Web', icon: Globe },
+              { label: 'Gmail', icon: null },
               { label: 'Confluence', icon: null },
               { label: 'Google Drive', icon: null },
               { label: 'Slack', icon: null },

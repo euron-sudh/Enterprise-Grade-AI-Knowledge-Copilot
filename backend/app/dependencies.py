@@ -1,3 +1,4 @@
+import uuid
 from typing import AsyncGenerator, Optional
 
 from fastapi import Depends, HTTPException, Query, Request, status
@@ -45,6 +46,10 @@ async def _get_user_from_token(
         user_id: str = payload.get("sub")
         if user_id is None:
             raise JWTError("Missing subject")
+        try:
+            lookup_user_id = uuid.UUID(user_id)
+        except (TypeError, ValueError):
+            lookup_user_id = user_id
     except JWTError:
         if required:
             raise HTTPException(
@@ -54,7 +59,7 @@ async def _get_user_from_token(
             )
         return None
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).where(User.id == lookup_user_id))
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:

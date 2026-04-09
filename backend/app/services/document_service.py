@@ -1,6 +1,7 @@
 """
 Document service — handles file upload, text extraction, and chunking.
 """
+import hashlib
 import logging
 import os
 import uuid
@@ -8,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -15,6 +17,27 @@ from app.models.knowledge import Document, DocumentChunk, DocumentStatus
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+CONNECTOR_LIKE_TYPES = {
+    "google_drive",
+    "gmail",
+    "github",
+    "gitlab",
+    "confluence",
+    "notion",
+    "slack",
+    "jira",
+    "salesforce",
+    "hubspot",
+    "zendesk",
+    "intercom",
+    "sharepoint",
+    "onedrive",
+    "dropbox",
+    "web",
+    "web_crawler",
+    "figma",
+}
 
 SUPPORTED_TYPES = {
     ".pdf": "pdf",
@@ -35,6 +58,145 @@ CHUNK_OVERLAP_TOKENS = 50
 def _estimate_tokens(text: str) -> int:
     """Rough token estimate: ~4 chars per token."""
     return max(1, len(text) // 4)
+
+
+def build_content_duplicate_key(file_type: str, file_content: bytes) -> str:
+    digest = hashlib.sha256(file_content).hexdigest()
+    return f"content:{file_type}:{digest}"
+
+
+def build_path_duplicate_key(file_type: str, file_path: str) -> str:
+    normalized_path = (file_path or "").strip().lower()
+    return f"path:{file_type}:{normalized_path}"
+
+
+def build_duplicate_key(
+    file_type: str,
+    *,
+    file_content: bytes | None = None,
+    file_path: str | None = None,
+    original_name: str | None = None,
+    file_size: int | None = None,
+) -> str:
+    if file_content is not None and file_type not in CONNECTOR_LIKE_TYPES:
+        return build_content_duplicate_key(file_type, file_content)
+    if file_path:
+        return build_path_duplicate_key(file_type, file_path)
+
+    fallback_basis = "|".join(
+        [file_type, original_name or "", str(file_size or 0)]
+    )
+    return f"fallback:{hashlib.sha256(fallback_basis.encode('utf-8')).hexdigest()}"
+
+
+async def find_duplicate_document(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    duplicate_key: str,
+) -> Document | None:
+    result = await db.execute(
+        select(Document)
+        .where(Document.user_id == user_id, Document.duplicate_key == duplicate_key)
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def derive_existing_duplicate_key(document: Document) -> str:
+    if document.duplicate_key:
+        return document.duplicate_key
+
+    if document.file_type in CONNECTOR_LIKE_TYPES or "://" in (document.file_path or ""):
+        return build_duplicate_key(
+            document.file_type,
+            file_path=document.file_path,
+            original_name=document.original_name,
+            file_size=document.file_size,
+        )
+
+    path = Path(document.file_path) if document.file_path else None
+    if path and path.is_file():
+        return build_duplicate_key(
+            document.file_type,
+            file_content=path.read_bytes(),
+            original_name=document.original_name,
+            file_size=document.file_size,
+        )
+
+    return build_duplicate_key(
+        document.file_type,
+        original_name=document.original_name,
+        file_size=document.file_size,
+    )
+
+
+def _document_rank(document: Document) -> tuple[int, int, int, datetime]:
+    status_value = document.status.value if hasattr(document.status, "value") else str(document.status)
+    status_rank = {
+        DocumentStatus.indexed.value: 3,
+        DocumentStatus.processing.value: 2,
+        DocumentStatus.failed.value: 1,
+    }.get(status_value, 0)
+    return (
+        status_rank,
+        document.word_count or 0,
+        document.file_size or 0,
+        document.updated_at or document.created_at,
+    )
+
+
+async def cleanup_duplicate_documents(db: AsyncSession, user_id: uuid.UUID | None = None) -> dict[str, int]:
+    query = select(Document).order_by(Document.created_at.desc())
+    if user_id is not None:
+        query = query.where(Document.user_id == user_id)
+
+    result = await db.execute(query)
+    documents = list(result.scalars().all())
+
+    kept_by_key: dict[tuple[uuid.UUID, str], Document] = {}
+    duplicate_ids: list[uuid.UUID] = []
+    duplicate_files: list[str] = []
+    updated_keys = 0
+
+    for document in documents:
+        duplicate_key = derive_existing_duplicate_key(document)
+        if document.duplicate_key != duplicate_key:
+            document.duplicate_key = duplicate_key
+            updated_keys += 1
+
+        group_key = (document.user_id, duplicate_key)
+        current = kept_by_key.get(group_key)
+        if current is None:
+            kept_by_key[group_key] = document
+            continue
+
+        keep_document = current if _document_rank(current) >= _document_rank(document) else document
+        duplicate_document = document if keep_document is current else current
+        kept_by_key[group_key] = keep_document
+        duplicate_ids.append(duplicate_document.id)
+        if duplicate_document.file_path and "://" not in duplicate_document.file_path:
+            duplicate_files.append(duplicate_document.file_path)
+
+    if duplicate_ids:
+        await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id.in_(duplicate_ids)))
+        await db.execute(delete(Document).where(Document.id.in_(duplicate_ids)))
+
+    await db.flush()
+
+    for file_path in duplicate_files:
+        try:
+            path = Path(file_path)
+            if path.is_file():
+                path.unlink(missing_ok=True)
+        except Exception as exc:
+            logger.warning("Failed to remove duplicate file %s: %s", file_path, exc)
+
+    return {
+        "scanned": len(documents),
+        "updated_keys": updated_keys,
+        "deleted_duplicates": len(duplicate_ids),
+    }
 
 
 def _chunk_text(text: str) -> List[Tuple[int, str]]:
@@ -284,6 +446,29 @@ async def upload_documents(
             )
 
         original_name = upload_file.filename or "unknown"
+        file_ext = Path(original_name).suffix.lower()
+        file_type = SUPPORTED_TYPES.get(file_ext, "unknown")
+        duplicate_key = build_duplicate_key(
+            file_type,
+            file_content=content,
+            original_name=original_name,
+            file_size=len(content),
+        )
+        existing_document = await find_duplicate_document(
+            db,
+            user_id=user.id,
+            duplicate_key=duplicate_key,
+        )
+        if existing_document is not None:
+            logger.info(
+                "Skipping duplicate upload '%s' for user %s (document_id=%s)",
+                original_name,
+                user.id,
+                existing_document.id,
+            )
+            documents.append(existing_document)
+            continue
+
         file_path, file_ext, file_type = await save_uploaded_file(
             content, original_name, str(user.id)
         )
@@ -295,6 +480,7 @@ async def upload_documents(
             name=original_name,
             original_name=original_name,
             file_path=file_path,
+            duplicate_key=duplicate_key,
             file_type=file_type,
             file_size=len(content),
             status=DocumentStatus.processing,

@@ -12,7 +12,8 @@ async def test_register_success(client: AsyncClient, db):
     })
     assert response.status_code in (200, 201)
     data = response.json()
-    assert "access_token" in data or "email" in data
+    assert "accessToken" in data
+    assert data["user"]["email"] == "newuser@example.com"
 
 
 @pytest.mark.asyncio
@@ -22,7 +23,7 @@ async def test_register_duplicate_email(client: AsyncClient, test_user):
         "password": "AnotherPass123!",
         "name": "Duplicate",
     })
-    assert response.status_code == 400
+    assert response.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -33,8 +34,8 @@ async def test_login_success(client: AsyncClient, test_user):
     })
     assert response.status_code == 200
     data = response.json()
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
+    assert "accessToken" in data
+    assert data["user"]["email"] == "test@example.com"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,44 @@
-import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, expect, vi } from 'vitest';
+
+expect.extend({
+  toBeInTheDocument(received: unknown) {
+    const pass = received instanceof Node && document.contains(received);
+    return {
+      pass,
+      message: () =>
+        pass
+          ? 'Expected element not to be present in the document'
+          : 'Expected element to be present in the document',
+    };
+  },
+  toHaveClass(received: unknown, ...classNames: string[]) {
+    const missingClasses =
+      received instanceof Element
+        ? classNames.filter((className) => !received.classList.contains(className))
+        : classNames;
+    const pass = received instanceof Element && missingClasses.length === 0;
+
+    return {
+      pass,
+      message: () =>
+        pass
+          ? `Expected element not to have classes: ${classNames.join(', ')}`
+          : `Expected element to have classes: ${missingClasses.join(', ')}`,
+    };
+  },
+  toBeDisabled(received: unknown) {
+    const pass =
+      received instanceof HTMLElement &&
+      ('disabled' in received ? Boolean((received as HTMLButtonElement | HTMLInputElement).disabled) : false);
+
+    return {
+      pass,
+      message: () =>
+        pass ? 'Expected element not to be disabled' : 'Expected element to be disabled',
+    };
+  },
+});
 
 // Cleanup after each test
 afterEach(() => {

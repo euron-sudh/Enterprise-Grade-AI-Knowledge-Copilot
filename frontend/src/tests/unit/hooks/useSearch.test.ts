@@ -52,6 +52,7 @@ function createWrapper() {
 describe('useSearch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it('initialises with empty query', () => {
@@ -80,7 +81,6 @@ describe('useSearch', () => {
   });
 
   it('fires search after debounce when query >= 2 chars', async () => {
-    vi.useFakeTimers();
     vi.mocked(searchApi.search).mockResolvedValue(mockSearchResponse);
 
     const { result } = renderHook(() => useSearch(), { wrapper: createWrapper() });
@@ -89,18 +89,11 @@ describe('useSearch', () => {
       result.current.setQuery('te');
     });
 
-    // Advance debounce timer
-    act(() => {
-      vi.advanceTimersByTime(400);
-    });
-
     await waitFor(() => {
       expect(searchApi.search).toHaveBeenCalledWith(
         expect.objectContaining({ query: 'te' })
       );
     });
-
-    vi.useRealTimers();
   });
 
   it('adds a filter', () => {
@@ -154,6 +147,7 @@ describe('useSearch', () => {
 describe('useSearchSuggestions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it('does not fetch suggestions when query < 2 chars', () => {
