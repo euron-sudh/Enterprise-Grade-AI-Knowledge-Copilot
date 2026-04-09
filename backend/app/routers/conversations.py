@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, check_query_limit
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.user import User
 from app.schemas.chat import (
@@ -167,7 +167,7 @@ async def list_messages(
 async def stream_messages(
     conversation_id: uuid.UUID,
     body: SendMessageRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(check_query_limit),
     db: AsyncSession = Depends(get_db),
 ):
     conv = await _get_user_conversation(conversation_id, current_user.id, db)

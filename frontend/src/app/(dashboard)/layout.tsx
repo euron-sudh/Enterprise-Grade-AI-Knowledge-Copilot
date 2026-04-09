@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { SessionSync } from '@/components/layout/session-sync';
+import { NotificationProvider } from '@/components/layout/notification-provider';
 
 export default async function DashboardLayout({
   children,
@@ -19,6 +20,9 @@ export default async function DashboardLayout({
   return (
     <div className="flex h-screen overflow-hidden bg-surface-50 dark:bg-surface-950">
       <SessionSync />
+      {/* Real-time WebSocket notification stream */}
+      <NotificationProvider />
+
       {/* Sidebar */}
       <Sidebar />
 
@@ -26,12 +30,6 @@ export default async function DashboardLayout({
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Topbar */}
         <Topbar />
-
-        {/* Command Palette (global) */}
-        {typeof window !== 'undefined' && (
-          // Dynamically import to avoid SSR issues
-          require('@/components/ui/CommandPalette').CommandPalette()
-        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">

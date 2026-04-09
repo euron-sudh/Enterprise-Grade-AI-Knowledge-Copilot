@@ -93,3 +93,87 @@ async def get_optional_user(
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
     return await _get_user_from_token(credentials, db, required=False)
+
+
+# ── Plan enforcement ──────────────────────────────────────────────────────────
+
+PLAN_QUERY_LIMITS: dict[str, int] = {
+    "free": 100,
+    "starter": 5_000,
+    "professional": 50_000,
+    "enterprise": -1,  # unlimited
+}
+
+PLAN_STORAGE_LIMITS_GB: dict[str, float] = {
+    "free": 0.05,
+    "starter": 5.0,
+    "professional": 100.0,
+    "enterprise": -1.0,
+}
+
+
+async def check_query_limit(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Dependency that enforces the user's monthly query quota before a chat message."""
+    from sqlalchemy import func, text
+    from app.models.conversation import Message
+
+    plan = current_user.subscription_plan or "free"
+    limit = PLAN_QUERY_LIMITS.get(plan, 100)
+    if limit == -1:
+        return current_user  # unlimited
+
+    # Count messages sent by this user in the current calendar month
+    result = await db.execute(
+        select(func.count(Message.id))
+        .join(Message.conversation)
+        .where(
+            Message.role == "user",
+            text("DATE_TRUNC('month', messages.created_at) = DATE_TRUNC('month', NOW())"),
+        )
+        .where(__import__("app.models.conversation", fromlist=["Conversation"]).Conversation.user_id == current_user.id)
+    )
+    queries_used = result.scalar() or 0
+
+    if queries_used >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Monthly query limit reached ({queries_used}/{limit}). "
+                "Upgrade your plan at /admin/billing to continue."
+            ),
+        )
+    return current_user
+
+
+async def check_storage_limit(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Dependency that enforces the user's storage quota before a document upload."""
+    from sqlalchemy import func
+    from app.models.knowledge import Document
+
+    plan = current_user.subscription_plan or "free"
+    limit_gb = PLAN_STORAGE_LIMITS_GB.get(plan, 0.05)
+    if limit_gb == -1.0:
+        return current_user  # unlimited
+
+    result = await db.execute(
+        select(func.coalesce(func.sum(Document.file_size), 0))
+        .where(Document.user_id == current_user.id)
+    )
+    storage_bytes = result.scalar() or 0
+    storage_gb = storage_bytes / (1024 ** 3)
+
+    if storage_gb >= limit_gb:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Storage limit reached ({storage_gb:.2f}GB / {limit_gb}GB). "
+                "Upgrade your plan at /admin/billing to continue."
+            ),
+        )
+    return current_user

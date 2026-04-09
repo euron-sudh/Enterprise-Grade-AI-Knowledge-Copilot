@@ -78,3 +78,16 @@ class OAuthLoginRequest(BaseModel):
     name: str
     provider: str  # "google" | "azure-ad"
     avatarUrl: Optional[str] = None
+
+
+# ── MFA challenge flow ────────────────────────────────────────────────────────
+
+class MfaChallengeResponse(BaseModel):
+    """Returned when login succeeds but MFA verification is required."""
+    mfaRequired: bool = True
+    challengeToken: str  # short-lived opaque token, exchanged after TOTP entry
+
+
+class MfaVerifyRequest(BaseModel):
+    challengeToken: str
+    code: str = Field(..., min_length=6, max_length=8)  # 6-digit TOTP or 8-char backup code

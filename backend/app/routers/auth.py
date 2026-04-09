@@ -12,6 +12,8 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
+    MfaChallengeResponse,
+    MfaVerifyRequest,
     OAuthLoginRequest,
     PasswordResetConfirmBody,
     PasswordResetRequestBody,
@@ -28,9 +30,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/login", response_model=AuthResponse)
+@router.post("/login")
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    return await auth_service.login_user(body.email, body.password, db)
+    """Login with email and password.
+
+    Returns AuthResponse (200) when MFA is disabled.
+    Returns MfaChallengeResponse (202) when MFA is enabled — the client must
+    call POST /auth/mfa/challenge with the challengeToken + TOTP code.
+    """
+    from fastapi.responses import JSONResponse
+    result = await auth_service.login_user(body.email, body.password, db)
+    if isinstance(result, MfaChallengeResponse):
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=result.model_dump())
+    return result
+
+
+@router.post("/mfa/challenge", response_model=AuthResponse)
+async def mfa_challenge(body: MfaVerifyRequest, db: AsyncSession = Depends(get_db)):
+    """Complete MFA verification after a 202 challenge response from /login."""
+    return await auth_service.verify_mfa_challenge(body.challengeToken, body.code, db)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)

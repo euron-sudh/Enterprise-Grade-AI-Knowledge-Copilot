@@ -152,8 +152,62 @@ class PineconeVectorStore:
             return []
 
 
+    def _delete_sync(self, namespace: str, ids: List[str]) -> None:
+        self._lazy_init()
+        if not self._enabled or self._index is None:
+            return
+        self._index.delete(ids=ids, namespace=namespace)
+
+    async def delete_chunks(self, user_id: uuid.UUID, chunk_ids: List[str]) -> None:
+        """Remove specific chunk vectors from Pinecone (e.g. when a document is deleted)."""
+        if not self._enabled or not chunk_ids:
+            return
+        await asyncio.to_thread(self._delete_sync, str(user_id), chunk_ids)
+
+
 _vector_store = PineconeVectorStore()
 
 
 def get_vector_store() -> PineconeVectorStore:
     return _vector_store
+
+
+# ── Convenience helpers used by Celery tasks ──────────────────────────────────
+
+async def embed_texts(texts: List[str]) -> List[List[float]]:
+    """Generate embeddings for a list of texts using OpenAI (same model as Pinecone ingestion)."""
+    if not texts:
+        return []
+    store = get_vector_store()
+    store._lazy_init()
+    if store._openai is None:
+        # No OpenAI key — return empty (pgvector fallback handles retrieval)
+        return []
+    try:
+        return await asyncio.to_thread(store._embed, texts)
+    except Exception as exc:
+        logger.warning("embed_texts failed: %s", exc)
+        return []
+
+
+async def upsert_to_pinecone(chunks) -> None:
+    """Upsert a list of DocumentChunk ORM objects to Pinecone."""
+    store = get_vector_store()
+    if not store.enabled or not chunks:
+        return
+    records = [
+        {
+            "id": str(chunk.id),
+            "text": chunk.content,
+            "metadata": {
+                "document_id": str(chunk.document_id),
+                "chunk_index": chunk.chunk_index,
+                **(chunk.metadata or {}),
+            },
+        }
+        for chunk in chunks
+    ]
+    # Group by user/org namespace — use document's user_id from first chunk
+    namespace = str(chunks[0].document_id)  # per-doc namespace as fallback
+    await asyncio.to_thread(store._upsert_sync, namespace, records)
+    logger.info(f"Upserted {len(records)} chunks to Pinecone (namespace={namespace})")

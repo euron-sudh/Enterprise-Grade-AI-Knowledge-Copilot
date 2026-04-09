@@ -12,7 +12,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, check_storage_limit
 from app.models.knowledge import Collection, Connector, ConnectorStatus, Document, DocumentChunk, DocumentStatus
 from app.models.user import User
 from app.schemas.chat import PaginatedResponse
@@ -372,7 +372,7 @@ async def upload_documents(
     files: List[UploadFile] = File(...),
     collectionId: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(check_storage_limit),
     db: AsyncSession = Depends(get_db),
 ):
     documents = await document_service.upload_documents(

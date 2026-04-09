@@ -92,9 +92,16 @@ async def register_user(name: str, email: str, password: str, db: AsyncSession) 
     return await build_auth_response(user, db)
 
 
-async def login_user(email: str, password: str, db: AsyncSession) -> AuthResponse:
-    """Authenticate user credentials and return auth response."""
+async def login_user(email: str, password: str, db: AsyncSession):
+    """Authenticate user credentials.
+
+    Returns AuthResponse immediately when MFA is disabled.
+    Returns MfaChallengeResponse (HTTP 202) when MFA is enabled — the caller
+    must complete the challenge via POST /auth/mfa/challenge.
+    """
     from fastapi import HTTPException, status
+    import secrets
+    from app.core.security import get_redis
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -110,7 +117,79 @@ async def login_user(email: str, password: str, db: AsyncSession) -> AuthRespons
             detail="Account is disabled",
         )
 
+    # MFA gate — issue a short-lived challenge token instead of full tokens
+    if user.mfa_enabled and user.mfa_secret:
+        challenge_token = secrets.token_urlsafe(32)
+        redis = await get_redis()
+        if redis:
+            # Store user_id keyed by challenge token; expires in 5 minutes
+            await redis.setex(f"mfa_challenge:{challenge_token}", 300, str(user.id))
+        else:
+            # Fallback: store in DB session cache via a simple in-memory dict
+            # (acceptable for single-instance dev; Redis strongly recommended)
+            _mfa_challenges[challenge_token] = (str(user.id), datetime.now(timezone.utc))
+        from app.schemas.auth import MfaChallengeResponse
+        return MfaChallengeResponse(challengeToken=challenge_token)
+
     return await build_auth_response(user, db)
+
+
+# In-memory MFA challenge store (dev fallback when Redis is unavailable)
+_mfa_challenges: dict[str, tuple[str, datetime]] = {}
+
+
+async def verify_mfa_challenge(challenge_token: str, code: str, db: AsyncSession) -> AuthResponse:
+    """Validate a TOTP code (or backup code) against an MFA challenge token."""
+    import pyotp
+    from fastapi import HTTPException, status
+    from app.core.security import get_redis
+
+    user_id_str: str | None = None
+
+    redis = await get_redis()
+    if redis:
+        user_id_str = await redis.get(f"mfa_challenge:{challenge_token}")
+        if user_id_str:
+            if isinstance(user_id_str, bytes):
+                user_id_str = user_id_str.decode()
+            await redis.delete(f"mfa_challenge:{challenge_token}")
+    else:
+        entry = _mfa_challenges.pop(challenge_token, None)
+        if entry:
+            user_id_str, issued_at = entry
+            # Expire after 5 minutes
+            if (datetime.now(timezone.utc) - issued_at).total_seconds() > 300:
+                user_id_str = None
+
+    if not user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MFA challenge expired or invalid. Please log in again.",
+        )
+
+    import uuid as _uuid
+    result = await db.execute(select(User).where(User.id == _uuid.UUID(user_id_str)))
+    user = result.scalar_one_or_none()
+    if not user or not user.mfa_enabled or not user.mfa_secret:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+
+    # Try TOTP first
+    totp = pyotp.TOTP(user.mfa_secret)
+    if totp.verify(code, valid_window=1):
+        return await build_auth_response(user, db)
+
+    # Try backup codes
+    backup_codes: list = user.mfa_backup_codes or []
+    if code in backup_codes:
+        backup_codes.remove(code)
+        user.mfa_backup_codes = backup_codes
+        await db.flush()
+        return await build_auth_response(user, db)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid MFA code",
+    )
 
 
 async def refresh_tokens(refresh_token_str: str, db: AsyncSession) -> AuthResponse:

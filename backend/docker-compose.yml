@@ -8,3 +8,45 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # Celery worker — processes background tasks (ingestion, video, notifications, sync)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=4
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+  # Celery Beat — periodic task scheduler (hourly connector sync, daily cleanup)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info --scheduler celery.schedulers:PersistentScheduler
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Flower — Celery task monitoring UI (http://localhost:5555)
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A app.workers.celery_app.celery_app flower --port=5555
+    env_file: .env
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    restart: unless-stopped
+    profiles:
+      - monitoring  # only started with: docker-compose --profile monitoring up

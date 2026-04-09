@@ -56,3 +56,17 @@ def decode_access_token(token: str) -> dict:
 def generate_refresh_token() -> str:
     """Generate a cryptographically secure refresh token."""
     return secrets.token_urlsafe(32)
+
+
+async def get_redis():
+    """Return a Redis client if REDIS_URL is configured, else None."""
+    try:
+        import redis.asyncio as aioredis
+        url = settings.REDIS_URL
+        if not url:
+            return None
+        client = aioredis.from_url(url, decode_responses=False)
+        await client.ping()
+        return client
+    except Exception:
+        return None
