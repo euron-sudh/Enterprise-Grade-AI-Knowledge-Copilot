@@ -81,7 +81,7 @@ if not exist "node_modules" (
 
 REM Build if no production build exists yet
 if not exist ".next\BUILD_ID" (
-    echo   No production build found. Building now (one-time, ~60s)...
+    echo   No production build found. Building now ^(one-time, ~60s^)...
     npm run build
     echo   Build complete!
 ) else (

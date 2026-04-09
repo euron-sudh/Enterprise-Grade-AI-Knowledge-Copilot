@@ -33,12 +33,42 @@ class CreateCollectionRequest(BaseModel):
     color: Optional[str] = "#6366f1"
 
 
+# File types that represent connector sources (not raw file formats)
+_CONNECTOR_TYPES = {
+    "google_drive", "gmail", "github", "gitlab", "confluence", "notion",
+    "slack", "jira", "salesforce", "hubspot", "zendesk", "intercom",
+    "sharepoint", "onedrive", "dropbox", "web", "web_crawler",
+}
+
+_CONNECTOR_DISPLAY_NAMES = {
+    "google_drive": "Google Drive",
+    "gmail": "Gmail",
+    "github": "GitHub",
+    "gitlab": "GitLab",
+    "confluence": "Confluence",
+    "notion": "Notion",
+    "slack": "Slack",
+    "jira": "Jira",
+    "salesforce": "Salesforce",
+    "hubspot": "HubSpot",
+    "zendesk": "Zendesk",
+    "intercom": "Intercom",
+    "sharepoint": "SharePoint",
+    "onedrive": "OneDrive",
+    "dropbox": "Dropbox",
+    "web": "Web",
+    "web_crawler": "Web Crawler",
+}
+
+
 class DocumentOut(BaseModel):
     id: UUID
     name: str
     type: str
     size: int
     status: str
+    source: str  # "Upload" or connector display name
+    connectorType: Optional[str] = None
     collectionId: Optional[UUID] = None
     tags: List[str] = []
     pageCount: Optional[int] = None
@@ -51,12 +81,16 @@ class DocumentOut(BaseModel):
 
     @classmethod
     def from_orm(cls, doc) -> "DocumentOut":
+        ft = doc.file_type or ""
+        is_connector = ft in _CONNECTOR_TYPES
         return cls(
             id=doc.id,
             name=doc.name,
-            type=doc.file_type,
+            type=ft,
             size=doc.file_size,
             status=doc.status.value if hasattr(doc.status, "value") else doc.status,
+            source=_CONNECTOR_DISPLAY_NAMES.get(ft, "Upload") if is_connector else "Upload",
+            connectorType=ft if is_connector else None,
             collectionId=doc.collection_id,
             tags=doc.tags or [],
             pageCount=doc.page_count,

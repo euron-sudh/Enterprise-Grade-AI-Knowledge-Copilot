@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { authFetch } from '@/lib/api/token';
+import { authFetch, exchangeOAuthToken, getCachedToken } from '@/lib/api/token';
 import {
   Video,
   Upload,
@@ -44,6 +44,8 @@ const GRADIENT_THUMBNAILS = [
   'from-cyan-800 to-sky-900',
 ];
 
+const MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
+
 function formatBytes(bytes: number) {
   if (!bytes) return '';
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -78,13 +80,27 @@ export default function VideoPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const [playingVideo, setPlayingVideo] = useState<{ id: string; title: string; streamUrl: string } | null>(null);
+  const [loadingPlay, setLoadingPlay] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handlePlay = (v: VideoItem) => {
-    // Pass the JWT as a query param so <video src> can authenticate without custom headers
-    const token = (session as any)?.accessToken ?? '';
-    const streamUrl = `/api/backend/knowledge/documents/${v.id}/stream?token=${encodeURIComponent(token)}`;
-    setPlayingVideo({ id: v.id, title: v.title, streamUrl });
+  const handlePlay = async (v: VideoItem) => {
+    setLoadingPlay(v.id);
+    setError('');
+    try {
+      // Video src requests cannot send custom auth headers, so ensure we have a
+      // backend JWT even for OAuth-based browser sessions.
+      const sessionToken = (session as any)?.accessToken ?? null;
+      const token = getCachedToken() ?? await exchangeOAuthToken(getUser()) ?? sessionToken ?? '';
+      if (!token) {
+        throw new Error('Unable to authenticate video playback. Please sign in again.');
+      }
+      const streamUrl = `/api/backend/knowledge/documents/${v.id}/stream?token=${encodeURIComponent(token)}`;
+      setPlayingVideo({ id: v.id, title: v.title, streamUrl });
+    } catch (e: any) {
+      setError(`Failed to play video: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setLoadingPlay(null);
+    }
   };
 
   const closePlayer = () => setPlayingVideo(null);
@@ -126,6 +142,11 @@ export default function VideoPage() {
     const files = e.target.files;
     const videoFile = files?.[0];
     if (!videoFile) return;
+    if (videoFile.size > MAX_VIDEO_UPLOAD_BYTES) {
+      setError('Upload failed: maximum video size is 100 MB.');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
     setUploading(true);
     setUploadProgress(0);
     setError('');
@@ -187,7 +208,7 @@ export default function VideoPage() {
         <div className="mb-6 rounded-xl border border-dashed border-indigo-600 bg-indigo-900/10 p-6 text-center">
           <FileVideo className="h-10 w-10 text-indigo-400 mx-auto mb-3" />
           <p className="text-sm font-medium text-surface-900 dark:text-white mb-1">Upload Video Files</p>
-          <p className="text-xs text-surface-500 dark:text-gray-400 mb-4">Supports MP4, MOV, AVI, WebM, MKV (up to 10GB)</p>
+          <p className="text-xs text-surface-500 dark:text-gray-400 mb-4">Supports MP4, MOV, AVI, WebM, MKV, MP3, WAV, M4A, OGG (up to 100 MB)</p>
           {uploading ? (
             <div className="space-y-2">
               <div className="h-2 rounded-full bg-surface-200 dark:bg-gray-700 overflow-hidden">
@@ -197,7 +218,7 @@ export default function VideoPage() {
             </div>
           ) : (
             <>
-              <input ref={fileRef} type="file" accept="video/*" multiple onChange={uploadVideo}
+              <input ref={fileRef} type="file" accept="video/*,audio/*" onChange={uploadVideo}
                 className="hidden" id="video-upload" />
               <label htmlFor="video-upload"
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-surface-900 dark:text-white hover:bg-indigo-700 cursor-pointer">
@@ -267,7 +288,7 @@ export default function VideoPage() {
               {/* Thumbnail */}
               <div className={`relative h-40 bg-gradient-to-br ${v.thumbnail} flex items-center justify-center`}>
                 <button
-                  onClick={() => handlePlay(v)}
+                  onClick={() => void handlePlay(v)}
                   disabled={loadingPlay === v.id}
                   className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
                 >

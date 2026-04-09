@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.knowledge import Document, DocumentChunk
 from app.models.search import SearchLog, SavedSearch
 from app.models.user import User
+from app.services.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,60 @@ async def search_documents(
     if not query.strip():
         return {"items": [], "total": 0, "query": query, "took_ms": 0}
 
-    # Build base query
+    vector_store = get_vector_store()
+
+    # Prefer vector search at scale when Pinecone is configured.
+    if vector_store.enabled:
+        try:
+            top_k = max(page * page_size, 50)
+            matches = await vector_store.query(
+                user_id=user.id,
+                query_text=query,
+                top_k=top_k,
+                types=types,
+            )
+
+            if matches:
+                start_idx = (page - 1) * page_size
+                end_idx = start_idx + page_size
+                page_matches = matches[start_idx:end_idx]
+
+                items = []
+                for m in page_matches:
+                    md = m.get("metadata") or {}
+                    content = str(md.get("chunk_text") or "")
+                    words = [w.strip() for w in query.split() if len(w.strip()) >= 2]
+                    highlight = _make_highlight(content, words)
+                    items.append({
+                        "id": m.get("id") or str(uuid.uuid4()),
+                        "documentId": md.get("document_id"),
+                        "documentName": md.get("document_name") or "Connector Document",
+                        "documentType": md.get("document_type") or "unknown",
+                        "content": content[:500],
+                        "score": round(float(m.get("score") or 0.0), 4),
+                        "highlights": [highlight] if highlight else [],
+                        "url": md.get("url"),
+                        "createdAt": datetime.now(timezone.utc),
+                    })
+
+                took_ms = int((time.time() - start) * 1000)
+
+                try:
+                    db.add(SearchLog(user_id=user.id, query=query, result_count=len(matches), took_ms=took_ms))
+                    await db.flush()
+                except Exception as e:
+                    logger.warning(f"Failed to log search: {e}")
+
+                return {
+                    "items": items,
+                    "total": len(matches),
+                    "query": query,
+                    "took_ms": took_ms,
+                }
+        except Exception as e:
+            logger.warning(f"Vector search failed; falling back to SQL: {e}")
+
+    # Build SQL fallback query
     words = [w.strip() for w in query.split() if len(w.strip()) >= 2]
     if not words:
         return {"items": [], "total": 0, "query": query, "took_ms": 0}

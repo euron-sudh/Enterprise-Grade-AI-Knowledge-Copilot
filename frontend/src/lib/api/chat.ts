@@ -1,5 +1,6 @@
 import apiClient, { getToken } from './client';
 import { getBestToken } from './token';
+import { getSession } from 'next-auth/react';
 
 import type {
   Conversation,
@@ -10,7 +11,10 @@ import type {
   StreamingChunk,
 } from '@/types';
 
-const BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8000';
+const BASE_URL =
+  typeof window !== 'undefined'
+    ? '/api/backend'
+    : (process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8010');
 
 export async function listConversations(params?: {
   page?: number;
@@ -66,8 +70,9 @@ export async function sendMessage(
   onDone: (messageId: string) => void,
   onError: (error: string) => void
 ): Promise<void> {
+  const session = typeof window !== 'undefined' ? await getSession() : null;
   const token = typeof window !== 'undefined'
-    ? getBestToken(localStorage.getItem('accessToken')) || await getToken()
+    ? getBestToken((session as any)?.accessToken ?? localStorage.getItem('accessToken')) || await getToken()
     : null;
 
   const response = await fetch(

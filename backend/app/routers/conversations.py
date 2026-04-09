@@ -206,6 +206,7 @@ async def stream_messages(
     history.append(user_msg)
 
     model = body.model or conv.model or "claude-sonnet-4-6"
+    force_web_search = bool(body.useWebSearch) or ((body.sourceFilter or "").strip().lower() == "web")
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
@@ -218,7 +219,7 @@ async def stream_messages(
                 system_prompt=body.systemPrompt,
                 images=body.images,
                 user_id=current_user.id,
-                use_web_search=body.useWebSearch or False,
+                use_web_search=force_web_search,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

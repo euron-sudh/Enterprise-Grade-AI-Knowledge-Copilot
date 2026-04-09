@@ -45,6 +45,11 @@ Thumbs.db
 # Uploads / media
 backend/uploads/*
 !backend/uploads/.gitkeep
+/uploads/
+
+# Local databases
+*.db
+*.sqlite3
 
 # Temp files
 ~$*

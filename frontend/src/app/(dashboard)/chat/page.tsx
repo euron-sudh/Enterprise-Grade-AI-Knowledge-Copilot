@@ -18,8 +18,14 @@ import {
   Search,
   Video,
   Globe,
+  X,
 } from 'lucide-react';
-import { cn, formatRelativeTime, generateId } from '@/lib/utils';
+import { toast } from 'react-hot-toast';
+import { GlobalFileDropOverlay } from '@/components/knowledge/GlobalFileDropOverlay';
+import { useGlobalFileDrop } from '@/hooks/useGlobalFileDrop';
+import { uploadKnowledgeFiles } from '@/lib/knowledge-upload';
+import { cn, formatBytes, formatRelativeTime, generateId } from '@/lib/utils';
+import { authFetch } from '@/lib/api/token';
 
 // ---- Types ----
 interface Message {
@@ -144,7 +150,9 @@ function MessageBubble({
                   .replace(/\n\n/g, '<br/><br/>')
                   .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
                   .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-                  .replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-700 dark:text-indigo-300 font-semibold hover:underline break-all">$1</a>'),
+                  .replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-700 dark:text-indigo-300 font-semibold hover:underline break-all">$1</a>')
+                  // Render [N] citation markers as superscript badges
+                  .replace(/\[(\d+)\]/g, '<sup><a href="#citation-$1" class="inline-flex items-center justify-center h-4 min-w-[1rem] px-1 rounded bg-brand-100 dark:bg-brand-900 text-[10px] font-bold text-brand-700 dark:text-brand-300 hover:bg-brand-200 dark:hover:bg-brand-800 no-underline ml-0.5" title="Source $1">$1</a></sup>'),
               }}
             />
           )}
@@ -159,7 +167,9 @@ function MessageBubble({
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {message.citations.map((c, i) => (
-                <CitationCard key={c.id} citation={c} index={i} />
+                <div key={c.id} id={`citation-${i + 1}`}>
+                  <CitationCard citation={c} index={i} />
+                </div>
               ))}
             </div>
           </div>
@@ -214,12 +224,23 @@ export default function ChatPage() {
   const [activeSource, setActiveSource] = useState('All sources');
   const [isRecording, setIsRecording] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
   const isRecordingRef = useRef(false);
+  const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
+
+  const addFilesToQueue = useCallback((files: File[]) => {
+    if (!files.length) return;
+    setAttachedFiles((prev) => {
+      const seen = new Set(prev.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+      const unique = files.filter((file) => !seen.has(`${file.name}:${file.size}:${file.lastModified}`));
+      return [...prev, ...unique];
+    });
+  }, []);
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({
@@ -255,17 +276,52 @@ export default function ChatPage() {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!content.trim() || isLoading) return;
+      const trimmedContent = content.trim();
+      const queuedFiles = [...attachedFiles];
+      if ((!trimmedContent && queuedFiles.length === 0) || isLoading) return;
+
+      let uploadedNames: string[] = [];
+      let failedNames: string[] = [];
+
+      if (queuedFiles.length > 0) {
+        setIsUploadingFiles(true);
+        const uploadResult = await uploadKnowledgeFiles({
+          files: queuedFiles,
+          accessToken: (session as any)?.accessToken,
+          user: getUser(),
+        });
+        uploadedNames = uploadResult.uploadedNames;
+        failedNames = uploadResult.failedNames;
+        setIsUploadingFiles(false);
+
+        if (uploadedNames.length > 0) {
+          toast.success(`${uploadedNames.length} file${uploadedNames.length > 1 ? 's' : ''} attached`);
+        }
+        if (failedNames.length > 0) {
+          toast.error(`${failedNames.length} file${failedNames.length > 1 ? 's' : ''} failed to upload`);
+        }
+      }
+
+      const messageBody = trimmedContent || (uploadedNames.length
+        ? `Please analyze these attached files: ${uploadedNames.join(', ')}`
+        : '');
+
+      if (!messageBody) return;
+
+      const displayContent = uploadedNames.length > 0
+        ? `${trimmedContent ? `${trimmedContent}\n\n` : ''}Attached files: ${uploadedNames.join(', ')}`
+        : messageBody;
 
       const userMessage: Message = {
         id: generateId(),
         role: 'user',
-        content: content.trim(),
+        content: displayContent,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, userMessage]);
       setInput('');
+      setAttachedFiles([]);
       setIsLoading(true);
 
       // Streaming placeholder
@@ -286,11 +342,11 @@ export default function ChatPage() {
         // 1. Ensure we have a conversation ID
         let convId = conversationId;
         if (!convId) {
-          const createRes = await fetch('/api/backend/conversations', {
+          const createRes = await authFetch('/api/backend/conversations', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(session as any)?.accessToken ?? ''}` },
-            body: JSON.stringify({ title: content.trim().slice(0, 60) }),
-          });
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: messageBody.slice(0, 60) }),
+          }, (session as any)?.accessToken, getUser());
           if (createRes.ok) {
             const conv = await createRes.json();
             convId = conv.id;
@@ -299,16 +355,18 @@ export default function ChatPage() {
         }
 
         // 2. Stream the message
-        const res = await fetch(`/api/backend/conversations/${convId}/messages/stream`, {
+        const res = await authFetch(`/api/backend/conversations/${convId}/messages/stream`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(session as any)?.accessToken ?? ''}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            content: content.trim(),
+            content: uploadedNames.length > 0
+              ? `${messageBody}\n\nUse the newly attached files first if relevant: ${uploadedNames.join(', ')}.`
+              : messageBody,
             model: 'claude-sonnet-4-6',
             sourceFilter: activeSource === 'All sources' || activeSource === 'Web' ? null : activeSource,
             useWebSearch: activeSource === 'Web',
           }),
-        });
+        }, (session as any)?.accessToken, getUser());
 
         if (!res.ok || !res.body) throw new Error(`API error ${res.status}`);
 
@@ -375,7 +433,7 @@ export default function ChatPage() {
       }
       setIsLoading(false);
     },
-    [isLoading]
+    [activeSource, attachedFiles, conversationId, isLoading, session]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -452,18 +510,34 @@ export default function ChatPage() {
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
-    setAttachedFiles(prev => [...prev, ...files]);
-    // Append filenames to input so user sees what's attached
-    const names = files.map(f => f.name).join(', ');
-    setInput(prev => prev ? `${prev} [${names}]` : `[Attached: ${names}]`);
+    addFilesToQueue(files);
     // Reset so same file can be re-selected
     e.target.value = '';
+  }, [addFilesToQueue]);
+
+  const removeAttachedFile = useCallback((index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  const { isDragging, bind } = useGlobalFileDrop({
+    onFiles: async (files) => {
+      addFilesToQueue(files);
+    },
+  });
 
   const isEmpty = messages.length === 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="relative flex h-full flex-col"
+      {...bind}
+    >
+      <GlobalFileDropOverlay
+        active={isDragging || isUploadingFiles}
+        title={isUploadingFiles ? 'Uploading attached files...' : 'Drop files anywhere to attach'}
+        description="Attachments are queued in chat and uploaded when you send"
+      />
+
       {/* Messages area */}
       <div
         ref={messagesContainerRef}
@@ -559,6 +633,44 @@ export default function ChatPage() {
             ))}
           </div>
 
+          {attachedFiles.length > 0 && (
+            <div className="mb-2 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 p-2.5">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-medium text-surface-600 dark:text-surface-300">
+                  {attachedFiles.length} file{attachedFiles.length > 1 ? 's' : ''} attached
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAttachedFiles([])}
+                  className="text-[11px] text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
+                >
+                  Clear all
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {attachedFiles.map((file, index) => (
+                  <span
+                    key={`${file.name}:${file.size}:${file.lastModified}`}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 px-2 py-1 text-[11px] text-surface-700 dark:text-surface-200"
+                    title={file.name}
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate max-w-[210px]">{file.name}</span>
+                    <span className="text-surface-400">{formatBytes(file.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachedFile(index)}
+                      className="text-surface-400 hover:text-red-500"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <form
             onSubmit={handleSubmit}
             className="flex items-end gap-2 rounded-2xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 px-4 py-3 focus-within:border-brand-400 dark:focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-500/10 transition-all"
@@ -620,16 +732,16 @@ export default function ChatPage() {
             {/* Send */}
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={(!input.trim() && attachedFiles.length === 0) || isLoading || isUploadingFiles}
               className={cn(
                 'flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-all',
-                input.trim() && !isLoading
+                (input.trim() || attachedFiles.length > 0) && !isLoading && !isUploadingFiles
                   ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm shadow-brand-600/20'
                   : 'bg-surface-200 dark:bg-surface-700 text-surface-400 cursor-not-allowed'
               )}
               aria-label="Send message"
             >
-              {isLoading ? (
+              {isLoading || isUploadingFiles ? (
                 <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />

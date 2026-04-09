@@ -350,10 +350,15 @@ async def get_home_stats(
     seven_days_ago = now - timedelta(days=7)
 
     # Run queries sequentially (AsyncSession does not support concurrent execute)
+    uid = current_user.id
+    # Subquery for user's conversations to scope message counts
+    user_conv_ids = select(Conversation.id).where(Conversation.user_id == uid).scalar_subquery()
+
     queries_today_res = await db.execute(
         select(func.count(Message.id)).where(
             Message.role == MessageRole.user,
             Message.created_at >= today_start,
+            Message.conversation_id.in_(select(Conversation.id).where(Conversation.user_id == uid)),
         )
     )
     queries_yesterday_res = await db.execute(
@@ -361,29 +366,43 @@ async def get_home_stats(
             Message.role == MessageRole.user,
             Message.created_at >= yesterday_start,
             Message.created_at < today_start,
+            Message.conversation_id.in_(select(Conversation.id).where(Conversation.user_id == uid)),
         )
     )
-    docs_res = await db.execute(select(func.count(Document.id)))
-    connectors_res = await db.execute(
-        select(func.count(Connector.id)).where(Connector.status == ConnectorStatus.connected)
+    docs_res = await db.execute(
+        select(func.count(Document.id)).where(Document.user_id == uid)
     )
-    convs_res = await db.execute(select(func.count(Conversation.id)))
+    connectors_res = await db.execute(
+        select(func.count(Connector.id)).where(
+            Connector.user_id == uid,
+            Connector.status == ConnectorStatus.connected,
+        )
+    )
+    convs_res = await db.execute(
+        select(func.count(Conversation.id)).where(Conversation.user_id == uid)
+    )
     daily_res = await db.execute(
         select(
             cast(Message.created_at, Date).label("day"),
             func.count(Message.id).label("cnt"),
         )
-        .where(Message.role == MessageRole.user, Message.created_at >= seven_days_ago)
+        .where(
+            Message.role == MessageRole.user,
+            Message.created_at >= seven_days_ago,
+            Message.conversation_id.in_(select(Conversation.id).where(Conversation.user_id == uid)),
+        )
         .group_by(cast(Message.created_at, Date))
         .order_by(cast(Message.created_at, Date))
     )
     recent_convs_res = await db.execute(
         select(Conversation.title, Conversation.created_at)
+        .where(Conversation.user_id == uid)
         .order_by(Conversation.created_at.desc())
         .limit(3)
     )
     recent_docs_res = await db.execute(
         select(Document.original_name, Document.created_at)
+        .where(Document.user_id == uid)
         .order_by(Document.created_at.desc())
         .limit(3)
     )

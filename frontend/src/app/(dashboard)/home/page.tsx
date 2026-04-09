@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { authFetch } from '@/lib/api/token';
 import {
   MessageSquare,
   FileText,
@@ -69,14 +70,10 @@ export default function HomePage() {
 
   useEffect(() => {
     if (status === 'loading') return; // session not resolved yet
+    if (status !== 'authenticated') { setLoading(false); return; }
     const token = (session as any)?.accessToken;
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    fetch('/api/backend/analytics/home-stats', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const user = { email: session?.user?.email, name: session?.user?.name, image: session?.user?.image };
+    authFetch('/api/backend/analytics/home-stats', {}, token, user)
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setStats(data); })
       .catch(() => {})

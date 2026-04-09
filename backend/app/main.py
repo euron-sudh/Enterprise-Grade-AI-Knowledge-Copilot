@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +27,8 @@ async def _run_migrations() -> None:
     from alembic import command
 
     def _upgrade():
-        alembic_cfg = Config("alembic.ini")
+        backend_root = Path(__file__).resolve().parents[1]
+        alembic_cfg = Config(str(backend_root / "alembic.ini"))
         command.upgrade(alembic_cfg, "head")
 
     loop = asyncio.get_event_loop()

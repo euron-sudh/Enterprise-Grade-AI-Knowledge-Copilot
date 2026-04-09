@@ -162,19 +162,59 @@ async def voice_ask(
 ):
     """Answer a voice question using RAG + AI, returns plain text for TTS plus cited sources."""
     from app.config import settings
-    from app.services.ai_service import _search_relevant_chunks, _list_user_documents
+    from app.services.ai_service import (
+        _search_relevant_chunks,
+        _list_user_documents,
+        _is_recent_document_query,
+        _get_recent_document_sources,
+        _needs_web_search,
+        _tavily_web_search,
+        _google_web_search,
+        _select_final_sources,
+    )
 
     # 1. Search relevant document chunks (scoped to this user) + inventory
-    sources = await _search_relevant_chunks(body.question, db, user_id=current_user.id)
+    if _is_recent_document_query(body.question):
+        kb_sources = await _get_recent_document_sources(db, current_user.id, body.question)
+    else:
+        kb_sources = await _search_relevant_chunks(body.question, db, user_id=current_user.id)
+
+    # 1b. Add web search for recent/current queries or when KB has no strong matches.
+    web_sources: list[dict] = []
+    if _needs_web_search(body.question, kb_sources):
+        if settings.has_google_search:
+            try:
+                web_sources.extend(await _google_web_search(body.question, max_results=5))
+            except Exception as e:
+                logger.warning(f"Google voice web search failed: {e}")
+        if settings.has_tavily_key:
+            try:
+                web_sources.extend(await _tavily_web_search(body.question, max_results=5))
+            except Exception as e:
+                logger.warning(f"Tavily voice web search failed: {e}")
+
+        # De-duplicate web results by URL/title
+        deduped: list[dict] = []
+        seen: set[str] = set()
+        for s in web_sources:
+            key = (s.get("url") or s.get("documentName") or s.get("id") or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(s)
+        web_sources = deduped
+
+    sources = _select_final_sources(kb_sources, web_sources, max_kb=3, max_web=3)
     doc_inventory = await _list_user_documents(current_user.id, db)
 
     system_prompt = (
         "You are KnowledgeForge Voice Assistant. Answer the user's question clearly "
-        "using the provided knowledge base context. "
+        "using the provided knowledge base and web context. "
         "Your response will be read aloud by text-to-speech, so avoid markdown, "
         "bullet points, asterisks, or special symbols. "
         "If asked what files or documents are available, list them by name. "
-        "Always mention which document(s) your answer comes from."
+        "Always mention which source(s) your answer comes from. "
+        "Never refuse current-events questions; if web sources are provided, use them first."
     )
 
     if doc_inventory:
@@ -200,12 +240,30 @@ async def voice_ask(
             "Let them know they can upload files in the Knowledge Base section."
         )
 
-    if sources:
-        context = "\n\n".join(
+    kb_context_sources = [s for s in sources if s.get("sourceType") != "web"]
+    web_context_sources = [s for s in sources if s.get("sourceType") == "web"]
+
+    if kb_context_sources:
+        kb_context = "\n\n".join(
             f"[{s['documentName']} ({s['documentType'].upper()})]:\n{s['chunkText']}"
-            for s in sources
+            for s in kb_context_sources
         )
-        system_prompt += f"\n\nRelevant content from knowledge base:\n{context}\n\nBase your answer on this content."
+        system_prompt += (
+            "\n\nRelevant content from knowledge base:\n"
+            f"{kb_context}\n\n"
+            "Base KB parts of your answer on this content."
+        )
+
+    if web_context_sources:
+        web_context = "\n\n".join(
+            f"[{s['documentName']}] {s.get('url') or ''}\n{s['chunkText']}"
+            for s in web_context_sources
+        )
+        system_prompt += (
+            "\n\nRelevant web search results:\n"
+            f"{web_context}\n\n"
+            "For current or live questions, prioritize these web results."
+        )
 
     messages = [{"role": "user", "content": body.question}]
 
@@ -241,7 +299,7 @@ async def voice_ask(
     if not answer:
         if sources:
             answer = (
-                f"Based on your document {sources[0]['documentName']}, here is what I found: "
+                f"Based on {sources[0]['documentName']}, here is what I found: "
                 f"{sources[0]['chunkText'][:250]}."
             )
         elif doc_inventory:
@@ -249,6 +307,11 @@ async def voice_ask(
             answer = (
                 f"Your knowledge base contains {len(doc_inventory)} document(s): {names}. "
                 "Ask me anything about them."
+            )
+        elif web_sources:
+            answer = (
+                f"From recent web search results, {web_sources[0]['documentName']}: "
+                f"{web_sources[0]['chunkText'][:250]}."
             )
         else:
             answer = (

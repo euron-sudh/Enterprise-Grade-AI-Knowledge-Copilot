@@ -3,16 +3,17 @@ import math
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db
-from app.models.knowledge import Collection, Connector, ConnectorStatus, Document, DocumentChunk
+from app.models.knowledge import Collection, Connector, ConnectorStatus, Document, DocumentChunk, DocumentStatus
 from app.models.user import User
 from app.schemas.chat import PaginatedResponse
 from app.schemas.knowledge import (
@@ -25,8 +26,19 @@ from app.schemas.knowledge import (
     KnowledgeStats,
 )
 from app.services import document_service
+from app.services.vector_store import get_vector_store
+from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
+
+CONNECTOR_SYNC_BATCH_SIZE = 200
+GOOGLE_DRIVE_LIST_PAGE_SIZE = 1000
+GOOGLE_DRIVE_MAX_FILES = 200000
+GMAIL_LIST_PAGE_SIZE = 500
+GMAIL_MAX_MESSAGES = 500
+GITHUB_LIST_PAGE_SIZE = 100
+GITHUB_MAX_REPOS = 200
+GITHUB_MAX_FILES_PER_REPO = 400
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mpeg", ".mpga"}
 WHISPER_SIZE_LIMIT = 25 * 1024 * 1024   # 25 MB — OpenAI Whisper hard limit
@@ -59,6 +71,57 @@ GEMINI_VIDEO_PROMPT = (
 )
 
 router = APIRouter()
+
+SYNC_STALE_MINUTES = 10
+
+
+def _connector_rank(connector: Connector) -> tuple[int, int, datetime, datetime]:
+    status_value = connector.status.value if hasattr(connector.status, "value") else str(connector.status)
+    now = datetime.now(timezone.utc)
+    status_rank = {
+        "syncing": 1 if (
+            (now - (connector.last_sync_at or connector.created_at or now)).total_seconds()
+            > (SYNC_STALE_MINUTES * 60)
+        ) else 3,
+        "connected": 2,
+        "error": 1,
+        "disconnected": 0,
+    }.get(status_value, 0)
+    last_sync = connector.last_sync_at or datetime.min.replace(tzinfo=timezone.utc)
+    created = connector.created_at or datetime.min.replace(tzinfo=timezone.utc)
+    return (status_rank, connector.document_count or 0, last_sync, created)
+
+
+def _is_stale_sync(connector: Connector) -> bool:
+    status_value = connector.status.value if hasattr(connector.status, "value") else str(connector.status)
+    if status_value != "syncing":
+        return False
+    last_sync = connector.last_sync_at or connector.created_at
+    if not last_sync:
+        return True
+    return (datetime.now(timezone.utc) - last_sync).total_seconds() > (SYNC_STALE_MINUTES * 60)
+
+
+def _pick_primary_connector(connectors: List[Connector]) -> Connector:
+    return max(connectors, key=_connector_rank)
+
+
+async def _get_primary_connector_for_type(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    connector_type: str,
+) -> tuple[Optional[Connector], List[Connector]]:
+    result = await db.execute(
+        select(Connector)
+        .where(Connector.user_id == user_id, Connector.type == connector_type)
+        .order_by(Connector.created_at.desc())
+    )
+    connectors = list(result.scalars().all())
+    if not connectors:
+        return None, []
+    primary = _pick_primary_connector(connectors)
+    duplicates = [connector for connector in connectors if connector.id != primary.id]
+    return primary, duplicates
 
 
 # ── Documents ─────────────────────────────────────────────────────────────────
@@ -104,17 +167,32 @@ async def list_documents(
     search: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     documentType: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Document)
+    q = select(Document).where(Document.user_id == current_user.id)
 
     if search:
-        q = q.where(Document.name.ilike(f"%{search}%"))
+        q = q.where(or_(Document.name.ilike(f"%{search}%"), Document.original_name.ilike(f"%{search}%")))
     if status:
         q = q.where(Document.status == status)
     if documentType:
         q = q.where(Document.file_type == documentType)
+    if source:
+        # source="connector" returns only connector-synced docs; source="upload" returns manual uploads
+        CONNECTOR_TYPES = {
+            "google_drive", "gmail", "github", "gitlab", "confluence", "notion",
+            "slack", "jira", "salesforce", "hubspot", "zendesk", "intercom",
+            "sharepoint", "onedrive", "dropbox", "web", "web_crawler",
+        }
+        if source == "connector":
+            q = q.where(Document.file_type.in_(CONNECTOR_TYPES))
+        elif source == "upload":
+            q = q.where(Document.file_type.notin_(CONNECTOR_TYPES))
+        else:
+            # filter by specific connector type e.g. source=google_drive
+            q = q.where(Document.file_type == source)
 
     q = q.order_by(Document.created_at.desc())
 
@@ -420,12 +498,51 @@ async def upload_video(
 
         # ── PRIMARY: Gemini 2.0 Flash multimodal embedding ────────────────────
         elif settings.has_google_key:
-            transcript_text = await _gemini_video_analyze(
-                file_path=file_path,
-                suffix=suffix,
-                original_name=original_name,
-            )
-            engine = f"Gemini {GEMINI_VIDEO_MODEL}"
+            try:
+                transcript_text = await _gemini_video_analyze(
+                    file_path=file_path,
+                    suffix=suffix,
+                    original_name=original_name,
+                )
+                engine = f"Gemini {GEMINI_VIDEO_MODEL}"
+            except Exception as gemini_exc:
+                logger.warning(
+                    "Gemini analysis failed for '%s', falling back: %s",
+                    original_name,
+                    gemini_exc,
+                )
+
+                # Fallback 1: OpenAI Whisper (if configured)
+                if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
+                    from openai import OpenAI as SyncOpenAI
+                    client = SyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+                    if file_size > WHISPER_SIZE_LIMIT:
+                        logger.warning(
+                            "Video '%s' is %d MB, exceeds Whisper 25 MB limit — truncating to first 25 MB for transcription",
+                            original_name, file_size // (1024 * 1024),
+                        )
+                        audio_tmp_path = upload_dir / f"{file_path.stem}_truncated{suffix}"
+                        audio_tmp_path.write_bytes(content[:WHISPER_SIZE_LIMIT])
+                    else:
+                        audio_tmp_path = None
+
+                    whisper_input = audio_tmp_path if audio_tmp_path else file_path
+                    with open(whisper_input, "rb") as af:
+                        result = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=af,
+                            response_format="text",
+                        )
+                    transcript_text = str(result).strip() or f"[No speech detected in '{original_name}']"
+                    engine = f"OpenAI Whisper fallback (Gemini failed)"
+                else:
+                    # Fallback 2: metadata-only chunk so upload still succeeds.
+                    transcript_text = (
+                        f"[Video file '{original_name}' stored. Gemini analysis failed and no OpenAI key is configured. "
+                        f"Reason: {type(gemini_exc).__name__}]"
+                    )
+                    engine = "metadata-only fallback"
         else:
             # ── FALLBACK: OpenAI Whisper (audio-only) ─────────────────────────
             from openai import OpenAI as SyncOpenAI
@@ -482,7 +599,7 @@ async def upload_video(
             os.remove(str(file_path))
         except Exception:
             pass
-        raise HTTPException(status_code=500, detail=f"Video processing failed: {exc}")
+        raise HTTPException(status_code=500, detail="Video processing failed. Please retry or reconnect AI providers.")
     finally:
         if audio_tmp_path and audio_tmp_path.exists():
             try:
@@ -502,57 +619,130 @@ async def _gemini_video_analyze(file_path: Path, suffix: str, original_name: str
     Returns the combined analysis text ready for chunking and RAG indexing.
     """
     import asyncio
+    import httpx
     import time
 
-    def _run_sync() -> str:
-        import google.generativeai as genai  # type: ignore
+    api_key = (settings.GOOGLE_API_KEY or "").strip()
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY is not configured")
 
-        genai.configure(api_key=settings.GOOGLE_API_KEY)
+    mime = GEMINI_VIDEO_MIME.get(suffix, "video/mp4")
+    file_name: Optional[str] = None
 
-        mime = GEMINI_VIDEO_MIME.get(suffix, "video/mp4")
+    async with httpx.AsyncClient(timeout=120) as client:
+        # Start resumable upload session (avoids SDK discovery call).
+        start_resp = await client.post(
+            f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={api_key}",
+            headers={
+                "X-Goog-Upload-Protocol": "resumable",
+                "X-Goog-Upload-Command": "start",
+                "X-Goog-Upload-Header-Content-Length": str(file_path.stat().st_size),
+                "X-Goog-Upload-Header-Content-Type": mime,
+                "Content-Type": "application/json",
+            },
+            json={"file": {"display_name": original_name}},
+        )
+        if start_resp.status_code >= 300:
+            raise RuntimeError(
+                f"Gemini upload init failed ({start_resp.status_code}): {start_resp.text[:250]}"
+            )
+
+        upload_url = start_resp.headers.get("X-Goog-Upload-URL")
+        if not upload_url:
+            raise RuntimeError("Gemini upload init failed: missing upload URL")
+
         logger.info("Uploading '%s' to Gemini Files API (mime=%s)…", original_name, mime)
+        upload_bytes = file_path.read_bytes()
+        upload_resp = await client.post(
+            upload_url,
+            headers={
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+                "Content-Type": mime,
+            },
+            content=upload_bytes,
+        )
+        if upload_resp.status_code >= 300:
+            raise RuntimeError(
+                f"Gemini upload finalize failed ({upload_resp.status_code}): {upload_resp.text[:250]}"
+            )
 
-        uploaded = genai.upload_file(path=str(file_path), mime_type=mime)
+        upload_payload = upload_resp.json()
+        file_obj = upload_payload.get("file") or {}
+        file_name = file_obj.get("name")
+        file_uri = file_obj.get("uri")
+        if not file_name or not file_uri:
+            raise RuntimeError("Gemini upload response missing file name/uri")
 
-        # Poll until processing is complete (Gemini processes server-side)
-        deadline = time.time() + 600  # 10-minute timeout
-        while uploaded.state.name == "PROCESSING":
+        # Poll until the file is active.
+        deadline = time.time() + 600
+        state = str(file_obj.get("state") or "").upper()
+        while state in {"", "PROCESSING"}:
             if time.time() > deadline:
                 raise TimeoutError("Gemini file processing timed out after 10 minutes")
-            time.sleep(5)
-            uploaded = genai.get_file(uploaded.name)
+            await asyncio.sleep(5)
+            poll_resp = await client.get(
+                f"https://generativelanguage.googleapis.com/v1beta/{file_name}?key={api_key}"
+            )
+            if poll_resp.status_code >= 300:
+                raise RuntimeError(
+                    f"Gemini file poll failed ({poll_resp.status_code}): {poll_resp.text[:250]}"
+                )
+            file_obj = (poll_resp.json() or {}).get("file") or (poll_resp.json() or {})
+            file_uri = file_obj.get("uri") or file_uri
+            state = str(file_obj.get("state") or "").upper()
 
-        if uploaded.state.name == "FAILED":
+        if state == "FAILED":
             raise RuntimeError(f"Gemini file processing failed for '{original_name}'")
 
-        logger.info("Gemini file ready: %s — running %s analysis…", uploaded.name, GEMINI_VIDEO_MODEL)
-
-        model = genai.GenerativeModel(GEMINI_VIDEO_MODEL)
-        response = model.generate_content(
-            [uploaded, GEMINI_VIDEO_PROMPT],
-            generation_config=genai.GenerationConfig(
-                temperature=0.2,
-                max_output_tokens=8192,
-            ),
+        logger.info("Gemini file ready: %s — running %s analysis…", file_name, GEMINI_VIDEO_MODEL)
+        gen_resp = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_VIDEO_MODEL}:generateContent?key={api_key}",
+            json={
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": GEMINI_VIDEO_PROMPT},
+                            {"file_data": {"mime_type": mime, "file_uri": file_uri}},
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 8192,
+                },
+            },
         )
+        if gen_resp.status_code >= 300:
+            raise RuntimeError(
+                f"Gemini generate failed ({gen_resp.status_code}): {gen_resp.text[:250]}"
+            )
 
-        # Clean up remote file to avoid storage accumulation
-        try:
-            genai.delete_file(uploaded.name)
-        except Exception:
-            pass
+        gen_payload = gen_resp.json() or {}
+        analysis_parts: List[str] = []
+        for cand in gen_payload.get("candidates", []) or []:
+            content = cand.get("content") or {}
+            for part in content.get("parts", []) or []:
+                txt = (part.get("text") or "").strip()
+                if txt:
+                    analysis_parts.append(txt)
 
-        analysis = response.text.strip()
+        analysis = "\n\n".join(analysis_parts).strip()
         if not analysis:
             analysis = f"[No content extracted from '{original_name}' via Gemini 2.0]"
 
-        logger.info(
-            "Gemini 2.0 analysis for '%s': %d chars", original_name, len(analysis)
-        )
-        return analysis
+        logger.info("Gemini 2.0 analysis for '%s': %d chars", original_name, len(analysis))
 
-    # Run the blocking SDK calls in a thread pool so we don't block the event loop
-    return await asyncio.get_event_loop().run_in_executor(None, _run_sync)
+        # Best-effort cleanup of uploaded Gemini file.
+        if file_name:
+            try:
+                await client.delete(
+                    f"https://generativelanguage.googleapis.com/v1beta/{file_name}?key={api_key}"
+                )
+            except Exception:
+                pass
+
+        return analysis
 
 
 # ── Collections ───────────────────────────────────────────────────────────────
@@ -615,6 +805,130 @@ async def create_collection(
 
 # ── Connectors ────────────────────────────────────────────────────────────────
 
+async def _run_connector_sync(connector_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Background task: open a fresh DB session and run the real connector sync."""
+    from datetime import datetime, timezone
+    from app.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(
+                select(Connector).where(Connector.id == connector_id, Connector.user_id == user_id)
+            )
+            connector = result.scalar_one_or_none()
+            if not connector:
+                return
+
+            connector.status = ConnectorStatus.syncing
+            connector.last_sync_at = datetime.now(timezone.utc)
+            cfg = dict(connector.config or {})
+            cfg["sync_started_at"] = connector.last_sync_at.isoformat()
+            cfg.pop("last_error", None)
+            connector.config = cfg
+            await db.flush()
+
+            doc_count = 0
+
+            if connector.type == "github":
+                chunks = await _sync_github(connector, user_id, db)
+                # Count actual documents created for this connector
+                doc_result = await db.execute(
+                    select(func.count(Document.id)).where(
+                        Document.user_id == user_id,
+                        Document.file_type == "github",
+                        Document.status == DocumentStatus.indexed,
+                    )
+                )
+                doc_count = doc_result.scalar() or chunks
+
+            elif connector.type == "figma":
+                await _sync_figma(connector, user_id, db)
+                doc_result = await db.execute(
+                    select(func.count(Document.id)).where(
+                        Document.user_id == user_id,
+                        Document.file_type == "figma",
+                        Document.status == DocumentStatus.indexed,
+                    )
+                )
+                doc_count = doc_result.scalar() or 0
+
+            elif connector.type == "google_drive":
+                await _sync_google_drive(connector, user_id, db)
+                doc_result = await db.execute(
+                    select(func.count(Document.id)).where(
+                        Document.user_id == user_id,
+                        Document.file_type == "google_drive",
+                        Document.status == DocumentStatus.indexed,
+                    )
+                )
+                doc_count = doc_result.scalar() or 0
+
+            elif connector.type == "web_crawler":
+                await _sync_web_crawler(connector, user_id, db)
+                doc_result = await db.execute(
+                    select(func.count(Document.id)).where(
+                        Document.user_id == user_id,
+                        Document.file_type == "web",
+                        Document.status == DocumentStatus.indexed,
+                    )
+                )
+                doc_count = doc_result.scalar() or 0
+
+            elif connector.type == "gmail":
+                await _sync_gmail(connector, user_id, db)
+                doc_result = await db.execute(
+                    select(func.count(Document.id)).where(
+                        Document.user_id == user_id,
+                        Document.file_type == "gmail",
+                        Document.status == DocumentStatus.indexed,
+                    )
+                )
+                doc_count = doc_result.scalar() or 0
+
+            else:
+                # Unimplemented connector type — mark as error so user knows it's not synced
+                connector.status = ConnectorStatus.error
+                connector.last_sync_at = datetime.now(timezone.utc)
+                await db.commit()
+                return
+
+            connector.status = ConnectorStatus.connected
+            connector.document_count = doc_count
+            connector.last_sync_at = datetime.now(timezone.utc)
+            cfg = dict(connector.config or {})
+            cfg.pop("last_error", None)
+            connector.config = cfg
+            await db.commit()
+            logger.info("Connector %s (%s) sync complete: %d docs", connector_id, connector.type, doc_count)
+
+        except Exception as exc:
+            logger.exception("Background sync failed for connector %s: %s", connector_id, exc)
+            try:
+                result = await db.execute(select(Connector).where(Connector.id == connector_id))
+                connector = result.scalar_one_or_none()
+                if connector:
+                    connector.status = ConnectorStatus.error
+                    connector.last_sync_at = datetime.now(timezone.utc)
+                    cfg = dict(connector.config or {})
+                    cfg["last_error"] = str(exc)[:500]
+                    connector.config = cfg
+                    # Still update document_count from whatever was already indexed
+                    try:
+                        count_result = await db.execute(
+                            select(func.count(Document.id)).where(
+                                Document.user_id == user_id,
+                                Document.file_type == connector.type,
+                                Document.status == DocumentStatus.indexed,
+                            )
+                        )
+                        connector.document_count = count_result.scalar() or 0
+                    except Exception:
+                        pass
+                    await db.commit()
+            except Exception:
+                pass
+
+
 @router.get("/connectors")
 async def list_connectors(
     current_user: User = Depends(get_current_user),
@@ -625,75 +939,98 @@ async def list_connectors(
         .where(Connector.user_id == current_user.id)
         .order_by(Connector.created_at.desc())
     )
-    connectors = result.scalars().all()
-    return [ConnectorOut.from_orm(c) for c in connectors]
+    connectors = list(result.scalars().all())
+
+    # Self-heal stale syncing rows so connector cards do not stay stuck forever.
+    updated = False
+    now = datetime.now(timezone.utc)
+    for connector in connectors:
+        if _is_stale_sync(connector):
+            connector.status = ConnectorStatus.error
+            connector.last_sync_at = now
+            cfg = dict(connector.config or {})
+            cfg["last_error"] = "Sync timed out before completion. Please reconnect and sync again."
+            connector.config = cfg
+            updated = True
+
+    if updated:
+        await db.flush()
+        await db.commit()
+
+    deduped: Dict[str, Connector] = {}
+    for connector in connectors:
+        existing = deduped.get(connector.type)
+        if existing is None or _connector_rank(connector) > _connector_rank(existing):
+            deduped[connector.type] = connector
+
+    ordered = sorted(deduped.values(), key=lambda connector: connector.created_at, reverse=True)
+    return [ConnectorOut.from_orm(c) for c in ordered]
 
 
 @router.post("/connectors", response_model=ConnectorOut, status_code=status.HTTP_201_CREATED)
 async def create_connector(
     body: CreateConnectorRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    connector = Connector(
-        user_id=current_user.id,
-        type=body.type,
-        name=body.name,
-        config=body.config or {},
-        status=ConnectorStatus.connected,
-    )
-    db.add(connector)
+    # Upsert: if a connector of this type already exists for the user, reuse it
+    connector, duplicates = await _get_primary_connector_for_type(db, current_user.id, body.type)
+
+    if connector:
+        connector.config = body.config or {}
+        connector.status = ConnectorStatus.syncing
+        connector.last_sync_at = datetime.now(timezone.utc)
+    else:
+        connector = Connector(
+            user_id=current_user.id,
+            type=body.type,
+            name=body.name,
+            config=body.config or {},
+            status=ConnectorStatus.syncing,
+            last_sync_at=datetime.now(timezone.utc),
+        )
+        db.add(connector)
+
+    for duplicate in duplicates:
+        await db.delete(duplicate)
+
     await db.flush()
-    return ConnectorOut.from_orm(connector)
+    connector_id = connector.id
+    out = ConnectorOut.from_orm(connector)
+    await db.commit()
+
+    # Trigger the real sync in the background so the response returns immediately
+    background_tasks.add_task(_run_connector_sync, connector_id, current_user.id)
+    return out
 
 
 @router.post("/connectors/{connector_id}/sync")
 async def sync_connector(
     connector_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from datetime import datetime, timezone
+    """Trigger a re-sync for an existing connector. Returns immediately; sync runs in background."""
     connector = await _get_user_connector(connector_id, current_user.id, db)
+
+    # Only supported connector types can actually sync
+    SYNCABLE = {"github", "google_drive", "gmail", "figma", "web_crawler"}
+    if connector.type not in SYNCABLE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Connector type '{connector.type}' does not support automatic sync yet. "
+                   "Please configure credentials and try again.",
+        )
+
     connector.status = ConnectorStatus.syncing
     connector.last_sync_at = datetime.now(timezone.utc)
     await db.flush()
+    await db.commit()
 
-    try:
-        if connector.type == "figma":
-            chunks_created = await _sync_figma(connector, current_user.id, db)
-            connector.status = ConnectorStatus.connected
-            await db.flush()
-            return {"message": f"Figma sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
-
-        if connector.type == "github":
-            chunks_created = await _sync_github(connector, current_user.id, db)
-            connector.status = ConnectorStatus.connected
-            await db.flush()
-            return {"message": f"GitHub sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
-
-        if connector.type == "google_drive":
-            chunks_created = await _sync_google_drive(connector, current_user.id, db)
-            connector.status = ConnectorStatus.connected
-            await db.flush()
-            return {"message": f"Google Drive sync complete: {chunks_created} chunks indexed", "connectorId": str(connector_id)}
-
-        if connector.type == "web_crawler":
-            chunks_created = await _sync_web_crawler(connector, current_user.id, db)
-            connector.status = ConnectorStatus.connected
-            connector.document_count = chunks_created
-            await db.flush()
-            return {"message": f"Web crawl complete: {chunks_created} pages indexed", "connectorId": str(connector_id)}
-
-        # Generic / unimplemented connector types — mark connected without real sync
-        connector.status = ConnectorStatus.connected
-        await db.flush()
-        return {"message": "Sync initiated", "connectorId": str(connector_id)}
-    except Exception as exc:
-        logger.exception("Connector sync failed: %s", exc)
-        connector.status = ConnectorStatus.error
-        await db.flush()
-        raise HTTPException(status_code=500, detail=str(exc))
+    background_tasks.add_task(_run_connector_sync, connector_id, current_user.id)
+    return {"message": "Sync started in background", "connectorId": str(connector_id)}
 
 
 async def _sync_figma(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
@@ -759,7 +1096,7 @@ async def _sync_figma(connector: "Connector", user_id: uuid.UUID, db: AsyncSessi
         file_path=f"figma://{file_key}",
         file_type="figma",
         file_size=len("\n".join(chunks_text)),
-        status="ready",
+        status=DocumentStatus.indexed,
         word_count=sum(len(t.split()) for t in chunks_text),
     )
     db.add(doc)
@@ -810,28 +1147,48 @@ def _extract_figma_text(node: Dict[str, Any], out: List[str], path: str, depth: 
 
 async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
     """
-    Fetch text files from a GitHub repository and store as DocumentChunks for RAG.
-    Requires a Personal Access Token and a repository URL in the connector config.
+    Fetch text files from GitHub and store as DocumentChunks for RAG.
+    If connector config contains repoUrl, sync that repository.
+    Otherwise sync all accessible repositories for the authenticated user.
     """
     import base64
-    import re
     import httpx
+    import re
 
     cfg: Dict[str, Any] = connector.config or {}
-    token: str = cfg.get("accessToken", "")
-    repo_url: str = cfg.get("repoUrl", "")
-    branch: str = cfg.get("branch", "") or "main"
+
+    # Accept both camelCase and snake_case keys so older/newer UI payloads work.
+    token: str = (
+        cfg.get("accessToken")
+        or cfg.get("access_token")
+        or cfg.get("token")
+        or cfg.get("pat")
+        or ""
+    ).strip()
+
+    # Sanitize doubled prefix (e.g. "ghp_ghp_..." → "ghp_...")
+    for prefix in ("ghp_", "github_pat_", "gho_"):
+        if token.startswith(prefix + prefix):
+            token = token[len(prefix):]
+    repo_url: str = (
+        cfg.get("repoUrl")
+        or cfg.get("repo_url")
+        or ""
+    ).strip()
+    configured_branch: str = (
+        cfg.get("branch")
+        or cfg.get("default_branch")
+        or ""
+    ).strip()
+    org_or_user: str = (
+        cfg.get("org_or_user")
+        or cfg.get("orgOrUser")
+        or ""
+    ).strip()
+    repos_raw = cfg.get("repos")
 
     if not token:
         raise ValueError("GitHub Personal Access Token is required")
-    if not repo_url:
-        raise ValueError("GitHub repository URL is required")
-
-    m = re.search(r"github\.com/([^/\s]+)/([^/\s?#]+)", repo_url)
-    if not m:
-        raise ValueError(f"Cannot extract owner/repo from URL: {repo_url}")
-    owner = m.group(1)
-    repo = m.group(2).rstrip(".git")
 
     headers = {
         "Authorization": f"token {token}",
@@ -844,212 +1201,548 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
         ".rb", ".php", ".sh", ".sql", ".toml", ".ini", ".env.example",
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        # Verify token & get default branch if not specified
-        repo_resp = await client.get(
-            f"https://api.github.com/repos/{owner}/{repo}",
-            headers=headers,
-        )
-        if repo_resp.status_code == 401:
-            raise ValueError("Invalid GitHub token or insufficient permissions")
-        if repo_resp.status_code == 404:
-            raise ValueError(f"Repository not found: {owner}/{repo}")
-        if repo_resp.status_code != 200:
-            raise ValueError(f"GitHub API error {repo_resp.status_code}: {repo_resp.text[:200]}")
+    def _extract_owner_repo(url: str) -> Optional[tuple[str, str]]:
+        m = re.search(r"github\.com/([^/\s]+)/([^/\s?#]+)", url)
+        if not m:
+            return None
+        return m.group(1), re.sub(r"\.git$", "", m.group(2))
 
-        repo_data = repo_resp.json()
-        if not branch or branch == "main":
-            branch = repo_data.get("default_branch", "main")
+    def _is_text_file(path: str, size: int) -> bool:
+        path_lower = path.lower()
+        return size < 200_000 and any(path_lower.endswith(ext) for ext in TEXT_EXTENSIONS)
 
-        # Get full file tree
-        tree_resp = await client.get(
-            f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1",
-            headers=headers,
-        )
-        if tree_resp.status_code != 200:
-            raise ValueError(f"Could not fetch repository tree: {tree_resp.text[:200]}")
+    total_chunks = 0
+    vector_store = get_vector_store()
+    vector_batch: List[Dict[str, Any]] = []
 
-        tree_data = tree_resp.json()
-        all_files = [
-            f for f in tree_data.get("tree", [])
-            if f.get("type") == "blob"
-            and any(f["path"].lower().endswith(ext) for ext in TEXT_EXTENSIONS)
-            and f.get("size", 0) < 200_000  # skip files > 200 KB
-        ]
+    async with httpx.AsyncClient(timeout=60) as client:
+        repos_to_sync: List[tuple[str, str]] = []
 
-        # Limit to first 100 files to avoid rate limits
-        selected_files = all_files[:100]
+        if repo_url:
+            parsed = _extract_owner_repo(repo_url)
+            if not parsed:
+                raise ValueError(f"Cannot extract owner/repo from URL: {repo_url}")
+            repos_to_sync.append(parsed)
+        elif org_or_user and repos_raw:
+            if isinstance(repos_raw, str):
+                repo_names = [r.strip() for r in repos_raw.split(",") if r.strip()]
+            elif isinstance(repos_raw, list):
+                repo_names = [str(r).strip() for r in repos_raw if str(r).strip()]
+            else:
+                repo_names = []
 
-        chunks_text: List[str] = []
-        for file in selected_files:
-            try:
-                content_resp = await client.get(
-                    f"https://api.github.com/repos/{owner}/{repo}/contents/{file['path']}",
-                    headers={**headers, "ref": branch},
+            for repo_name in repo_names:
+                repos_to_sync.append((org_or_user, repo_name))
+        elif org_or_user:
+            # Sync repositories for the explicitly requested owner/user.
+            # Try token-scoped /user/repos first to include private repos.
+            page = 1
+            while len(repos_to_sync) < GITHUB_MAX_REPOS:
+                repos_resp = await client.get(
+                    "https://api.github.com/user/repos",
+                    headers=headers,
+                    params={
+                        "per_page": str(GITHUB_LIST_PAGE_SIZE),
+                        "page": str(page),
+                        "sort": "updated",
+                        "affiliation": "owner,collaborator,organization_member",
+                    },
                 )
-                if content_resp.status_code != 200:
-                    continue
-                content_data = content_resp.json()
-                raw = base64.b64decode(content_data.get("content", "")).decode("utf-8", errors="replace")
-                # Trim very long files
-                if len(raw) > 4000:
-                    raw = raw[:4000] + "\n... [truncated]"
-                if raw.strip():
-                    chunks_text.append(f"[{file['path']}]\n{raw.strip()}")
-            except Exception:
+                if repos_resp.status_code == 401:
+                    raise ValueError("Invalid GitHub token or insufficient permissions")
+                if repos_resp.status_code != 200:
+                    break
+
+                repo_items = repos_resp.json()
+                if not repo_items:
+                    break
+
+                for item in repo_items:
+                    owner_info = item.get("owner") or {}
+                    owner = (owner_info.get("login") or "").strip()
+                    repo = item.get("name")
+                    if owner.lower() == org_or_user.lower() and owner and repo:
+                        repos_to_sync.append((owner, repo))
+                    if len(repos_to_sync) >= GITHUB_MAX_REPOS:
+                        break
+
+                if len(repo_items) < GITHUB_LIST_PAGE_SIZE:
+                    break
+                page += 1
+
+            # Fallback to public listings if user-scoped listing produced no results.
+            if not repos_to_sync:
+                for endpoint in (
+                    f"https://api.github.com/orgs/{org_or_user}/repos",
+                    f"https://api.github.com/users/{org_or_user}/repos",
+                ):
+                    page = 1
+                    while len(repos_to_sync) < GITHUB_MAX_REPOS:
+                        repos_resp = await client.get(
+                            endpoint,
+                            headers=headers,
+                            params={
+                                "per_page": str(GITHUB_LIST_PAGE_SIZE),
+                                "page": str(page),
+                                "sort": "updated",
+                            },
+                        )
+                        if repos_resp.status_code == 401:
+                            raise ValueError("Invalid GitHub token or insufficient permissions")
+                        if repos_resp.status_code == 404:
+                            break
+                        if repos_resp.status_code != 200:
+                            break
+
+                        repo_items = repos_resp.json()
+                        if not repo_items:
+                            break
+
+                        for item in repo_items:
+                            owner_info = item.get("owner") or {}
+                            owner = owner_info.get("login")
+                            repo = item.get("name")
+                            if owner and repo:
+                                repos_to_sync.append((owner, repo))
+                            if len(repos_to_sync) >= GITHUB_MAX_REPOS:
+                                break
+
+                        if len(repo_items) < GITHUB_LIST_PAGE_SIZE:
+                            break
+                        page += 1
+
+                    if repos_to_sync:
+                        break
+        else:
+            # No explicit repo URL: ingest all repositories the token can access.
+            page = 1
+            while len(repos_to_sync) < GITHUB_MAX_REPOS:
+                repos_resp = await client.get(
+                    "https://api.github.com/user/repos",
+                    headers=headers,
+                    params={
+                        "per_page": str(GITHUB_LIST_PAGE_SIZE),
+                        "page": str(page),
+                        "sort": "updated",
+                    },
+                )
+                if repos_resp.status_code == 401:
+                    raise ValueError("Invalid GitHub token or insufficient permissions")
+                if repos_resp.status_code != 200:
+                    raise ValueError(f"GitHub API error {repos_resp.status_code}: {repos_resp.text[:200]}")
+
+                repo_items = repos_resp.json()
+                if not repo_items:
+                    break
+
+                for item in repo_items:
+                    owner_info = item.get("owner") or {}
+                    owner = owner_info.get("login")
+                    repo = item.get("name")
+                    if owner and repo:
+                        repos_to_sync.append((owner, repo))
+                    if len(repos_to_sync) >= GITHUB_MAX_REPOS:
+                        break
+
+                if len(repo_items) < GITHUB_LIST_PAGE_SIZE:
+                    break
+                page += 1
+
+        if not repos_to_sync:
+            raise ValueError("No GitHub repositories found for this token")
+
+        seen_repo_keys: set[tuple[str, str]] = set()
+        deduped_repos: List[tuple[str, str]] = []
+        for owner, repo in repos_to_sync:
+            key = (owner.lower(), repo.lower())
+            if key in seen_repo_keys:
+                continue
+            seen_repo_keys.add(key)
+            deduped_repos.append((owner, repo))
+        repos_to_sync = deduped_repos
+
+        for owner, repo in repos_to_sync:
+            repo_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}",
+                headers=headers,
+            )
+            if repo_resp.status_code in (403, 404):
+                # Skip inaccessible or deleted repos and continue.
+                continue
+            if repo_resp.status_code == 401:
+                raise ValueError("Invalid GitHub token or insufficient permissions")
+            if repo_resp.status_code != 200:
                 continue
 
-    if not chunks_text:
-        chunks_text = [f"GitHub repo '{owner}/{repo}' (branch: {branch}) — no readable text files found."]
+            repo_data = repo_resp.json()
+            repo_branch = configured_branch or repo_data.get("default_branch", "main")
 
-    doc_name = f"[GitHub] {owner}/{repo}"
+            tree_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/git/trees/{repo_branch}?recursive=1",
+                headers=headers,
+            )
+            if tree_resp.status_code != 200:
+                continue
 
-    # Remove previous sync documents for this connector
-    existing = await db.execute(
-        select(Document).where(Document.user_id == user_id, Document.name == doc_name)
+            tree_data = tree_resp.json()
+            all_files = [
+                f for f in tree_data.get("tree", [])
+                if f.get("type") == "blob"
+                and _is_text_file(f.get("path", ""), int(f.get("size", 0) or 0))
+            ]
+            selected_files = all_files[:GITHUB_MAX_FILES_PER_REPO]
+
+            # Delete all existing docs for this repo before re-indexing
+            existing_repo_docs = await db.execute(
+                select(Document.id).where(
+                    Document.user_id == user_id,
+                    Document.file_type == "github",
+                    Document.file_path.like(f"github://{owner}/{repo}/%"),
+                )
+            )
+            old_doc_ids = [row[0] for row in existing_repo_docs.all()]
+            if old_doc_ids:
+                await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id.in_(old_doc_ids)))
+                await db.execute(delete(Document).where(Document.id.in_(old_doc_ids)))
+                await db.flush()
+
+            # Each file becomes its own Document with proper chunking
+            FILE_CHUNK_CHARS = 6000  # ~1000 tokens per chunk
+            repo_doc_count = 0
+
+            for file in selected_files:
+                file_path_str = file.get("path")
+                if not file_path_str:
+                    continue
+                try:
+                    content_resp = await client.get(
+                        f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path_str}",
+                        headers=headers,
+                        params={"ref": repo_branch},
+                    )
+                    if content_resp.status_code != 200:
+                        continue
+                    content_data = content_resp.json()
+                    raw = base64.b64decode(content_data.get("content", "")).decode("utf-8", errors="replace").strip()
+                    if not raw:
+                        continue
+                except Exception:
+                    continue
+
+                doc_name = f"[GitHub] {owner}/{repo}/{file_path_str}"
+                file_doc = Document(
+                    user_id=user_id,
+                    name=doc_name,
+                    original_name=file_path_str,
+                    file_path=f"github://{owner}/{repo}/{file_path_str}",
+                    file_type="github",
+                    file_size=len(raw.encode("utf-8")),
+                    status=DocumentStatus.indexed,
+                    word_count=len(raw.split()),
+                )
+                db.add(file_doc)
+                await db.flush()
+
+                # Split large files into chunks so nothing gets cut off
+                file_chunks = [raw[i: i + FILE_CHUNK_CHARS] for i in range(0, len(raw), FILE_CHUNK_CHARS)]
+                for ci, chunk_text in enumerate(file_chunks):
+                    labeled = f"[{owner}/{repo}:{file_path_str}]\n{chunk_text}"
+                    db.add(DocumentChunk(
+                        document_id=file_doc.id,
+                        content=labeled,
+                        chunk_index=ci,
+                        token_count=len(labeled.split()),
+                    ))
+                    vector_batch.append({
+                        "id": f"{file_doc.id}:{ci}",
+                        "text": labeled,
+                        "metadata": {
+                            "user_id": str(user_id),
+                            "document_id": str(file_doc.id),
+                            "document_name": doc_name,
+                            "document_type": "github",
+                            "chunk_text": labeled[:2000],
+                        },
+                    })
+                    total_chunks += 1
+
+                repo_doc_count += 1
+                if repo_doc_count % CONNECTOR_SYNC_BATCH_SIZE == 0:
+                    await db.flush()
+                    await db.commit()
+                    if vector_store.enabled and vector_batch:
+                        await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
+                    vector_batch = []
+
+    await db.flush()
+    await db.commit()
+    if vector_store.enabled and vector_batch:
+        await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
+    return total_chunks
+
+
+async def _refresh_google_token(connector: "Connector", db: AsyncSession, client) -> str:
+    """Exchange a stored Google refresh_token for a new access_token and persist it."""
+    cfg: Dict[str, Any] = connector.config or {}
+    refresh_token: str = cfg.get("refreshToken") or cfg.get("refresh_token") or ""
+    if not refresh_token:
+        raise ValueError("No refresh token stored — user must reconnect Google account")
+    resp = await client.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
     )
-    for old_doc in existing.scalars().all():
-        await db.delete(old_doc)
+    if resp.status_code != 200:
+        raise ValueError(f"Google token refresh failed ({resp.status_code}): {resp.text[:200]}")
+    new_token: str = resp.json().get("access_token") or ""
+    if not new_token:
+        raise ValueError("Token refresh returned no access_token")
+    connector.config = {**cfg, "accessToken": new_token}
     await db.flush()
-
-    doc = Document(
-        user_id=user_id,
-        name=doc_name,
-        original_name=f"{repo}.github",
-        file_path=f"github://{owner}/{repo}",
-        file_type="github",
-        file_size=sum(len(t) for t in chunks_text),
-        status="ready",
-        word_count=sum(len(t.split()) for t in chunks_text),
-    )
-    db.add(doc)
-    await db.flush()
-
-    for idx, text in enumerate(chunks_text):
-        db.add(DocumentChunk(
-            document_id=doc.id,
-            content=text,
-            chunk_index=idx,
-            token_count=len(text.split()),
-        ))
-
-    await db.flush()
-    return len(chunks_text)
+    await db.commit()
+    return new_token
 
 
 async def _sync_google_drive(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
-    """
-    Fetch documents from a Google Drive folder using an OAuth2 access token.
-    Requires an access token and a folder ID (or 'root') in the connector config.
-    """
+    """Fetch all Google Drive files. Auto-refreshes expired access tokens."""
     import httpx
 
     cfg: Dict[str, Any] = connector.config or {}
-    access_token: str = cfg.get("accessToken", "")
-    folder_id: str = cfg.get("folderId", "root")
+    access_token: str = cfg.get("accessToken") or cfg.get("access_token") or ""
+    folder_id: str = cfg.get("folderId", "all")
+    if folder_id.lower() == "root":
+        folder_id = "all"
 
     if not access_token:
         raise ValueError("Google OAuth access token is required")
 
     headers = {"Authorization": f"Bearer {access_token}"}
+    vector_store = get_vector_store()
 
-    # MIME types that can be exported as plain text
     EXPORT_TYPES: Dict[str, str] = {
         "application/vnd.google-apps.document": "text/plain",
         "application/vnd.google-apps.spreadsheet": "text/csv",
         "application/vnd.google-apps.presentation": "text/plain",
     }
-    # MIME types we can download directly
     DIRECT_TYPES = {"text/plain", "text/markdown", "application/json", "text/csv"}
+    # Binary types we can download and parse locally
+    BINARY_TYPES: Dict[str, str] = {
+        "application/pdf": ".pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+        "application/msword": ".docx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+        "application/vnd.ms-excel": ".xlsx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+        "application/vnd.ms-powerpoint": ".pptx",
+    }
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        # Verify token & list files in the folder
-        list_resp = await client.get(
-            "https://www.googleapis.com/drive/v3/files",
-            headers=headers,
-            params={
-                "q": f"'{folder_id}' in parents and trashed=false",
-                "fields": "files(id,name,mimeType,size)",
-                "pageSize": "50",
-            },
+    # Remove previous sync documents from this folder to keep state deterministic.
+    if folder_id.lower() in {"all", "*"}:
+        existing = await db.execute(
+            select(Document.id).where(
+                Document.user_id == user_id,
+                Document.file_type == "google_drive",
+            )
         )
-        if list_resp.status_code == 401:
-            raise ValueError("Invalid or expired Google access token. Please reconnect.")
-        if list_resp.status_code != 200:
-            raise ValueError(f"Google Drive API error {list_resp.status_code}: {list_resp.text[:200]}")
+    else:
+        existing = await db.execute(
+            select(Document.id).where(
+                Document.user_id == user_id,
+                Document.file_type == "google_drive",
+                or_(
+                    Document.file_path == f"gdrive://{folder_id}",
+                    Document.file_path.like(f"gdrive://{folder_id}/%"),
+                ),
+            )
+        )
+    doc_ids = [row[0] for row in existing.all()]
+    if doc_ids:
+        await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id.in_(doc_ids)))
+        await db.execute(delete(Document).where(Document.id.in_(doc_ids)))
+        await db.flush()
 
-        files_data = list_resp.json().get("files", [])
+    created_count = 0
+    page_token: Optional[str] = None
+    vector_batch: List[Dict[str, Any]] = []
 
-        if not files_data:
-            raise ValueError("No files found in the specified Google Drive folder")
+    async with httpx.AsyncClient(timeout=60) as client:
+        while created_count < GOOGLE_DRIVE_MAX_FILES:
+            # By default, sync everything visible to the user (all file types).
+            # If a folderId is provided (and not "all"), scope to that folder.
+            if folder_id.lower() in {"all", "*"}:
+                drive_query = "trashed=false"
+            else:
+                drive_query = f"'{folder_id}' in parents and trashed=false"
 
-        chunks_text: List[str] = []
-        folder_name = folder_id
+            params: Dict[str, str] = {
+                "q": drive_query,
+                "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink)",
+                "pageSize": str(GOOGLE_DRIVE_LIST_PAGE_SIZE),
+                "includeItemsFromAllDrives": "true",
+                "supportsAllDrives": "true",
+            }
+            if page_token:
+                params["pageToken"] = page_token
 
-        for file in files_data:
-            file_id = file["id"]
-            file_name = file["name"]
-            mime = file.get("mimeType", "")
+            list_resp = await client.get(
+                "https://www.googleapis.com/drive/v3/files",
+                headers=headers,
+                params=params,
+            )
+            if list_resp.status_code == 401:
+                # Token expired — try to refresh automatically
+                access_token = await _refresh_google_token(connector, db, client)
+                headers = {"Authorization": f"Bearer {access_token}"}
+                list_resp = await client.get(
+                    "https://www.googleapis.com/drive/v3/files",
+                    headers=headers,
+                    params=params,
+                )
+                if list_resp.status_code == 401:
+                    raise ValueError("Google Drive token refresh failed — please reconnect.")
+            if list_resp.status_code != 200:
+                raise ValueError(f"Google Drive API error {list_resp.status_code}: {list_resp.text[:200]}")
 
-            try:
-                if mime in EXPORT_TYPES:
-                    export_resp = await client.get(
-                        f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
-                        headers=headers,
-                        params={"mimeType": EXPORT_TYPES[mime]},
+            payload = list_resp.json()
+            files_data = payload.get("files", [])
+            if not files_data:
+                break
+
+            for file in files_data:
+                if created_count >= GOOGLE_DRIVE_MAX_FILES:
+                    break
+
+                file_id = file["id"]
+                file_name = file.get("name") or f"Untitled {file_id}"
+                mime = file.get("mimeType", "")
+                raw_size = int(file.get("size") or 0)
+                web_link = file.get("webViewLink") or ""
+                modified = file.get("modifiedTime") or ""
+                full_text = ""
+                page_count = 0
+                try:
+                    if mime in EXPORT_TYPES:
+                        export_resp = await client.get(
+                            f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
+                            headers=headers,
+                            params={"mimeType": EXPORT_TYPES[mime]},
+                        )
+                        if export_resp.status_code == 200:
+                            full_text = export_resp.text.strip()
+                    elif mime in DIRECT_TYPES:
+                        dl_resp = await client.get(
+                            f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
+                            headers=headers,
+                        )
+                        if dl_resp.status_code == 200:
+                            full_text = dl_resp.text.strip()
+                    elif mime in BINARY_TYPES:
+                        # Download binary, write to temp file, parse with local extractor
+                        import tempfile
+                        from app.services.document_service import extract_text as _extract_text
+                        ext = BINARY_TYPES[mime]
+                        dl_resp = await client.get(
+                            f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
+                            headers=headers,
+                        )
+                        if dl_resp.status_code == 200:
+                            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                                tmp.write(dl_resp.content)
+                                tmp_path = tmp.name
+                            try:
+                                full_text, page_count = _extract_text(tmp_path, ext)
+                            finally:
+                                import os as _os
+                                try:
+                                    _os.unlink(tmp_path)
+                                except Exception:
+                                    pass
+                except Exception as exc:
+                    logger.warning("Google Drive content extraction failed for %s: %s", file_name, exc)
+                    full_text = ""
+
+                if not full_text:
+                    full_text = (
+                        f"Google Drive file '{file_name}' (mime: {mime or 'unknown'}) was indexed. "
+                        f"Full text extraction is not available for this file type. "
+                        f"Last modified: {modified or 'unknown'}. "
+                        f"Link: {web_link or 'n/a'}"
                     )
-                    if export_resp.status_code == 200:
-                        content = export_resp.text[:5000]
-                        if content.strip():
-                            chunks_text.append(f"[{file_name}]\n{content.strip()}")
-                elif mime in DIRECT_TYPES:
-                    dl_resp = await client.get(
-                        f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
-                        headers=headers,
+
+                # Split into chunks of ~1500 words each so long docs get multiple searchable chunks
+                CHUNK_WORDS = 1500
+                words = full_text.split()
+                text_chunks = []
+                for ci in range(0, max(1, len(words)), CHUNK_WORDS):
+                    chunk_text = " ".join(words[ci: ci + CHUNK_WORDS]).strip()
+                    if chunk_text:
+                        text_chunks.append(chunk_text)
+                if not text_chunks:
+                    text_chunks = [full_text[:5000]]
+
+                doc_id = uuid.uuid4()
+                doc = Document(
+                    id=doc_id,
+                    user_id=user_id,
+                    name=f"[Google Drive] {file_name}",
+                    original_name=file_name,
+                    file_path=f"gdrive://{folder_id}/{file_id}",
+                    file_type="google_drive",
+                    file_size=max(raw_size, len(full_text)),
+                    status=DocumentStatus.indexed,
+                    word_count=len(words),
+                    page_count=page_count or None,
+                )
+                db.add(doc)
+
+                for ci, chunk_text in enumerate(text_chunks):
+                    chunk_id = uuid.uuid4()
+                    db.add(
+                        DocumentChunk(
+                            id=chunk_id,
+                            document_id=doc_id,
+                            content=chunk_text,
+                            chunk_index=ci,
+                            token_count=len(chunk_text.split()),
+                        )
                     )
-                    if dl_resp.status_code == 200:
-                        content = dl_resp.text[:5000]
-                        if content.strip():
-                            chunks_text.append(f"[{file_name}]\n{content.strip()}")
-            except Exception:
-                continue
+                    vector_batch.append(
+                        {
+                            "id": f"{doc_id}:{ci}",
+                            "text": chunk_text,
+                            "metadata": {
+                                "user_id": str(user_id),
+                                "document_id": str(doc_id),
+                                "document_name": doc.name,
+                                "document_type": doc.file_type,
+                                "chunk_text": chunk_text[:2000],
+                            },
+                        }
+                    )
 
-    if not chunks_text:
-        chunks_text = [f"Google Drive folder '{folder_id}' — no readable text documents found."]
+                created_count += 1
 
-    doc_name = f"[Google Drive] {folder_name}"
+                if created_count % CONNECTOR_SYNC_BATCH_SIZE == 0:
+                    await db.flush()
+                    await db.commit()
+                    if vector_store.enabled and vector_batch:
+                        await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
+                    vector_batch = []
 
-    # Remove previous sync documents
-    existing = await db.execute(
-        select(Document).where(Document.user_id == user_id, Document.name == doc_name)
-    )
-    for old_doc in existing.scalars().all():
-        await db.delete(old_doc)
-    await db.flush()
-
-    doc = Document(
-        user_id=user_id,
-        name=doc_name,
-        original_name=f"google_drive_{folder_id}.gdrive",
-        file_path=f"gdrive://{folder_id}",
-        file_type="google_drive",
-        file_size=sum(len(t) for t in chunks_text),
-        status="ready",
-        word_count=sum(len(t.split()) for t in chunks_text),
-    )
-    db.add(doc)
-    await db.flush()
-
-    for idx, text in enumerate(chunks_text):
-        db.add(DocumentChunk(
-            document_id=doc.id,
-            content=text,
-            chunk_index=idx,
-            token_count=len(text.split()),
-        ))
+            page_token = payload.get("nextPageToken")
+            if not page_token:
+                break
 
     await db.flush()
-    return len(chunks_text)
+    await db.commit()
+    if vector_store.enabled and vector_batch:
+        await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
+
+    return created_count
 
 
 async def _sync_web_crawler(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
@@ -1329,6 +2022,18 @@ async def delete_connector(
     db: AsyncSession = Depends(get_db),
 ):
     connector = await _get_user_connector(connector_id, current_user.id, db)
+
+    # Delete all documents + chunks synced by this connector
+    connector_type = connector.type
+    synced_docs = await db.execute(
+        select(Document).where(
+            Document.user_id == current_user.id,
+            Document.file_type == connector_type,
+        )
+    )
+    for doc in synced_docs.scalars().all():
+        await db.delete(doc)  # cascades to chunks
+
     await db.delete(connector)
     await db.flush()
 
@@ -1421,40 +2126,95 @@ async def google_oauth_callback(
     refresh_token = token_data.get("refresh_token", "")
 
     # Upsert connector
-    result = await db.execute(
-        select(Connector).where(Connector.user_id == user_id, Connector.type == connector_type)
-    )
-    connector = result.scalar_one_or_none()
+    connector, duplicates = await _get_primary_connector_for_type(db, user_id, connector_type)
     label = "Google Drive" if connector_type == "google_drive" else "Gmail"
     if connector is None:
         connector = Connector(
             user_id=user_id, type=connector_type, name=label,
             status=ConnectorStatus.syncing,
-            config={"accessToken": access_token, "refreshToken": refresh_token, "folderId": "root"},
+            config={"accessToken": access_token, "refreshToken": refresh_token, "folderId": "all"},
         )
         db.add(connector)
     else:
-        connector.config = {**(connector.config or {}), "accessToken": access_token, "refreshToken": refresh_token}
+        connector_config = {**(connector.config or {}), "accessToken": access_token, "refreshToken": refresh_token}
+        if connector_type == "google_drive":
+            connector_config["folderId"] = "all"
+        connector.config = connector_config
         connector.status = ConnectorStatus.syncing
+
+    for duplicate in duplicates:
+        await db.delete(duplicate)
 
     await db.flush()
     await db.refresh(connector)
+    await db.commit()
 
-    # Trigger sync immediately
-    try:
-        if connector_type == "google_drive":
-            chunks = await _sync_google_drive(connector, user_id, db)
-        else:
-            chunks = await _sync_gmail(connector, user_id, db)
-        connector.status = ConnectorStatus.connected
-        connector.document_count = chunks
-    except Exception as exc:
-        logger.warning("Post-OAuth sync failed: %s", exc)
-        connector.status = ConnectorStatus.connected
+    # Kick off sync in background so OAuth callback returns immediately.
+    import asyncio
+    asyncio.create_task(_run_connector_sync_job(connector.id, user_id, connector_type))
 
-    await db.flush()
     frontend_url = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
     return RedirectResponse(f"{frontend_url}/knowledge-base?connected={connector_type}")
+
+
+async def _run_connector_sync_job(
+    connector_id: uuid.UUID,
+    user_id: uuid.UUID,
+    connector_type: str,
+) -> None:
+    """Run connector sync in a detached background session.
+
+    This avoids long-running OAuth callback requests timing out.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(
+                select(Connector).where(Connector.id == connector_id, Connector.user_id == user_id)
+            )
+            connector = result.scalar_one_or_none()
+            if connector is None:
+                return
+
+            connector.status = ConnectorStatus.syncing
+            connector.last_sync_at = datetime.now(timezone.utc)
+            cfg = dict(connector.config or {})
+            cfg["sync_started_at"] = connector.last_sync_at.isoformat()
+            cfg.pop("last_error", None)
+            connector.config = cfg
+            await session.flush()
+            await session.commit()
+
+            if connector_type == "google_drive":
+                chunks = await _sync_google_drive(connector, user_id, session)
+            else:
+                chunks = await _sync_gmail(connector, user_id, session)
+
+            connector.document_count = chunks
+            connector.status = ConnectorStatus.connected
+            connector.last_sync_at = datetime.now(timezone.utc)
+            cfg = dict(connector.config or {})
+            cfg.pop("last_error", None)
+            connector.config = cfg
+            await session.flush()
+            await session.commit()
+        except Exception as exc:
+            logger.warning("Background connector sync failed (%s): %s", connector_type, exc)
+            await session.rollback()
+            try:
+                result = await session.execute(
+                    select(Connector).where(Connector.id == connector_id, Connector.user_id == user_id)
+                )
+                connector = result.scalar_one_or_none()
+                if connector is not None:
+                    connector.status = ConnectorStatus.error
+                    connector.last_sync_at = datetime.now(timezone.utc)
+                    cfg = dict(connector.config or {})
+                    cfg["last_error"] = str(exc)[:500]
+                    connector.config = cfg
+                    await session.flush()
+                    await session.commit()
+            except Exception:
+                await session.rollback()
 
 
 async def _sync_gmail(connector: "Connector", user_id: uuid.UUID, db: AsyncSession) -> int:
@@ -1464,68 +2224,185 @@ async def _sync_gmail(connector: "Connector", user_id: uuid.UUID, db: AsyncSessi
     cfg: Dict[str, Any] = connector.config or {}
     access_token: str = cfg.get("accessToken", "")
     if not access_token:
+        access_token = cfg.get("access_token", "")
+    if not access_token:
         raise ValueError("Gmail OAuth access token is required")
 
     headers = {"Authorization": f"Bearer {access_token}"}
+    vector_store = get_vector_store()
+
+    created_count = 0
+    page_token: Optional[str] = None
+    vector_batch: List[Dict[str, Any]] = []
+    docs_cleared = False  # Only clear old docs once we confirm the token is valid
+
     async with httpx.AsyncClient(timeout=30) as client:
-        list_resp = await client.get(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-            headers=headers,
-            params={"maxResults": "20", "labelIds": "INBOX"},
-        )
-        if list_resp.status_code == 401:
-            raise ValueError("Invalid or expired Gmail token. Please reconnect.")
-        if list_resp.status_code != 200:
-            raise ValueError(f"Gmail API error {list_resp.status_code}")
-
-        messages = list_resp.json().get("messages", [])
-        if not messages:
-            return 0
-
-        chunks_text: List[str] = []
-        for msg in messages[:20]:
-            msg_resp = await client.get(
-                f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg['id']}",
+        while created_count < GMAIL_MAX_MESSAGES:
+            list_resp = await client.get(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages",
                 headers=headers,
-                params={"format": "metadata", "metadataHeaders": ["Subject", "From", "Date"]},
+                params={
+                    "maxResults": str(GMAIL_LIST_PAGE_SIZE),
+                    "includeSpamTrash": "true",
+                    **({"pageToken": page_token} if page_token else {}),
+                },
             )
-            if msg_resp.status_code != 200:
-                continue
-            data = msg_resp.json()
-            hdrs = {h["name"]: h["value"] for h in data.get("payload", {}).get("headers", [])}
-            snippet = data.get("snippet", "")
-            if snippet:
-                chunks_text.append(
-                    f"[Email] Subject: {hdrs.get('Subject', '(no subject)')} | "
-                    f"From: {hdrs.get('From', '')} | {snippet}"
+            if list_resp.status_code == 401:
+                # Token expired — try to refresh automatically
+                access_token = await _refresh_google_token(connector, db, client)
+                headers = {"Authorization": f"Bearer {access_token}"}
+                list_resp = await client.get(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                    headers=headers,
+                    params={
+                        "maxResults": str(GMAIL_LIST_PAGE_SIZE),
+                        "includeSpamTrash": "true",
+                        **({"pageToken": page_token} if page_token else {}),
+                    },
+                )
+                if list_resp.status_code == 401:
+                    raise ValueError("Gmail token refresh failed — please reconnect via OAuth.")
+            if list_resp.status_code != 200:
+                raise ValueError(f"Gmail API error {list_resp.status_code}")
+
+            # Token confirmed valid — safe to clear old docs now (only once)
+            if not docs_cleared:
+                existing = await db.execute(
+                    select(Document.id).where(
+                        Document.user_id == user_id,
+                        Document.file_type == "gmail",
+                        or_(
+                            Document.file_path == "gmail://inbox",
+                            Document.file_path.like("gmail://inbox/%"),
+                        ),
+                    )
+                )
+                doc_ids = [row[0] for row in existing.all()]
+                if doc_ids:
+                    await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id.in_(doc_ids)))
+                    await db.execute(delete(Document).where(Document.id.in_(doc_ids)))
+                    await db.flush()
+                docs_cleared = True
+
+            payload = list_resp.json()
+            messages = payload.get("messages", [])
+            if not messages:
+                break
+
+            for msg in messages:
+                if created_count >= GMAIL_MAX_MESSAGES:
+                    break
+
+                msg_id = msg["id"]
+                msg_resp = await client.get(
+                    f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}",
+                    headers=headers,
+                    params={"format": "full"},
+                )
+                if msg_resp.status_code != 200:
+                    continue
+
+                data = msg_resp.json()
+                hdrs = {h["name"]: h["value"] for h in data.get("payload", {}).get("headers", [])}
+                subject = hdrs.get("Subject", "(no subject)")
+                sender = hdrs.get("From", "")
+                date_str = hdrs.get("Date", "")
+                snippet = (data.get("snippet") or "").strip()
+
+                # Extract full plain-text body from MIME parts
+                def _extract_gmail_body(payload_node: dict) -> str:
+                    """Recursively extract plain-text body from Gmail payload."""
+                    import base64
+                    mime = payload_node.get("mimeType", "")
+                    body_data = payload_node.get("body", {}).get("data", "")
+                    parts = payload_node.get("parts", [])
+                    if mime == "text/plain" and body_data:
+                        try:
+                            return base64.urlsafe_b64decode(body_data + "==").decode("utf-8", errors="replace")
+                        except Exception:
+                            pass
+                    for part in parts:
+                        result = _extract_gmail_body(part)
+                        if result:
+                            return result
+                    return ""
+
+                body_text = _extract_gmail_body(data.get("payload", {})).strip()
+                # Fall back to snippet if body couldn't be decoded
+                body = body_text if body_text else (snippet or "No body content available.")
+
+                internal_date_raw = data.get("internalDate")
+                received_at = datetime.now(timezone.utc)
+                if isinstance(internal_date_raw, str) and internal_date_raw.isdigit():
+                    received_at = datetime.fromtimestamp(int(internal_date_raw) / 1000, tz=timezone.utc)
+                elif isinstance(internal_date_raw, (int, float)):
+                    received_at = datetime.fromtimestamp(float(internal_date_raw) / 1000, tz=timezone.utc)
+
+                content = (
+                    f"[Email] Subject: {subject} | From: {sender} | Date: {date_str} | "
+                    f"ReceivedAtUTC: {received_at.isoformat()}\n\n{body}"
+                )
+                doc_id = uuid.uuid4()
+                doc_name = f"[Gmail] {subject[:120]}"
+
+                db.add(
+                    Document(
+                        id=doc_id,
+                        user_id=user_id,
+                        name=doc_name,
+                        original_name=subject,
+                        file_path=f"gmail://inbox/{msg_id}",
+                        file_type="gmail",
+                        file_size=len(content),
+                        status=DocumentStatus.indexed,
+                        word_count=len(content.split()),
+                        created_at=received_at,
+                        updated_at=received_at,
+                    )
+                )
+                db.add(
+                    DocumentChunk(
+                        id=uuid.uuid4(),
+                        document_id=doc_id,
+                        chunk_index=0,
+                        content=content,
+                        token_count=len(content.split()),
+                    )
                 )
 
-    if not chunks_text:
-        return 0
+                vector_batch.append(
+                    {
+                        "id": f"{doc_id}:0",
+                        "text": content,
+                        "metadata": {
+                            "user_id": str(user_id),
+                            "document_id": str(doc_id),
+                            "document_name": doc_name,
+                            "document_type": "gmail",
+                            "chunk_text": content[:2000],
+                            "created_at": received_at.isoformat(),
+                        },
+                    }
+                )
 
-    # Delete old Gmail doc for this user
-    existing = await db.execute(select(Document).where(Document.user_id == user_id, Document.name == "[Gmail] Inbox"))
-    for old in existing.scalars().all():
-        old_chunks = await db.execute(select(DocumentChunk).where(DocumentChunk.document_id == old.id))
-        for c in old_chunks.scalars().all():
-            await db.delete(c)
-        await db.delete(old)
-    await db.flush()
+                created_count += 1
+                if created_count % CONNECTOR_SYNC_BATCH_SIZE == 0:
+                    await db.flush()
+                    await db.commit()
+                    if vector_store.enabled and vector_batch:
+                        await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
+                    vector_batch = []
 
-    doc = Document(
-        user_id=user_id, name="[Gmail] Inbox", original_name="Gmail Inbox",
-        file_type="gmail", status="indexed",
-        word_count=sum(len(t.split()) for t in chunks_text),
-    )
-    db.add(doc)
-    await db.flush()
-    await db.refresh(doc)
+            page_token = payload.get("nextPageToken")
+            if not page_token:
+                break
 
-    for i, text in enumerate(chunks_text):
-        db.add(DocumentChunk(document_id=doc.id, chunk_index=i, content=text, token_count=len(text.split())))
     await db.flush()
-    connector.document_count = len(chunks_text)
-    return len(chunks_text)
+    await db.commit()
+    if vector_store.enabled and vector_batch:
+        await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
+
+    return created_count
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────

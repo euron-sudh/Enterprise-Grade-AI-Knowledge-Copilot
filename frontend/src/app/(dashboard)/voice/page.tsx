@@ -103,11 +103,6 @@ export default function VoicePage() {
       .finally(() => setKbLoading(false));
   }, [status, session?.user?.email]);
 
-  const getAuthHeader = useCallback((): Record<string, string> => {
-    const token = getToken() || '';
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [session]);
-
   const speak = useCallback((text: string) => {
     if (isMuted || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
@@ -123,11 +118,16 @@ export default function VoicePage() {
     setVoiceState('processing');
     setError('');
     try {
-      const res = await fetch('/api/backend/voice/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-        body: JSON.stringify({ question }),
-      });
+      const res = await authFetch(
+        '/api/backend/voice/ask',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question }),
+        },
+        getToken(),
+        getUser(),
+      );
       if (!res.ok) throw new Error('Ask failed');
       const data = await res.json();
       const answer = data.answer || 'No response';
@@ -146,7 +146,7 @@ export default function VoicePage() {
       setError('Failed to get AI response. Please try again.');
       setVoiceState('idle');
     }
-  }, [getAuthHeader, speak]);
+  }, [speak, session?.user?.email, session?.user?.name]);
 
   const LANG_CODES: Record<string, string> = {
     'English (US)': 'en-US',
@@ -274,11 +274,15 @@ export default function VoicePage() {
         form.append('audio', blob, `recording.${ext}`);
         setVoiceState('processing');
         try {
-          const res = await fetch('/api/backend/voice/transcribe', {
-            method: 'POST',
-            headers: getAuthHeader(),
-            body: form,
-          });
+          const res = await authFetch(
+            '/api/backend/voice/transcribe',
+            {
+              method: 'POST',
+              body: form,
+            },
+            getToken(),
+            getUser(),
+          );
           if (!res.ok) throw new Error('Transcription failed');
           const data = await res.json();
           const text = (data.text || '').trim();
@@ -301,7 +305,7 @@ export default function VoicePage() {
       setError('Microphone access denied. Please allow microphone access in browser settings.');
       setVoiceState('idle');
     }
-  }, [selectedLanguage, askBackend, getAuthHeader]);
+  }, [selectedLanguage, askBackend, session?.user?.email, session?.user?.name]);
 
   const handleMicClick = async () => {
     if (voiceState === 'speaking') {

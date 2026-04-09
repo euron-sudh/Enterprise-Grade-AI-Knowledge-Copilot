@@ -4,11 +4,14 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { authFetch } from '@/lib/api/token';
+import { GlobalFileDropOverlay } from '@/components/knowledge/GlobalFileDropOverlay';
+import { useGlobalFileDrop } from '@/hooks/useGlobalFileDrop';
+import { uploadKnowledgeFiles } from '@/lib/knowledge-upload';
 import {
   Upload, FileText, Database, Link2, Plus, CheckCircle2, AlertCircle,
   Loader2, RefreshCw, Trash2, ChevronRight, FileCode2,
   FileImage, File, Clock, HardDrive, Layers, Zap, Cloud, X,
-  ExternalLink, Copy, Check, ChevronDown, ChevronUp, Plug,
+  ExternalLink, Copy, Check, ChevronDown, ChevronUp, Plug, Globe,
 } from 'lucide-react';
 
 /* ─── Types ─────────────────────────────────────────────── */
@@ -30,11 +33,12 @@ interface Connector {
 interface Document {
   id: string;
   name: string;
-  type: 'pdf' | 'docx' | 'xlsx' | 'md' | 'code' | 'image' | 'other';
+  type: string;
   size: string;
   uploadedAt: string;
   status: 'indexed' | 'processing' | 'failed';
   source: string;
+  connectorType?: string;
 }
 
 interface Step {
@@ -216,7 +220,7 @@ const CONNECTOR_CONFIGS: Record<string, ConnectorConfig> = {
     docsUrl: 'https://docs.github.com/en/rest',
     fields: [
       { key: 'access_token', label: 'Personal Access Token', placeholder: 'ghp_...', type: 'password' },
-      { key: 'org_or_user', label: 'Organization or Username', placeholder: 'your-org' },
+      { key: 'org_or_user', label: 'Organization or Username (optional)', placeholder: 'your-org or username — leave blank to sync all repos' },
       { key: 'repos', label: 'Repositories (comma-separated, optional)', placeholder: 'repo1, repo2' },
     ],
     steps: [
@@ -390,14 +394,21 @@ const CONNECTORS: Connector[] = [
   { id: '8', name: 'Gmail', icon: <GmailIcon />, color: 'text-white', bgColor: 'bg-red-600', docs: 0, status: 'disconnected', lastSync: 'Not connected', description: 'Sync emails & threads', category: 'Communication' },
 ];
 
-const FILE_ICONS: Record<Document['type'], React.ElementType> = {
+const FILE_ICONS: Record<string, React.ElementType> = {
   pdf: FileText, docx: FileText, xlsx: Database, md: FileCode2,
   code: FileCode2, image: FileImage, other: File,
+  // connector types → generic icons
+  google_drive: Cloud, gmail: FileText, github: FileCode2,
+  confluence: FileText, notion: FileText, slack: FileText,
+  jira: Database, salesforce: Database, web: Globe, web_crawler: Globe,
 };
-const FILE_COLORS: Record<Document['type'], string> = {
+const FILE_COLORS: Record<string, string> = {
   pdf: 'text-red-400', docx: 'text-blue-400', xlsx: 'text-green-400',
   md: 'text-surface-500 dark:text-gray-400', code: 'text-purple-400',
   image: 'text-orange-400', other: 'text-surface-400 dark:text-gray-500',
+  google_drive: 'text-blue-400', gmail: 'text-red-400', github: 'text-purple-400',
+  confluence: 'text-blue-300', notion: 'text-gray-300', slack: 'text-green-400',
+  jira: 'text-blue-400', salesforce: 'text-sky-400', web: 'text-indigo-400', web_crawler: 'text-indigo-400',
 };
 const STATUS_CONFIG = {
   indexed: { label: 'Indexed', color: 'text-emerald-400 bg-emerald-900/40', icon: CheckCircle2 },
@@ -410,6 +421,28 @@ const CONNECTOR_STATUS: Record<ConnectorStatus, { dot: string; label: string }> 
   error: { dot: 'bg-red-500', label: 'Error' },
   disconnected: { dot: 'bg-gray-500', label: 'Connect' },
   connecting: { dot: 'bg-blue-500 animate-pulse', label: 'Connecting' },
+};
+
+const CONNECTOR_NAME_TO_TYPE: Record<string, string> = {
+  'Google Drive': 'google_drive',
+  'Confluence': 'confluence',
+  'Slack': 'slack',
+  'GitHub': 'github',
+  'Notion': 'notion',
+  'Jira': 'jira',
+  'Salesforce': 'salesforce',
+  'Gmail': 'gmail',
+};
+
+const CONNECTOR_TYPE_TO_NAME: Record<string, string> = {
+  google_drive: 'Google Drive',
+  confluence: 'Confluence',
+  slack: 'Slack',
+  github: 'GitHub',
+  notion: 'Notion',
+  jira: 'Jira',
+  salesforce: 'Salesforce',
+  gmail: 'Gmail',
 };
 
 /* ─── CopyButton ─────────────────────────────────────────── */
@@ -443,7 +476,9 @@ function ConnectorModal({
   const [connecting, setConnecting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const isConnected = connector.status === 'synced' || connector.status === 'syncing';
+  const wasConnected = connector.status === 'synced' || connector.status === 'syncing' || connector.status === 'error';
+  // Always show credential fields — either first-time connect or reconnect to update token
+  const isConnected = false;
 
   const validate = () => {
     const errs: Record<string, string> = {};
@@ -601,27 +636,19 @@ function ConnectorModal({
               >
                 Cancel
               </button>
-              {!isConnected && (
-                <button
-                  onClick={handleConnect}
-                  disabled={connecting}
-                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 transition-colors"
-                >
-                  {connecting ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" />Connecting...</>
-                  ) : (
-                    <><Plug className="h-4 w-4" />Connect</>
-                  )}
-                </button>
-              )}
-              {isConnected && (
-                <button
-                  onClick={onClose}
-                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-500 transition-colors"
-                >
-                  <CheckCircle2 className="h-4 w-4" />Done
-                </button>
-              )}
+              <button
+                onClick={handleConnect}
+                disabled={connecting}
+                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 transition-colors"
+              >
+                {connecting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Connecting...</>
+                ) : wasConnected ? (
+                  <><RefreshCw className="h-4 w-4" />Reconnect</>
+                ) : (
+                  <><Plug className="h-4 w-4" />Connect</>
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -687,6 +714,19 @@ function ConnectorsPanel({
   );
 }
 
+/* ─── Source badge helper ────────────────────────────────── */
+const SOURCE_COLORS: Record<string, string> = {
+  'Google Drive': 'text-blue-400 bg-blue-900/30',
+  'Gmail': 'text-red-400 bg-red-900/30',
+  'GitHub': 'text-purple-400 bg-purple-900/30',
+  'Confluence': 'text-blue-300 bg-blue-900/30',
+  'Notion': 'text-gray-300 bg-gray-700/50',
+  'Slack': 'text-green-400 bg-green-900/30',
+  'Jira': 'text-blue-400 bg-blue-900/30',
+  'Salesforce': 'text-sky-400 bg-sky-900/30',
+  'Upload': 'text-indigo-400 bg-indigo-900/30',
+};
+
 /* ─── Main Page ──────────────────────────────────────────── */
 export default function KnowledgeBasePage() {
   const { data: session, status } = useSession();
@@ -697,7 +737,9 @@ export default function KnowledgeBasePage() {
   const [realDocs, setRealDocs] = useState<Document[]>([]);
   const [totalDocsCount, setTotalDocsCount] = useState(0);
   const [loadingDocs, setLoadingDocs] = useState(false);
+  const [activeSourceFilter, setActiveSourceFilter] = useState<string>('all');
   const [connectors, setConnectors] = useState<Connector[]>(CONNECTORS);
+  const [connectorBackendIds, setConnectorBackendIds] = useState<Record<string, string>>({});
   const [connectorsLoaded, setConnectorsLoaded] = useState(false);
   const [connectorsRefreshKey, setConnectorsRefreshKey] = useState(0);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
@@ -720,27 +762,35 @@ export default function KnowledgeBasePage() {
   const totalDocs = connectors.reduce((a, c) => a + c.docs, 0) + totalDocsCount;
   const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
-  useEffect(() => {
+  const fetchDocs = useCallback((sourceFilter = activeSourceFilter) => {
     if (status !== 'authenticated') return;
     setLoadingDocs(true);
-    authFetch('/api/backend/knowledge/documents?pageSize=100', {}, (session as any)?.accessToken, getUser())
+    const params = new URLSearchParams({ pageSize: '200' });
+    if (sourceFilter !== 'all') params.set('source', sourceFilter);
+    authFetch(`/api/backend/knowledge/documents?${params}`, {}, (session as any)?.accessToken, getUser())
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.items) {
           setTotalDocsCount(data.total ?? data.items.length);
           setRealDocs(data.items.map((d: any) => ({
-            id: d.id, name: d.name,
+            id: d.id,
+            name: d.originalName || d.name,
             type: d.type ?? 'other',
             size: d.size ? `${Math.round(d.size / 1024)} KB` : '—',
             uploadedAt: d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—',
             status: d.status ?? 'indexed',
-            source: 'Upload',
+            source: d.source ?? 'Upload',
+            connectorType: d.connectorType ?? undefined,
           })));
         }
       })
       .catch(() => {})
       .finally(() => setLoadingDocs(false));
-  }, [status, session?.user?.email]);
+  }, [status, session?.user?.email, activeSourceFilter]);
+
+  useEffect(() => {
+    fetchDocs();
+  }, [status, session?.user?.email, activeSourceFilter]);
 
   // Load persisted connector statuses from backend
   useEffect(() => {
@@ -754,13 +804,13 @@ export default function KnowledgeBasePage() {
         const statusMap: Record<string, ConnectorStatus> = {
           connected: 'synced', syncing: 'syncing', error: 'error', disconnected: 'disconnected',
         };
-        // Map connector type → display name used in CONNECTORS
-        const typeToName: Record<string, string> = {
-          google_drive: 'Google Drive', confluence: 'Confluence', slack: 'Slack',
-          github: 'GitHub', notion: 'Notion', jira: 'Jira', salesforce: 'Salesforce', gmail: 'Gmail',
-        };
+        const idsByType: Record<string, string> = {};
+        data.forEach(d => {
+          idsByType[d.type] = d.id;
+        });
+        setConnectorBackendIds(idsByType);
         setConnectors(prev => prev.map(c => {
-          const saved = data.find(d => typeToName[d.type] === c.name);
+          const saved = data.find(d => CONNECTOR_TYPE_TO_NAME[d.type] === c.name);
           if (!saved) return c;
           return {
             ...c,
@@ -774,21 +824,24 @@ export default function KnowledgeBasePage() {
       .catch(() => {});
   }, [status, session?.user?.email, connectorsRefreshKey]);
 
-  // Real-time sync simulation: syncing connectors poll every 8s
+  // Keep connector counts/status fresh while long-running sync jobs complete.
   useEffect(() => {
+    if (status !== 'authenticated') return;
     const interval = setInterval(() => {
-      setConnectors(prev => prev.map(c => {
-        if (c.status === 'syncing') {
-          return { ...c, status: 'synced', lastSync: 'Just now', docs: c.docs + Math.floor(Math.random() * 5) + 1 };
-        }
-        if (c.status === 'synced' && Math.random() < 0.1) {
-          return { ...c, lastSync: `${Math.floor(Math.random() * 5) + 1} min ago` };
-        }
-        return c;
-      }));
-    }, 8000);
+      setConnectorsRefreshKey(k => k + 1);
+    }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [status]);
+
+  // Poll backend for connector status updates while any connector is syncing
+  useEffect(() => {
+    const hasSyncing = connectors.some(c => c.status === 'syncing');
+    if (!hasSyncing) return;
+    const interval = setInterval(() => {
+      setConnectorsRefreshKey(k => k + 1);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [connectors]);
 
   const startGoogleOAuth = useCallback(async (connectorType: string) => {
     try {
@@ -806,31 +859,114 @@ export default function KnowledgeBasePage() {
     }
   }, [session]);
 
+  // Connector types that have a real backend sync implementation
+  const SYNCABLE_CONNECTORS = new Set(['google_drive', 'gmail', 'github', 'figma', 'web_crawler']);
+
   const handleConnect = useCallback((id: string, fields: Record<string, string>) => {
     const connector = connectors.find(c => c.id === id);
     if (!connector) return;
-    const nameToType: Record<string, string> = {
-      'Google Drive': 'google_drive', 'Confluence': 'confluence', 'Slack': 'slack',
-      'GitHub': 'github', 'Notion': 'notion', 'Jira': 'jira', 'Salesforce': 'salesforce', 'Gmail': 'gmail',
-    };
-    const connectorType = nameToType[connector.name] ?? connector.name.toLowerCase().replace(/\s+/g, '_');
+    const connectorType = CONNECTOR_NAME_TO_TYPE[connector.name] ?? connector.name.toLowerCase().replace(/\s+/g, '_');
+    let connectorConfig: Record<string, string> = fields;
 
-    // Google Drive and Gmail use real OAuth redirect — fetch URL via authFetch then redirect
+    if (connectorType === 'github') {
+      connectorConfig = {
+        ...fields,
+        accessToken: fields.access_token ?? fields.accessToken ?? '',
+        repoUrl: fields.repo_url ?? fields.repoUrl ?? '',
+        org_or_user: fields.org_or_user ?? '',
+        repos: fields.repos ?? '',
+      };
+    }
+
+    // Google Drive and Gmail use real OAuth redirect
     if (connectorType === 'google_drive' || connectorType === 'gmail') {
       void startGoogleOAuth(connectorType);
       return;
     }
 
-    // Optimistically update UI for other connectors
+    // Only connectors with real sync implementations
+    if (!SYNCABLE_CONNECTORS.has(connectorType)) {
+      alert(`${connector.name} sync is not yet implemented. Coming soon!`);
+      return;
+    }
+
+    // Optimistically update UI to "syncing"
     setConnectors(prev => prev.map(c =>
       c.id === id ? { ...c, status: 'syncing', lastSync: 'Syncing...' } : c
     ));
+
     authFetch('/api/backend/knowledge/connectors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: connectorType, name: connector.name, config: fields }),
-    }, (session as any)?.accessToken, getUser()).catch(() => {});
+      body: JSON.stringify({ type: connectorType, name: connector.name, config: connectorConfig }),
+    }, (session as any)?.accessToken, getUser())
+      .then(() => setTimeout(() => setConnectorsRefreshKey(k => k + 1), 3000))
+      .catch(() => {
+        setConnectors(prev => prev.map(c =>
+          c.id === id ? { ...c, status: 'error', lastSync: 'Sync failed' } : c
+        ));
+      });
   }, [connectors, session]);
+
+  const handleReconnect = useCallback(async (connector: Connector) => {
+    const connectorType = CONNECTOR_NAME_TO_TYPE[connector.name] ?? connector.name.toLowerCase().replace(/\s+/g, '_');
+
+    // OAuth connectors: re-run OAuth flow
+    if (connectorType === 'google_drive' || connectorType === 'gmail') {
+      void startGoogleOAuth(connectorType);
+      return;
+    }
+
+    // Non-syncable connectors: open config modal instead
+    if (!SYNCABLE_CONNECTORS.has(connectorType)) {
+      setSelectedConnector(connector);
+      return;
+    }
+
+    // Token-based connectors always open the modal on reconnect so credentials
+    // can be confirmed/updated before re-syncing (avoids "token required" errors
+    // if the stored config is stale or was created before config was persisted)
+    const TOKEN_BASED = new Set(['github', 'figma', 'web_crawler']);
+    if (TOKEN_BASED.has(connectorType)) {
+      setSelectedConnector(connector);
+      return;
+    }
+
+    const backendConnectorId = connectorBackendIds[connectorType];
+    if (!backendConnectorId) {
+      // No backend record yet — open config modal to collect credentials
+      setSelectedConnector(connector);
+      return;
+    }
+
+    setConnectors(prev => prev.map(c =>
+      c.id === connector.id ? { ...c, status: 'syncing', lastSync: 'Syncing...' } : c
+    ));
+
+    try {
+      const res = await authFetch(
+        `/api/backend/knowledge/connectors/${backendConnectorId}/sync`,
+        { method: 'POST' },
+        (session as any)?.accessToken,
+        getUser(),
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Sync failed (${res.status})`);
+      }
+      // Poll for completion
+      setTimeout(() => setConnectorsRefreshKey(k => k + 1), 5000);
+      setTimeout(() => setConnectorsRefreshKey(k => k + 1), 15000);
+      setTimeout(() => setConnectorsRefreshKey(k => k + 1), 30000);
+    } catch (err: any) {
+      console.error('Reconnect failed:', err);
+      setConnectors(prev => prev.map(c =>
+        c.id === connector.id ? { ...c, status: 'error', lastSync: err.message ?? 'Sync failed' } : c
+      ));
+    } finally {
+      setTimeout(() => setConnectorsRefreshKey(k => k + 1), 2000);
+    }
+  }, [connectorBackendIds, session, startGoogleOAuth]);
 
   const uploadFiles = async (files: File[]) => {
     if (!files.length) return;
@@ -851,65 +987,46 @@ export default function KnowledgeBasePage() {
       setTotalDocsCount(prev => prev + 1);
     };
 
-    await Promise.all(files.map(async (file) => {
-      try {
-        // Use presigned S3 URL to avoid Amplify's ~4.5 MB body limit
-        const presignRes = await authFetch(
-          `/api/backend/knowledge/documents/presigned-upload?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(file.type || 'application/octet-stream')}`,
-          {},
-          (session as any)?.accessToken, getUser(),
-        );
-
-        if (presignRes.ok) {
-          const { uploadUrl, s3Key } = await presignRes.json();
-          // PUT file directly to S3 (bypasses API gateway body limits)
-          const s3Res = await fetch(uploadUrl, {
-            method: 'PUT',
-            body: file,
-            headers: { 'Content-Type': file.type || 'application/octet-stream' },
-          });
-          if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status}`);
-          // Register the uploaded file with the backend
-          const regForm = new FormData();
-          regForm.append('s3_key', s3Key);
-          regForm.append('filename', file.name);
-          regForm.append('file_size', String(file.size));
-          regForm.append('content_type', file.type || 'application/octet-stream');
-          const regRes = await authFetch('/api/backend/knowledge/documents/register-s3',
-            { method: 'POST', body: regForm },
-            (session as any)?.accessToken, getUser(),
-          );
-          statusMap[file.name] = regRes.ok ? 'done' : 'error';
-          setUploadStatus({ ...statusMap });
-          if (regRes.ok) {
-            const docs = await regRes.json();
-            addDocToList(Array.isArray(docs) ? docs[0] : docs);
-          }
-        } else {
-          // Fallback: direct multipart upload (for small files when S3 not configured)
-          const formData = new FormData();
-          formData.append('files', file);
-          const res = await authFetch('/api/backend/knowledge/documents/upload',
-            { method: 'POST', body: formData },
-            (session as any)?.accessToken, getUser(),
-          );
-          statusMap[file.name] = res.ok ? 'done' : 'error';
-          setUploadStatus({ ...statusMap });
-          if (res.ok) {
-            const docs = await res.json();
-            addDocToList(Array.isArray(docs) ? docs[0] : docs);
-          }
-        }
-      } catch {
-        statusMap[file.name] = 'error';
+    const { uploadedNames, failedNames } = await uploadKnowledgeFiles({
+      files,
+      accessToken: (session as any)?.accessToken,
+      user: getUser(),
+      onFileUploaded: (fileName, body) => {
+        statusMap[fileName] = 'done';
         setUploadStatus({ ...statusMap });
-      }
-    }));
+        const docs = Array.isArray(body) ? body[0] : body;
+        addDocToList(docs);
+      },
+    });
+    failedNames.forEach((fileName) => {
+      statusMap[fileName] = 'error';
+    });
+    uploadedNames.forEach((fileName) => {
+      statusMap[fileName] = 'done';
+    });
+    setUploadStatus({ ...statusMap });
     setTimeout(() => { setUploadingFiles([]); setUploadStatus({}); }, 3000);
   };
 
+  const { isDragging: isPageDragging, bind } = useGlobalFileDrop({
+    onFiles: async (files) => {
+      setIsDragging(false);
+      await uploadFiles(files);
+    },
+  });
+
   return (
-    <div className="min-h-full bg-surface-50 dark:bg-gray-950 p-6 space-y-6">
+    <div
+      className="relative min-h-full bg-surface-50 dark:bg-gray-950 p-6 space-y-6"
+      {...bind}
+    >
+      <GlobalFileDropOverlay
+        active={isPageDragging || uploadingFiles.length > 0}
+        title={uploadingFiles.length > 0 ? `Uploading ${uploadingFiles.length} file(s)...` : 'Drop files anywhere to upload'}
+        description="Files are indexed automatically in your knowledge base"
+        tone="indigo"
+      />
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -1043,13 +1160,11 @@ export default function KnowledgeBasePage() {
                 </p>
               )}
               <p className="text-[10px] text-surface-600 dark:text-gray-600 mt-1">{connector.lastSync}</p>
-              {connector.status === 'synced' && connector.docs === 0 && (connector.name === 'Google Drive' || connector.name === 'Gmail') && (
+              {connector.status !== 'disconnected' && (
                 <button
                   onClick={e => {
                     e.stopPropagation();
-                    const typeMap: Record<string, string> = { 'Google Drive': 'google_drive', 'Gmail': 'gmail' };
-                    const t = typeMap[connector.name];
-                    if (t) void startGoogleOAuth(t);
+                    void handleReconnect(connector);
                   }}
                   className="mt-2 w-full flex items-center justify-center gap-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 text-[10px] font-medium py-1 transition-colors"
                 >
@@ -1061,17 +1176,51 @@ export default function KnowledgeBasePage() {
         </div>
       </div>
 
-      {/* Recent Documents */}
+      {/* Synced Documents */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold text-surface-900 dark:text-white flex items-center gap-2">
             <Layers className="h-4.5 w-4.5 text-surface-500 dark:text-gray-400" />
-            Recent Documents
+            Synced Documents
+            <span className="text-xs font-normal text-surface-400 dark:text-gray-500">({totalDocsCount.toLocaleString()})</span>
           </h2>
-          <button className="flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
-            View all <ChevronRight className="h-3.5 w-3.5" />
+          <button
+            onClick={() => fetchDocs(activeSourceFilter)}
+            className="flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </button>
         </div>
+
+        {/* Source filter tabs */}
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          {(['all', 'upload', 'google_drive', 'gmail', 'github', 'confluence', 'notion', 'slack', 'jira', 'salesforce'] as const).map(f => {
+            const labels: Record<string, string> = {
+              all: 'All', upload: 'Uploads', google_drive: 'Google Drive',
+              gmail: 'Gmail', github: 'GitHub', confluence: 'Confluence',
+              notion: 'Notion', slack: 'Slack', jira: 'Jira', salesforce: 'Salesforce',
+            };
+            const isActive = activeSourceFilter === f;
+            // Only show connector tabs if that connector is connected
+            const connectorName = { google_drive: 'Google Drive', gmail: 'Gmail', github: 'GitHub', confluence: 'Confluence', notion: 'Notion', slack: 'Slack', jira: 'Jira', salesforce: 'Salesforce' }[f];
+            const isConnected = !connectorName || connectors.some(c => c.name === connectorName && c.status !== 'disconnected');
+            if (!isConnected) return null;
+            return (
+              <button
+                key={f}
+                onClick={() => setActiveSourceFilter(f)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-surface-100 dark:bg-gray-800 text-surface-500 dark:text-gray-400 hover:bg-surface-200 dark:hover:bg-gray-700'
+                }`}
+              >
+                {labels[f]}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="rounded-2xl border border-surface-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
@@ -1079,7 +1228,7 @@ export default function KnowledgeBasePage() {
                 <th className="text-left px-5 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider hidden sm:table-cell">Size</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider hidden md:table-cell">Source</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider hidden lg:table-cell">Uploaded</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider hidden lg:table-cell">Synced</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 dark:text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -1091,24 +1240,32 @@ export default function KnowledgeBasePage() {
                 </td></tr>
               ) : realDocs.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-10 text-center text-surface-400 dark:text-gray-500 text-sm">
-                  No documents yet. Upload a file above to get started.
+                  {activeSourceFilter === 'all'
+                    ? 'No documents yet. Upload a file or connect a source above.'
+                    : `No documents from ${activeSourceFilter === 'upload' ? 'manual uploads' : activeSourceFilter.replace('_', ' ')} yet.`}
                 </td></tr>
               ) : realDocs.map(doc => {
-                const docType = (doc.type in FILE_ICONS ? doc.type : 'other') as Document['type'];
+                const knownTypes = Object.keys(FILE_ICONS);
+                const docType = (knownTypes.includes(doc.type) ? doc.type : 'other') as keyof typeof FILE_ICONS;
                 const docStatus = (doc.status in STATUS_CONFIG ? doc.status : 'indexed') as Document['status'];
                 const Icon = FILE_ICONS[docType];
                 const statusCfg = STATUS_CONFIG[docStatus];
                 const StatusIcon = statusCfg.icon;
+                const sourceColor = SOURCE_COLORS[doc.source] ?? 'text-surface-400 dark:text-gray-500 bg-surface-100 dark:bg-gray-800';
                 return (
                   <tr key={doc.id} className="hover:bg-surface-100 dark:hover:bg-surface-100/50 dark:bg-gray-800/50 transition-colors group">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <Icon className={`h-4 w-4 flex-shrink-0 ${FILE_COLORS[docType]}`} />
-                        <span className="text-surface-700 dark:text-gray-200 font-medium truncate max-w-[200px]">{doc.name}</span>
+                        <span className="text-surface-700 dark:text-gray-200 font-medium truncate max-w-[240px]" title={doc.name}>{doc.name}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3.5 text-surface-400 dark:text-gray-500 text-xs hidden sm:table-cell">{doc.size}</td>
-                    <td className="px-4 py-3.5 text-surface-400 dark:text-gray-500 text-xs hidden md:table-cell">{doc.source}</td>
+                    <td className="px-4 py-3.5 hidden md:table-cell">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${sourceColor}`}>
+                        {doc.source}
+                      </span>
+                    </td>
                     <td className="px-4 py-3.5 text-surface-400 dark:text-gray-500 text-xs hidden lg:table-cell">{doc.uploadedAt}</td>
                     <td className="px-4 py-3.5">
                       <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${statusCfg.color}`}>

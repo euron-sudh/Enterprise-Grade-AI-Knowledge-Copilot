@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str = ""          # Google Custom Search API key
     GOOGLE_CSE_ID: str = ""           # Google Custom Search Engine ID (cx parameter)
 
+    # Vector search (Pinecone)
+    PINECONE_API_KEY: str = ""
+    PINECONE_INDEX_NAME: str = "knowledgeforge"
+    PINECONE_CLOUD: str = "aws"
+    PINECONE_REGION: str = "us-east-1"
+    PINECONE_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    PINECONE_EMBEDDING_DIMENSION: int = 1536
+
     # Stripe billing
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""

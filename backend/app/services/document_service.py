@@ -133,12 +133,54 @@ def _sanitize_text(text: str) -> str:
     return text.replace('\x00', '').replace('\x0b', ' ').replace('\x0c', ' ')
 
 
+def _extract_text_xlsx(file_path: str) -> Tuple[str, int]:
+    """Extract text from Excel workbook using openpyxl."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        parts = []
+        for sheet in wb.worksheets:
+            parts.append(f"[Sheet: {sheet.title}]")
+            for row in sheet.iter_rows(values_only=True):
+                cells = [str(c) for c in row if c is not None and str(c).strip()]
+                if cells:
+                    parts.append("\t".join(cells))
+        wb.close()
+        text = "\n".join(parts)
+        return text, max(1, len(wb.sheetnames))
+    except Exception as e:
+        logger.warning(f"XLSX extraction failed: {e}")
+        return "", 0
+
+
+def _extract_text_pptx(file_path: str) -> Tuple[str, int]:
+    """Extract text from PowerPoint using python-pptx."""
+    try:
+        from pptx import Presentation
+        prs = Presentation(file_path)
+        parts = []
+        for i, slide in enumerate(prs.slides, start=1):
+            parts.append(f"[Slide {i}]")
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    parts.append(shape.text.strip())
+        text = "\n".join(parts)
+        return text, len(prs.slides)
+    except Exception as e:
+        logger.warning(f"PPTX extraction failed: {e}")
+        return "", 0
+
+
 def extract_text(file_path: str, file_ext: str) -> Tuple[str, int]:
     """Dispatch extraction based on file extension."""
     if file_ext == ".pdf":
         text, pages = _extract_text_pdf(file_path)
     elif file_ext in (".docx", ".doc"):
         text, pages = _extract_text_docx(file_path)
+    elif file_ext in (".xlsx", ".xls"):
+        text, pages = _extract_text_xlsx(file_path)
+    elif file_ext == ".pptx":
+        text, pages = _extract_text_pptx(file_path)
     else:
         text, pages = _extract_text_plain(file_path)
     return _sanitize_text(text), pages

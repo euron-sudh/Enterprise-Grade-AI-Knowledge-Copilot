@@ -4,12 +4,16 @@ import { useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, ExternalLink, FileText, Filter, Search, Trash2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
+import { GlobalFileDropOverlay } from '@/components/knowledge/GlobalFileDropOverlay';
 import { DocumentUpload } from '@/components/knowledge/DocumentUpload';
+import { useGlobalFileDrop } from '@/hooks/useGlobalFileDrop';
+import { uploadKnowledgeFiles } from '@/lib/knowledge-upload';
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils';
 import type { ProcessingStatus } from '@/types';
@@ -30,6 +34,7 @@ export default function DocumentsPage() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [isUploadingDrop, setIsUploadingDrop] = useState(false);
 
   const handleDownload = async (id: string, name: string) => {
     setDownloading(id);
@@ -57,8 +62,33 @@ export default function DocumentsPage() {
     );
   };
 
+  const uploadDroppedFiles = async (files: File[]) => {
+    if (!files.length || isUploadingDrop) return;
+    setIsUploadingDrop(true);
+    try {
+      await uploadKnowledgeFiles({ files });
+      toast.success(`Uploaded ${files.length} file${files.length > 1 ? 's' : ''}`);
+      void queryClient.invalidateQueries({ queryKey: ['documents'] });
+    } catch {
+      toast.error('Upload failed. Please try again.');
+    } finally {
+      setIsUploadingDrop(false);
+    }
+  };
+
+  const { isDragging, bind } = useGlobalFileDrop({ onFiles: uploadDroppedFiles });
+
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
+    <div
+      className="relative flex h-full flex-col overflow-y-auto"
+      {...bind}
+    >
+      <GlobalFileDropOverlay
+        active={isDragging || isUploadingDrop}
+        title={isUploadingDrop ? 'Uploading files...' : 'Drop files anywhere to upload'}
+        description="Documents will be added to your knowledge base automatically"
+      />
+
       {/* Header */}
       <div className="border-b border-surface-100 bg-white px-6 py-5 dark:border-surface-800 dark:bg-surface-950">
         <div className="flex items-center justify-between">
