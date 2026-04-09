@@ -71,6 +71,23 @@ The architecture is designed for horizontal scalability, multi-tenancy, and zero
 
 ## 2. High-Level Architecture
 
+![KnowledgeForge System Architecture](./system-architecture.png)
+
+> *The diagram above shows the full system across seven planes: Presentation, Infrastructure, API Layer, Backend, External Services, Observability, Intelligence, and Data. Arrows indicate request and data flow direction.*
+
+### Plane Summary
+
+| Plane | Components |
+|---|---|
+| **Presentation** | Browser → Next.js 14 → NextAuth.js (authenticate) |
+| **Infrastructure** | Route 53 → AWS WAF → Amazon EKS + CloudFront CDN |
+| **API Layer** | ALB/API Gateway → WebSocket `/ws/*`, REST `/api/v1/*`, SSE token streaming |
+| **Backend** | FastAPI Backend, Celery Workers, WS Server |
+| **External Services** | ElevenLabs TTS, Deepgram STT, Stripe Billing |
+| **Observability** | Prometheus → Grafana, AWS X-Ray Tracing |
+| **Intelligence** | LLM Providers (Claude, GPT-4, Gemini), Agent Framework (Code Executor, Tavily), RAG Pipeline (Embedding → Hybrid Search → Reranker) |
+| **Data** | Redis Cache, S3 Storage, OpenSearch, PostgreSQL + pgvector, Pinecone (scale) |
+
 ### Component Inventory
 
 | Component | Technology | Role |
