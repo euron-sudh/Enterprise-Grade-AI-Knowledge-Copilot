@@ -11,16 +11,20 @@ import type {
 
 export async function login(credentials: LoginCredentials): Promise<AuthResponse> {
   const { data } = await apiClient.post<AuthResponse>('/auth/login', credentials);
-  localStorage.setItem('accessToken', data.accessToken);
-  localStorage.setItem('refreshToken', data.refreshToken);
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('accessToken', data.accessToken);
+    localStorage.setItem('refreshToken', data.refreshToken);
+  }
   return data;
 }
 
 export async function register(payload: RegisterPayload, inviteToken?: string): Promise<AuthResponse> {
   const url = inviteToken ? `/auth/register?invite=${encodeURIComponent(inviteToken)}` : '/auth/register';
   const { data } = await apiClient.post<AuthResponse>(url, payload);
-  localStorage.setItem('accessToken', data.accessToken);
-  localStorage.setItem('refreshToken', data.refreshToken);
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('accessToken', data.accessToken);
+    localStorage.setItem('refreshToken', data.refreshToken);
+  }
   return data;
 }
 

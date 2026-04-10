@@ -255,7 +255,7 @@ export default function LoginPage() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => quickLogin('admin@knowledgeforge.ai', 'Admin@123')}
+            onClick={() => quickLogin('admin@knowledgeforge.ai', 'Admin1234!')}
             disabled={isSubmitting || !!oauthLoading}
             className="flex flex-col items-center gap-0.5 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-xs transition hover:bg-amber-50 dark:hover:bg-surface-700 disabled:opacity-50"
           >
@@ -264,7 +264,7 @@ export default function LoginPage() {
           </button>
           <button
             type="button"
-            onClick={() => quickLogin('demo@knowledgeforge.ai', 'Demo@123')}
+            onClick={() => quickLogin('demo@knowledgeforge.ai', 'demo12345')}
             disabled={isSubmitting || !!oauthLoading}
             className="flex flex-col items-center gap-0.5 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-xs transition hover:bg-amber-50 dark:hover:bg-surface-700 disabled:opacity-50"
           >
