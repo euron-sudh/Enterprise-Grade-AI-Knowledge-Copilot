@@ -337,7 +337,7 @@ async def create_voice_session(
     current_user: User = Depends(get_current_user),
 ):
     session_id = str(uuid.uuid4())
-    ws_url = f"ws://localhost:8000/voice/ws/{session_id}"
+    ws_url = settings.BACKEND_URL.replace("https://", "wss://").replace("http://", "ws://") + f"/voice/ws/{session_id}"
     return VoiceSessionResponse(
         sessionId=session_id,
         wsUrl=ws_url,

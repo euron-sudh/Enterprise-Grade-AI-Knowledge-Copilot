@@ -320,7 +320,8 @@ async def share_conversation(
         conv.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
-    share_url = f"http://localhost:3001/shared/{conv.share_token}"
+    frontend_url = settings.FRONTEND_URL or "http://localhost:3001"
+    share_url = f"{frontend_url}/shared/{conv.share_token}"
     return {"shareUrl": share_url}
 
 

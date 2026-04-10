@@ -15,7 +15,15 @@ export interface WsNotification {
 
 type NotificationHandler = (notification: WsNotification) => void;
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8000';
+function getWsBase(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${protocol}://${window.location.host}`;
+  }
+  return 'ws://localhost:8000';
+}
+const WS_BASE = getWsBase();
 
 /**
  * Connect to the backend real-time notification stream.

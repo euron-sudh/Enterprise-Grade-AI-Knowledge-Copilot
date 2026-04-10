@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
     # Convenience: add a single frontend URL without overriding the full list
     FRONTEND_URL: str = ""
+    # Backend's own public URL (used for WebSocket URLs returned to clients)
+    BACKEND_URL: str = "http://localhost:8000"
 
     # Email / SMTP
     SMTP_HOST: str = ""

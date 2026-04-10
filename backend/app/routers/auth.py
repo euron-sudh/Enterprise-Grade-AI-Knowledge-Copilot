@@ -195,7 +195,8 @@ async def password_reset_request(
     finally:
         await r.aclose()
 
-    reset_url = f"http://localhost:3001/reset-password?token={token}"
+    frontend_url = settings.FRONTEND_URL or "http://localhost:3001"
+    reset_url = f"{frontend_url}/reset-password?token={token}"
     logger.info("=== PASSWORD RESET LINK (dev) ===")
     logger.info(reset_url)
     logger.info("=================================")

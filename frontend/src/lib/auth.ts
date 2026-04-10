@@ -30,11 +30,8 @@ import AzureADProvider from 'next-auth/providers/azure-ad';
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
 // Backend exposes routes at /auth/login (no /api/v1 prefix)
 
-// NEXTAUTH_URL isn't injected into Amplify SSR Lambda at runtime — set fallback so
-// NextAuth can construct correct OAuth callback URLs in production.
-if (!process.env.NEXTAUTH_URL && process.env.NODE_ENV === 'production') {
-  process.env.NEXTAUTH_URL = 'https://dev.d2dg07mc33522q.amplifyapp.com';
-}
+// NEXTAUTH_URL must be set as an Amplify environment variable.
+// It is not auto-injected into SSR Lambda — set it explicitly in the console.
 // Refresh 2 minutes before expiry
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
 
@@ -66,7 +63,7 @@ async function refreshAccessToken(refreshToken: string): Promise<{
 export const authOptions: NextAuthOptions = {
   // Fallback ensures the Lambda always has a secret even if env var is missing at SSR runtime.
   // Override via NEXTAUTH_SECRET in production for key rotation.
-  secret: process.env.NEXTAUTH_SECRET ?? 'kf-ssrfallback-32c-changeinprod!!',
+  secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days

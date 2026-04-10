@@ -62,7 +62,13 @@ class SubscriptionCreate(BaseModel):
     payment_method_id: str
 
 class PortalRequest(BaseModel):
-    return_url: str = "http://localhost:3000/admin/billing"
+    return_url: str = ""
+
+    def get_return_url(self) -> str:
+        if self.return_url:
+            return self.return_url
+        frontend_url = settings.FRONTEND_URL or "http://localhost:3000"
+        return f"{frontend_url}/admin/billing"
 
 
 def _get_stripe():

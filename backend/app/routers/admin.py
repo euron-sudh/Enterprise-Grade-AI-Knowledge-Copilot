@@ -309,7 +309,8 @@ async def list_roles(
 
 # ── Invite Links ───────────────────────────────────────────────────────────────
 
-FRONTEND_BASE_URL = "http://localhost:3001"
+from app.config import settings as _settings
+FRONTEND_BASE_URL = _settings.FRONTEND_URL or "http://localhost:3001"
 
 
 def _invite_to_out(invite: Invite) -> InviteOut:
