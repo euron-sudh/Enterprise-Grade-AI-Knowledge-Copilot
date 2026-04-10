@@ -6,7 +6,7 @@ applications:
           commands:
             - node --version
             - npm --version
-            - npm ci
+            - npm ci --include=dev
         build:
           commands:
             - npm run build
