@@ -1,24 +1,39 @@
 # Runbook: Scaling
 
-**Last Updated:** 2026-04-09
-**Applies to:** KnowledgeForge on AWS EKS
+**Last Updated:** 2026-04-10
+**Applies to:** KnowledgeForge on AWS ECS Fargate + AWS Amplify
+**Region:** ap-south-1 (Mumbai)
 
 ---
 
 ## Auto-Scaling (Normal Operations)
 
-Kubernetes HPA handles scaling automatically. No manual intervention is needed for routine load changes.
+ECS Application Auto Scaling handles the backend automatically. No manual intervention needed for routine load changes.
 
-| Deployment | Min Replicas | Max Replicas | Scale Trigger |
+| Service | Min Tasks | Max Tasks | Scale-out Trigger |
 |---|---|---|---|
-| `backend-api` | 2 | 20 | CPU > 70% |
-| `frontend` | 2 | 10 | CPU > 70% |
-| `celery-worker` | 2 | 16 | Celery queue depth > 100 |
-| `ws-server` | 2 | 12 | Memory > 70% |
+| `knowledgeforge-backend-prod` | 1 | 10 | CPU > 70% for 2× 5 min |
+| `knowledgeforge-backend-prod` | 1 | 10 | Memory > 75% for 2× 5 min |
 
 **Check current state:**
 ```bash
-kubectl get hpa -n knowledgeforge
+# View current service task count
+aws ecs describe-services \
+  --cluster knowledgeforge-prod \
+  --services knowledgeforge-backend-prod \
+  --query 'services[0].{running:runningCount,desired:desiredCount,pending:pendingCount}'
+
+# View auto-scaling policies
+aws application-autoscaling describe-scaling-policies \
+  --service-namespace ecs \
+  --resource-id service/knowledgeforge-prod/knowledgeforge-backend-prod
+```
+
+**Check CloudWatch alarms (auto-scaling triggers):**
+```bash
+aws cloudwatch describe-alarms \
+  --alarm-name-prefix KF-Prod \
+  --query 'MetricAlarms[*].{name:AlarmName,state:StateValue}'
 ```
 
 ---
@@ -28,119 +43,167 @@ kubectl get hpa -n knowledgeforge
 Before a product launch, press release, or known traffic event:
 
 ```bash
-# Temporarily override HPA minimum
-kubectl patch hpa backend-api -n knowledgeforge \
-  -p '{"spec":{"minReplicas":6}}'
+# Scale up to 4 tasks immediately
+aws ecs update-service \
+  --cluster knowledgeforge-prod \
+  --service knowledgeforge-backend-prod \
+  --desired-count 4
 
-# Or scale directly (HPA will reconcile back after traffic drops)
-kubectl scale deployment/backend-api --replicas=8 -n knowledgeforge
+# Verify tasks are running
+aws ecs describe-services \
+  --cluster knowledgeforge-prod \
+  --services knowledgeforge-backend-prod \
+  --query 'services[0].{running:runningCount,desired:desiredCount}'
 
-# Verify pods are running
-kubectl get pods -n knowledgeforge -l app=backend-api
+# Wait until all tasks are healthy
+aws ecs wait services-stable \
+  --cluster knowledgeforge-prod \
+  --services knowledgeforge-backend-prod
+
+echo "Scaled up successfully."
 ```
 
 Revert after the event:
 ```bash
-kubectl patch hpa backend-api -n knowledgeforge \
-  -p '{"spec":{"minReplicas":2}}'
+# Return to auto-scaling minimum
+aws ecs update-service \
+  --cluster knowledgeforge-prod \
+  --service knowledgeforge-backend-prod \
+  --desired-count 1
 ```
+
+---
+
+## Updating Auto-Scaling Thresholds
+
+```bash
+# Change the maximum task count
+aws application-autoscaling register-scalable-target \
+  --service-namespace ecs \
+  --resource-id service/knowledgeforge-prod/knowledgeforge-backend-prod \
+  --scalable-dimension ecs:service:DesiredCount \
+  --min-capacity 1 \
+  --max-capacity 20   # ← updated max
+
+# Update CPU scale-out target
+aws application-autoscaling put-scaling-policy \
+  --service-namespace ecs \
+  --resource-id service/knowledgeforge-prod/knowledgeforge-backend-prod \
+  --scalable-dimension ecs:service:DesiredCount \
+  --policy-name cpu-scaling \
+  --policy-type TargetTrackingScaling \
+  --target-tracking-scaling-policy-configuration '{
+    "TargetValue": 60.0,
+    "PredefinedMetricSpecification": {"PredefinedMetricType": "ECSServiceAverageCPUUtilization"},
+    "ScaleInCooldown": 300,
+    "ScaleOutCooldown": 60
+  }'
+```
+
+---
+
+## Scaling Task CPU / Memory (Vertical)
+
+If tasks are CPU or memory constrained, update the task definition:
+
+1. Edit `infrastructure/ecs/backend-task-definition.json` — change `cpu` and `memory` values
+2. Register the new task definition revision:
+   ```bash
+   aws ecs register-task-definition \
+     --cli-input-json file://infrastructure/ecs/backend-task-definition.json
+   ```
+3. Deploy: `aws ecs update-service --cluster knowledgeforge-prod --service knowledgeforge-backend-prod --force-new-deployment`
+
+**Common ECS Fargate CPU/memory combinations:**
+
+| vCPU | Memory | Use case |
+|---|---|---|
+| 256 (0.25) | 512 MB | Dev / very low traffic |
+| 512 (0.5) | 1024 MB | Current prod baseline |
+| 1024 (1) | 2048 MB | Medium load |
+| 2048 (2) | 4096 MB | Heavy AI workloads |
 
 ---
 
 ## Database Scaling
 
-### Add a Read Replica (for analytics / read-heavy load)
+### Add a Read Replica (analytics / read-heavy load)
 
-1. Open the AWS RDS console
-2. Select the primary instance → **Actions → Create read replica**
-3. Add the replica URL to `DATABASE_READONLY_URL` in Secrets Manager
-4. In `app/database.py`, route read-only queries to the replica session
+1. Open the AWS RDS Console → select the primary instance → **Actions → Create read replica**
+2. Add the replica endpoint URL to `knowledgeforge/prod/database-readonly-url` in Secrets Manager
+3. In `app/database.py`, create a second engine pointing to the read replica and route analytics queries there
+
+### Increase RDS Instance Size
+
+1. RDS Console → Instance → **Modify** → choose a larger instance class (e.g., `db.t3.medium` → `db.t3.large`)
+2. Apply during the next maintenance window, or immediately (causes brief failover in Multi-AZ)
 
 ### Increase Connection Pool Size
 
-```bash
-# Edit the backend config secret
-aws secretsmanager update-secret \
-  --secret-id knowledgeforge/prod/app-config \
-  --secret-string '{"DATABASE_POOL_SIZE": "40", "DATABASE_MAX_OVERFLOW": "80"}'
+Update `pool_size` and `max_overflow` in `backend/app/database.py`:
 
-kubectl rollout restart deployment/backend-api -n knowledgeforge
+```python
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    pool_size=20,       # was 10
+    max_overflow=40,    # was 20
+)
 ```
 
-Default: `pool_size=20`, `max_overflow=40`. The RDS instance must have enough `max_connections` to support the increase (PostgreSQL default is `100 * vCPUs`).
+Then redeploy the backend.
 
 ---
 
-## Redis Scaling
+## ElastiCache Redis Scaling
 
-ElastiCache Redis is provisioned in cluster mode. To scale:
+### Current config
 
-1. Open ElastiCache console → select the cluster
-2. **Modify** → increase node type or add shards
-3. Changes apply with a brief failover (< 30 seconds with cluster mode)
+`cache.t4g.micro` — suitable for dev/low traffic caching. Upgrade for production load:
 
-No application changes required — the connection URL stays the same.
+1. AWS ElastiCache Console → select cluster → **Modify**
+2. Choose a larger node type (e.g., `cache.t3.small`, `cache.t3.medium`)
+3. Apply — ElastiCache performs a rolling replacement
+
+### Redis connection pooling
+
+If Redis connections are saturating, reduce connection pool size in application:
+
+```python
+# In app/dependencies.py or wherever Redis client is initialized
+redis = aioredis.from_url(
+    settings.REDIS_URL,
+    max_connections=20,   # limit per task
+)
+```
+
+---
+
+## Frontend Scaling (Amplify)
+
+AWS Amplify scales Lambda@Edge automatically — no manual action required. Amplify's SSR Lambda scales to handle concurrent requests without configuration.
+
+For very high traffic, configure CloudFront caching for static pages:
+1. Amplify Console → **App settings → Custom headers** or
+2. CloudFront distribution → Cache behaviors for `/` and static routes
 
 ---
 
 ## Celery Worker Scaling
 
-Workers scale on queue depth via KEDA (if configured) or manually:
+Celery workers run in the same ECS task as the backend (or as a separate service). To scale workers:
 
 ```bash
-# Manual scale
-kubectl scale deployment/celery-worker --replicas=8 -n knowledgeforge
+# If running as a separate ECS service
+aws ecs update-service \
+  --cluster knowledgeforge-prod \
+  --service knowledgeforge-celery-workers \
+  --desired-count 4
 
-# Check queue depth in real time
-kubectl exec -it <redis-pod> -n knowledgeforge -- \
-  redis-cli llen celery
-
-# Flower task monitor
-kubectl port-forward svc/flower 5555:5555 -n knowledgeforge
-```
-
-For sustained high ingestion load, increase worker concurrency:
-```bash
-# Edit the Celery worker deployment command
-kubectl edit deployment/celery-worker -n knowledgeforge
-# Change: --concurrency=4  →  --concurrency=8
+# Or override concurrency via environment variable
+# CELERY_WORKER_CONCURRENCY=8 (set in Secrets Manager, then force redeploy)
 ```
 
 ---
 
-## Pinecone Scaling
-
-Pinecone is a managed service — it scales automatically with pod count changes. If you observe high query latency:
-
-1. Check your pod tier in the Pinecone console
-2. Upgrade to a higher performance pod (e.g. `p2.x2` → `p2.x4`)
-3. No application changes required
-
----
-
-## Node Scaling (Karpenter)
-
-Karpenter automatically provisions new EC2 nodes when pods are pending due to insufficient capacity.
-
-**Check pending pods:**
-```bash
-kubectl get pods -n knowledgeforge --field-selector=status.phase=Pending
-```
-
-**Check Karpenter provisioning:**
-```bash
-kubectl logs -n karpenter deployment/karpenter --tail=50
-```
-
-If Karpenter is not provisioning (e.g. hitting account vCPU limits):
-1. Check EC2 service quotas in the AWS console
-2. Request a limit increase for the required instance family
-3. Karpenter will automatically use the new capacity
-
----
-
-## Cost Optimization
-
-- **Spot instances**: Celery workers run on Spot by default (configured in Karpenter NodePool). If Spot is unavailable, Karpenter falls back to On-Demand automatically.
-- **Scale down at night**: For non-production environments, use a CronJob to scale down to 0 replicas at midnight and back up at 8am.
-- **Right-sizing**: Review `kubectl top pods` weekly. If CPU requests are consistently much higher than actual usage, reduce `resources.requests.cpu` in the deployment manifests.
+*Document version: 2.0 — 2026-04-10*
+*Architecture: ECS Fargate + ElastiCache + RDS + AWS Amplify*

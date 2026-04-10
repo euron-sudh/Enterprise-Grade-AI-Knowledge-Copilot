@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0-dev
 **Branch:** dev
-**Last Updated:** 2026-04-09
+**Last Updated:** 2026-04-10
 **Author:** KnowledgeForge Engineering
 
 ---
@@ -80,6 +80,13 @@ What remains is gated on external accounts/infrastructure (Pinecone API key, Dee
 | Flower Monitor | ✅ | Task monitoring UI on port 5555 |
 | S3 Storage Abstraction | ✅ | Auto-switches between local disk and S3 based on env var |
 | Pinecone Helpers | ✅ | embed_texts(), upsert_to_pinecone(), delete_chunks() |
+| AWS ECS Fargate Deployment | ✅ | Backend running on ECS Fargate (ap-south-1), ECR image registry |
+| AWS Amplify Frontend | ✅ | Next.js SSR deployed on Amplify (dev branch live) |
+| GitHub Actions CI/CD | ✅ | cd-backend.yml (ECR→ECS), cd-frontend-amplify.yml (Amplify) |
+| Amazon RDS PostgreSQL | ✅ | Production database running in private subnet |
+| Amazon ElastiCache Redis | ✅ | Redis 7 cluster (cache.t4g.micro) with TLS |
+| AWS Secrets Manager | ✅ | All secrets stored and injected at ECS task startup |
+| CloudWatch Logging | ✅ | ECS logs → /ecs/knowledgeforge-backend-prod |
 
 #### Real-time
 
@@ -98,9 +105,9 @@ What remains is gated on external accounts/infrastructure (Pinecone API key, Dee
 | backend/README.md | ✅ Project structure, config, migrations, workers, storage, auth |
 | frontend/README.md | ✅ Routes, state management, auth flow, real-time, testing |
 | docs/api/API_REFERENCE.md | ✅ All endpoints with request/response examples and error codes |
-| docs/runbooks/deployment.md | ✅ Normal + emergency deploy, rollback, migrations, Amplify |
+| docs/runbooks/deployment.md | ✅ ECS + Amplify deploys, rollback, migrations, env var updates |
 | docs/runbooks/incident-response.md | ✅ P1–P4 playbooks, escalation, postmortem template |
-| docs/runbooks/scaling.md | ✅ HPA, manual scale-up, DB replicas, Celery, Karpenter |
+| docs/runbooks/scaling.md | ✅ ECS auto-scaling, manual scale, DB replicas, Celery, Redis |
 
 ---
 
@@ -127,11 +134,11 @@ What remains is gated on external accounts/infrastructure (Pinecone API key, Dee
 
 | Feature | Reason |
 |---|---|
-| CD Pipeline (GitHub Actions → ArgoCD → EKS) | Terraform scaffolded; deployment not applied |
 | WebRTC Meeting Rooms (Daily.co / LiveKit) | Meeting UI exists; SDK not integrated |
 | i18n / RTL | Not started; requires full string extraction |
 | E2E test suite (Playwright) | Spec stubs exist; flows not written |
 | Mobile app | Not in scope for v1 |
+| Kubernetes / EKS migration | Current ECS deployment is sufficient for v1 scale |
 
 ---
 

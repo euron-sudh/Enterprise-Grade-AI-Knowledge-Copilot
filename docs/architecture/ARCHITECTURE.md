@@ -79,25 +79,28 @@ The architecture is designed for horizontal scalability, multi-tenancy, and zero
 
 | Plane | Components |
 |---|---|
-| **Presentation** | Browser → Next.js 14 → NextAuth.js (authenticate) |
-| **Infrastructure** | Route 53 → AWS WAF → Amazon EKS + CloudFront CDN |
-| **API Layer** | ALB/API Gateway → WebSocket `/ws/*`, REST `/api/v1/*`, SSE token streaming |
-| **Backend** | FastAPI Backend, Celery Workers, WS Server |
-| **External Services** | ElevenLabs TTS, Deepgram STT, Stripe Billing |
-| **Observability** | Prometheus → Grafana, AWS X-Ray Tracing |
-| **Intelligence** | LLM Providers (Claude, GPT-4, Gemini), Agent Framework (Code Executor, Tavily), RAG Pipeline (Embedding → Hybrid Search → Reranker) |
-| **Data** | Redis Cache, S3 Storage, OpenSearch, PostgreSQL + pgvector, Pinecone (scale) |
+| **Presentation** | Browser → AWS Amplify (Next.js 14 SSR) → NextAuth.js (authenticate) |
+| **Infrastructure** | Route 53 → ACM (SSL) → CloudFront CDN + ALB → ECS Fargate |
+| **API Layer** | ALB → REST `/api/v1/*`, WebSocket `/ws/*`, SSE token streaming |
+| **Backend** | FastAPI on ECS Fargate, Celery Workers, WebSocket handlers |
+| **External Services** | ElevenLabs TTS, Deepgram STT, Stripe Billing, Tavily Web Search |
+| **Observability** | AWS CloudWatch (logs, metrics, alarms), X-Ray Tracing |
+| **Intelligence** | LLM Providers (Claude, GPT-4, Gemini), Agent Framework (Tavily), RAG Pipeline (Embedding → Hybrid Search) |
+| **Data** | Amazon RDS (PostgreSQL 16), ElastiCache Redis 7, S3, pgvector, Pinecone (scale) |
 
 ### Component Inventory
 
-| Component | Technology | Role |
+| Component | Technology | Hosting |
 |---|---|---|
-| Frontend | Next.js 14 (App Router) | UI, auth sessions, real-time client |
-| Backend API | FastAPI + Uvicorn | REST endpoints, SSE streaming |
-| WebSocket Server | FastAPI WebSocket | Real-time chat, voice, meetings |
-| Task Queue | Celery + Redis | Async doc ingestion, notifications |
-| Primary DB | PostgreSQL 16 (RDS) | All relational data |
-| Vector Store | pgvector (primary) + Pinecone | Semantic search |
+| Frontend | Next.js 14 (App Router, SSR) | AWS Amplify (Lambda@Edge per branch) |
+| Backend API | FastAPI + Uvicorn | Amazon ECS Fargate |
+| Container Registry | Docker images | Amazon ECR |
+| WebSocket Server | FastAPI WebSocket | Same ECS task as backend API |
+| Task Queue | Celery + Redis | ECS Fargate (separate service) |
+| Primary DB | PostgreSQL 16 | Amazon RDS (private subnet) |
+| Cache | Redis 7 | Amazon ElastiCache (private subnet) |
+| Object Storage | Files, videos, backups | Amazon S3 + CloudFront |
+| Vector Store | pgvector (primary) + Pinecone | RDS extension + Pinecone cloud |
 | Cache | Redis 7 (ElastiCache) | Sessions, analytics TTL, rate limiting |
 | Search | Elasticsearch / OpenSearch | Full-text search, hybrid retrieval |
 | Object Storage | AWS S3 | Documents, recordings, videos |
@@ -654,86 +657,114 @@ CloudFront HLS streaming URL generated
 ```
 Internet
     ↓
-Route 53 (DNS)  →  ACM (SSL/TLS)
+Route 53 (DNS)  →  ACM (SSL/TLS certificates)
     ↓
-CloudFront (CDN)
-    ├── Static assets (Next.js build output)
-    ├── HLS video streaming (S3 origin)
-    └── API caching (selected endpoints)
-    ↓
-ALB (Application Load Balancer)
-    ├── /api/*  →  Backend EKS pods
-    ├── /ws/*   →  WebSocket EKS pods (sticky sessions)
-    └── /*      →  Next.js EKS pods (or Amplify)
-    ↓
-Amazon EKS (Kubernetes)
-    ├── backend-api    (FastAPI, Deployment + HPA)
-    ├── frontend       (Next.js, Deployment + HPA)
-    ├── ws-server      (WebSocket, Deployment + HPA)
-    └── celery-worker  (Deployment + HPA on queue depth)
-    ↓
-Data Layer (Private Subnets)
-    ├── Amazon RDS (PostgreSQL 16, Multi-AZ)
-    ├── Amazon ElastiCache (Redis 7, Cluster mode)
-    ├── Amazon OpenSearch (full-text search)
-    └── Amazon S3 (documents, recordings, backups)
+┌───────────────────────────────────────────────┐
+│            Frontend — AWS Amplify             │
+│  Next.js 14 SSR (Lambda@Edge per branch)      │
+│  Branch: dev  → dev.d2dg07mc33522q.amplify… │
+│  Branch: main → app.knowledgeforge.ai         │
+│  Env vars injected at build time              │
+└──────────────────────┬────────────────────────┘
+                       │ HTTPS (via /api/backend proxy rewrite)
+┌──────────────────────▼────────────────────────┐
+│       ALB — Application Load Balancer          │
+│   HTTP:80 → HTTPS:443 redirect                │
+│   Health check: GET /health                   │
+└──────────────────────┬────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────┐
+│       ECS Fargate — Backend Service            │
+│   Cluster: knowledgeforge-prod                 │
+│   Task: FastAPI + Uvicorn (port 8000)          │
+│   Desired: 1–10 tasks (CPU + memory scaling)   │
+│   Image: ECR → knowledgeforge-backend-prod     │
+│   Secrets: AWS Secrets Manager (at task start) │
+└──────┬───────────────────────────┬─────────────┘
+       │                           │
+┌──────▼──────────┐   ┌────────────▼──────────────┐
+│  Amazon RDS     │   │  Amazon ElastiCache        │
+│  PostgreSQL 16  │   │  Redis 7 (cache.t4g.micro) │
+│  (private subnet│   │  TLS + cluster config EP   │
+└─────────────────┘   └───────────────────────────┘
+       │
+┌──────▼──────────┐
+│  Amazon S3      │
+│  (file storage) │
+│  CloudFront CDN │
+│  (media stream) │
+└─────────────────┘
 ```
+
+**Region:** ap-south-1 (Mumbai)
 
 ### CI/CD Pipeline
 
 ```
-Developer push → GitHub
+Developer push to dev/main → GitHub
     ↓
-GitHub Actions CI:
-    ├── Lint + type check (ruff, mypy, eslint, tsc)
-    ├── Unit tests (pytest, vitest)
-    ├── Integration tests (testcontainers)
-    ├── Security scan (SAST + dependency audit)
-    └── Build Docker images → push to Amazon ECR
+GitHub Actions CI (.github/workflows/ci-backend.yml):
+    ├── Python lint (ruff) + type check
+    ├── Unit tests (pytest)
+    └── Docker build validation
     ↓
-GitHub Actions CD:
-    ├── Update Kubernetes manifests (image tags)
-    └── Commit manifests → GitOps repo
+GitHub Actions CD (.github/workflows/cd-backend.yml):
+    ├── docker build ./backend
+    ├── docker push → Amazon ECR (tagged with git SHA)
+    ├── aws ecs update-service --force-new-deployment
+    └── aws ecs wait services-stable (health check gate)
     ↓
-ArgoCD (continuous sync):
-    ├── Detects manifest changes
-    ├── Deploys canary (10% traffic)
-    ├── Runs smoke tests
-    ├── Progressive rollout (25% → 50% → 100%)
-    └── Auto-rollback on error rate spike
+GitHub Actions CD (.github/workflows/cd-frontend-amplify.yml):
+    └── aws amplify start-job (triggers Amplify build)
+    ↓
+AWS Amplify builds Next.js → deploys SSR Lambda
+    ├── Environment variables injected at build time
+    └── CloudFront invalidation on successful deploy
 ```
 
-### Kubernetes Resources
+### ECS Task Configuration
 
-```yaml
-# Each service has:
-Deployment:
-  replicas: 2 (min)
-  strategy: RollingUpdate (maxSurge: 1, maxUnavailable: 0)
-  resources:
-    requests: { cpu: "250m", memory: "512Mi" }
-    limits:   { cpu: "2000m", memory: "2Gi" }
+```
+Task Definition: knowledgeforge-backend-prod
+  CPU:    512 vCPU units (0.5 vCPU)
+  Memory: 1024 MB
+  Launch type: FARGATE
+  Network mode: awsvpc (private subnets)
 
-HorizontalPodAutoscaler:
-  minReplicas: 2
-  maxReplicas: 20
-  metrics:
-    - CPU utilization > 70%
-    - Custom: Celery queue depth (for workers)
+Container:
+  Image: <account>.dkr.ecr.ap-south-1.amazonaws.com/knowledgeforge-backend-prod:<sha>
+  Port: 8000
+  Environment: injected from AWS Secrets Manager at task start
+  Log driver: awslogs → /ecs/knowledgeforge-backend-prod (CloudWatch)
 
-PodDisruptionBudget:
-  minAvailable: 1  # Zero-downtime during node drain
+Auto Scaling:
+  Min tasks: 1
+  Max tasks: 10
+  Scale out: CPU > 70% for 2 consecutive 5-min periods
+  Scale out: Memory > 75% for 2 consecutive 5-min periods
+  Scale in:  CPU < 40% for 15 minutes
 ```
 
 ### Database Migrations
 
-Alembic migrations run automatically as a Kubernetes init container before the backend deployment rolls out:
+Alembic migrations are run manually via ECS Exec or as a one-off ECS task before deploying a new backend revision:
 
-```yaml
-initContainers:
-  - name: migrate
-    image: knowledgeforge/backend:$VERSION
-    command: ["alembic", "upgrade", "head"]
+```bash
+# Run migrations via ECS Exec (requires ECS Exec enabled on task)
+aws ecs execute-command \
+  --cluster knowledgeforge-prod \
+  --task <TASK_ARN> \
+  --container knowledgeforge-backend \
+  --command "alembic upgrade head" \
+  --interactive
+
+# Or trigger migration as a one-off Fargate task
+aws ecs run-task \
+  --cluster knowledgeforge-prod \
+  --task-definition knowledgeforge-backend-prod \
+  --launch-type FARGATE \
+  --overrides '{"containerOverrides":[{"name":"knowledgeforge-backend","command":["alembic","upgrade","head"]}]}' \
+  --network-configuration "awsvpcConfiguration={subnets=[PRIVATE_SUBNET_ID],securityGroups=[SG_ID],assignPublicIp=DISABLED}"
 ```
 
 ---

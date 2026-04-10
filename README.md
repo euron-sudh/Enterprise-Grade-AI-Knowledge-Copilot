@@ -183,17 +183,18 @@ KnowledgeForge ingests, indexes, and reasons over your organization's entire kno
 ### Infrastructure (AWS)
 | Layer | Technology |
 |---|---|
-| Orchestration | Amazon EKS (Kubernetes) |
-| CI/CD | GitHub Actions → ArgoCD (GitOps) |
-| IaC | Terraform + Terragrunt |
-| Container Registry | Amazon ECR |
-| CDN | CloudFront |
-| DNS | Route 53 + ACM (SSL) |
-| Secrets | AWS Secrets Manager |
-| Monitoring | Prometheus + Grafana + CloudWatch |
-| Logging | ELK Stack (OpenSearch) |
-| Tracing | OpenTelemetry + AWS X-Ray |
-| Auto-scaling | Kubernetes HPA + Karpenter |
+| Frontend Hosting | AWS Amplify (Next.js SSR, auto-build on push) |
+| Backend Compute | Amazon ECS Fargate (serverless containers) |
+| Container Registry | Amazon ECR (immutable image tags in prod) |
+| CI/CD | GitHub Actions (build → ECR → ECS force-deploy) |
+| Database | Amazon RDS PostgreSQL 16 |
+| Cache | Amazon ElastiCache Redis 7 (cluster mode) |
+| Object Storage | Amazon S3 + CloudFront (CDN) |
+| Load Balancer | Application Load Balancer (ALB) |
+| Secrets | AWS Secrets Manager (injected at task startup) |
+| Monitoring | Amazon CloudWatch (logs, metrics, alarms) |
+| Auto-scaling | ECS Application Auto Scaling (CPU + memory targets) |
+| Region | ap-south-1 (Mumbai) |
 
 ---
 
@@ -634,15 +635,19 @@ npm run test:coverage                   # Coverage report
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for full AWS deployment instructions including:
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full AWS deployment guide covering:
 
-- ECS task definition setup
+- IAM roles and OIDC setup for GitHub Actions
+- VPC networking (public/private subnets, NAT, ALB)
+- ECR repository creation and lifecycle policies
+- Secrets Manager setup for all application secrets
 - RDS PostgreSQL provisioning
-- Amplify frontend deployment
-- GitHub Actions CI/CD pipeline configuration
-- Environment variable management via AWS Secrets Manager
-
-For Kubernetes / EKS deployment, see the Terraform configs in `infrastructure/terraform/` and Kubernetes manifests under `infrastructure/ecs/`.
+- ElastiCache Redis cluster setup
+- ECS Fargate cluster, task definitions, and service configuration
+- ECS Application Auto Scaling (CPU + memory targets)
+- AWS Amplify frontend deployment and environment variables
+- CloudWatch monitoring, alarms, and log retention
+- Rollback procedures for both backend (ECS) and frontend (Amplify)
 
 ---
 
