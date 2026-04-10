@@ -6,9 +6,11 @@ applications:
           commands:
             - node --version
             - npm --version
-            - npm ci --include=dev
+            - export NODE_ENV=development
+            - npm ci
         build:
           commands:
+            - export NEXT_TELEMETRY_DISABLED=1
             - npm run build
       artifacts:
         baseDirectory: .next
@@ -16,6 +18,5 @@ applications:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
           - .next/cache/**/*
     appRoot: frontend
