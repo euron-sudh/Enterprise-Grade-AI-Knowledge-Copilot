@@ -55,7 +55,6 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -63,8 +62,6 @@ export default function LoginPage() {
   });
 
   const quickLogin = async (email: string, password: string) => {
-    setValue('email', email);
-    setValue('password', password);
     try {
       const result = await signIn('credentials', { email, password, redirect: false, callbackUrl });
       if (result?.error) { toast.error('Quick login failed. Please check credentials.'); return; }
@@ -185,13 +182,13 @@ export default function LoginPage() {
       </div>
 
       {/* Credentials Form */}
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate autoComplete="off">
         <div className="space-y-1.5">
           <label htmlFor="email" className="block text-sm font-medium text-surface-700 dark:text-surface-300">Work email</label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400 pointer-events-none" />
             <input
-              id="email" type="email" autoComplete="email" placeholder="you@company.com"
+              id="email" type="email" autoComplete="off" placeholder="you@company.com"
               {...register('email')}
               className={cn('input-base pl-9', errors.email && 'border-red-400 dark:border-red-600')}
             />
@@ -209,7 +206,7 @@ export default function LoginPage() {
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400 pointer-events-none" />
             <input
-              id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="••••••••"
+              id="password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="••••••••"
               {...register('password')}
               className={cn('input-base pl-9 pr-10', errors.password && 'border-red-400 dark:border-red-600')}
             />
