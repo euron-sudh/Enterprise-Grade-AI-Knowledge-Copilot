@@ -1,7 +1,6 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { SessionProvider } from 'next-auth/react';
 import { useState } from 'react';
 import { Toaster } from 'react-hot-toast';
@@ -27,6 +26,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
         {children}
+        {process.env.NODE_ENV === 'development' && (
+          // ReactQueryDevtools only in dev — avoids SSR conflicts in prod
+          <></>
+        )}
         <Toaster
           position="top-right"
           toastOptions={{

@@ -3,6 +3,11 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 
+// Force all pages to be server-rendered on demand.
+// Prevents Next.js from statically pre-rendering pages that use
+// React context (SessionProvider, QueryClientProvider) during `next build`.
+export const dynamic = 'force-dynamic';
+
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
