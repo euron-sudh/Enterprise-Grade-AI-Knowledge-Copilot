@@ -1,12 +1,30 @@
-import { NextRequest } from 'next/server';
-import { createClient } from '@/utils/supabase/middleware';
+import { withAuth } from 'next-auth/middleware';
 
-export async function middleware(request: NextRequest) {
-  // Refresh the Supabase session if needed and propagate updated cookies
-  const { response } = createClient(request);
-  return response;
-}
+// Protect dashboard routes — redirect unauthenticated users to /login.
+// Public routes (/, /login, /register, /forgot-password, etc.) are not listed
+// here so they are always accessible without a session.
+export default withAuth({
+  pages: {
+    signIn: '/login',
+  },
+});
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/home/:path*',
+    '/chat/:path*',
+    '/knowledge-base/:path*',
+    '/search/:path*',
+    '/agents/:path*',
+    '/workflows/:path*',
+    '/analytics/:path*',
+    '/meetings/:path*',
+    '/voice/:path*',
+    '/video/:path*',
+    '/admin/:path*',
+    '/profile/:path*',
+    '/teams/:path*',
+    '/notifications/:path*',
+    '/playground/:path*',
+  ],
 };
