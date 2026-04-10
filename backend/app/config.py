@@ -66,7 +66,7 @@ class Settings(BaseSettings):
 
     # AWS S3 (optional — falls back to local disk if not set)
     AWS_S3_BUCKET: str = ""
-    AWS_S3_REGION: str = "us-east-1"
+    AWS_S3_REGION: str = "ap-south-1"
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
 
