@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { signIn, getProviders } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -42,7 +42,7 @@ function MicrosoftIcon({ className }: { className?: string }) {
   );
 }
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') ?? '/home';
@@ -51,6 +51,16 @@ export default function LoginPage() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
+  // Track which OAuth providers are actually registered in NextAuth
+  const [oauthProviders, setOauthProviders] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    getProviders().then((providers) => {
+      if (providers) {
+        setOauthProviders(new Set(Object.keys(providers)));
+      }
+    });
+  }, []);
 
   const {
     register,
@@ -93,14 +103,13 @@ export default function LoginPage() {
 
   const handleOAuth = async (provider: 'google' | 'microsoft') => {
     setOauthLoading(provider);
-    // Redirect directly to the provider's sign-in page.
-    // NextAuth handles the full OAuth flow and redirects back here on completion.
-    await signIn(provider === 'microsoft' ? 'azure-ad' : 'google', {
-      callbackUrl,
-    });
-    // signIn with redirect=true (default) navigates away — only reaches here on error
+    await signIn(provider === 'microsoft' ? 'azure-ad' : 'google', { callbackUrl });
     setOauthLoading(null);
   };
+
+  const hasGoogle = oauthProviders.has('google');
+  const hasAzure = oauthProviders.has('azure-ad');
+  const hasOAuth = hasGoogle || hasAzure;
 
   return (
     <div className="space-y-6">
@@ -120,7 +129,7 @@ export default function LoginPage() {
               : errorParam === 'CredentialsSignin'
                 ? 'Invalid credentials. Please check your email and password.'
                 : errorParam === 'Configuration'
-                  ? 'OAuth not configured. Add GOOGLE_CLIENT_ID / AZURE_AD_CLIENT_ID to your environment variables.'
+                  ? 'OAuth sign-in is not configured. Please use email and password below.'
                   : 'An error occurred during sign in. Please try again.'}
           </span>
         </div>
@@ -133,53 +142,61 @@ export default function LoginPage() {
         </div>
       )}
 
-      {/* OAuth Buttons */}
-      <div className="grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => handleOAuth('google')}
-          disabled={!!oauthLoading || isSubmitting}
-          className={cn(
-            'flex items-center justify-center gap-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 transition-all hover:bg-surface-50 dark:hover:bg-surface-700 hover:border-surface-300 hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed'
-          )}
-        >
-          {oauthLoading === 'google' ? (
-            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          ) : (
-            <GoogleIcon className="h-4 w-4" />
-          )}
-          {oauthLoading === 'google' ? 'Redirecting...' : 'Google'}
-        </button>
+      {/* OAuth Buttons — only rendered when providers are actually registered */}
+      {hasOAuth && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            {hasGoogle && (
+              <button
+                type="button"
+                onClick={() => handleOAuth('google')}
+                disabled={!!oauthLoading || isSubmitting}
+                className={cn(
+                  'flex items-center justify-center gap-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 transition-all hover:bg-surface-50 dark:hover:bg-surface-700 hover:border-surface-300 hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                {oauthLoading === 'google' ? (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <GoogleIcon className="h-4 w-4" />
+                )}
+                {oauthLoading === 'google' ? 'Redirecting...' : 'Google'}
+              </button>
+            )}
 
-        <button
-          type="button"
-          onClick={() => handleOAuth('microsoft')}
-          disabled={!!oauthLoading || isSubmitting}
-          className={cn(
-            'flex items-center justify-center gap-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 transition-all hover:bg-surface-50 dark:hover:bg-surface-700 hover:border-surface-300 hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed'
-          )}
-        >
-          {oauthLoading === 'microsoft' ? (
-            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          ) : (
-            <MicrosoftIcon className="h-4 w-4" />
-          )}
-          {oauthLoading === 'microsoft' ? 'Redirecting...' : 'Microsoft'}
-        </button>
-      </div>
+            {hasAzure && (
+              <button
+                type="button"
+                onClick={() => handleOAuth('microsoft')}
+                disabled={!!oauthLoading || isSubmitting}
+                className={cn(
+                  'flex items-center justify-center gap-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 transition-all hover:bg-surface-50 dark:hover:bg-surface-700 hover:border-surface-300 hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                {oauthLoading === 'microsoft' ? (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <MicrosoftIcon className="h-4 w-4" />
+                )}
+                {oauthLoading === 'microsoft' ? 'Redirecting...' : 'Microsoft'}
+              </button>
+            )}
+          </div>
 
-      {/* Divider */}
-      <div className="relative flex items-center">
-        <div className="flex-1 border-t border-surface-200 dark:border-surface-700" />
-        <span className="mx-3 text-xs text-surface-400 dark:text-surface-500">or continue with email</span>
-        <div className="flex-1 border-t border-surface-200 dark:border-surface-700" />
-      </div>
+          {/* Divider */}
+          <div className="relative flex items-center">
+            <div className="flex-1 border-t border-surface-200 dark:border-surface-700" />
+            <span className="mx-3 text-xs text-surface-400 dark:text-surface-500">or continue with email</span>
+            <div className="flex-1 border-t border-surface-200 dark:border-surface-700" />
+          </div>
+        </>
+      )}
 
       {/* Credentials Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate autoComplete="off">
@@ -252,7 +269,7 @@ export default function LoginPage() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => quickLogin('admin@knowledgeforge.ai', 'Admin1234!')}
+            onClick={() => quickLogin('admin@knowledgeforge.ai', 'Admin@123')}
             disabled={isSubmitting || !!oauthLoading}
             className="flex flex-col items-center gap-0.5 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-xs transition hover:bg-amber-50 dark:hover:bg-surface-700 disabled:opacity-50"
           >
@@ -261,7 +278,7 @@ export default function LoginPage() {
           </button>
           <button
             type="button"
-            onClick={() => quickLogin('demo@knowledgeforge.ai', 'demo12345')}
+            onClick={() => quickLogin('demo@knowledgeforge.ai', 'Demo@123')}
             disabled={isSubmitting || !!oauthLoading}
             className="flex flex-col items-center gap-0.5 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-xs transition hover:bg-amber-50 dark:hover:bg-surface-700 disabled:opacity-50"
           >
@@ -271,5 +288,29 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function LoginSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="space-y-2">
+        <div className="h-7 w-40 rounded bg-surface-200 dark:bg-surface-700" />
+        <div className="h-4 w-64 rounded bg-surface-200 dark:bg-surface-700" />
+      </div>
+      <div className="space-y-3">
+        <div className="h-10 rounded-lg bg-surface-200 dark:bg-surface-700" />
+        <div className="h-10 rounded-lg bg-surface-200 dark:bg-surface-700" />
+      </div>
+      <div className="h-11 rounded-lg bg-surface-200 dark:bg-surface-700" />
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginSkeleton />}>
+      <LoginForm />
+    </Suspense>
   );
 }
