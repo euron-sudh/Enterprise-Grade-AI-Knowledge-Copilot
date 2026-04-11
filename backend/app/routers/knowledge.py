@@ -1006,14 +1006,12 @@ async def create_connector(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Upsert: if a connector of this type already exists for the user, reuse it
-    connector, duplicates = await _get_primary_connector_for_type(db, current_user.id, body.type)
-
-    if connector:
-        connector.config = body.config or {}
-        connector.status = ConnectorStatus.syncing
-        connector.last_sync_at = datetime.now(timezone.utc)
-    else:
+    # For web_crawler, always create a new instance (user can have multiple crawlers)
+    # For other types (OAuth connectors), upsert: if a connector of this type already exists for the user, reuse it
+    MULTI_INSTANCE_TYPES = {"web_crawler"}  # Types that allow multiple instances
+    
+    if body.type in MULTI_INSTANCE_TYPES:
+        # Always create a new connector for multi-instance types
         connector = Connector(
             user_id=current_user.id,
             type=body.type,
@@ -1023,9 +1021,27 @@ async def create_connector(
             last_sync_at=datetime.now(timezone.utc),
         )
         db.add(connector)
+    else:
+        # Upsert: if a connector of this type already exists for the user, reuse it (OAuth connectors)
+        connector, duplicates = await _get_primary_connector_for_type(db, current_user.id, body.type)
 
-    for duplicate in duplicates:
-        await db.delete(duplicate)
+        if connector:
+            connector.config = body.config or {}
+            connector.status = ConnectorStatus.syncing
+            connector.last_sync_at = datetime.now(timezone.utc)
+        else:
+            connector = Connector(
+                user_id=current_user.id,
+                type=body.type,
+                name=body.name,
+                config=body.config or {},
+                status=ConnectorStatus.syncing,
+                last_sync_at=datetime.now(timezone.utc),
+            )
+            db.add(connector)
+
+        for duplicate in duplicates:
+            await db.delete(duplicate)
 
     await db.flush()
     connector_id = connector.id

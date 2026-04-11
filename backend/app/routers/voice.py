@@ -207,6 +207,9 @@ async def voice_ask(
     sources = _select_final_sources(kb_sources, web_sources, max_kb=3, max_web=3)
     doc_inventory = await _list_user_documents(current_user.id, db)
 
+    # Import helpers to check if this is an inventory query
+    from app.services.ai_service import _is_inventory_query
+    
     system_prompt = (
         "You are KnowledgeForge Voice Assistant. Answer the user's question clearly "
         "using the provided knowledge base and web context. "
@@ -217,7 +220,10 @@ async def voice_ask(
         "Never refuse current-events questions; if web sources are provided, use them first."
     )
 
-    if doc_inventory:
+    # Only include full document inventory if user explicitly asks for it (inventory query)
+    # Otherwise, keep prompt focused on the question at hand
+    is_inventory_q = _is_inventory_query(body.question)
+    if is_inventory_q and doc_inventory:
         inv_lines = []
         for d in doc_inventory:
             parts = [d["name"]]
@@ -232,9 +238,15 @@ async def voice_ask(
             inv_lines.append(f"{d['type'].upper()}: {'; '.join(parts)}")
         system_prompt += (
             f"\n\nKnowledge base ({len(doc_inventory)} file(s)):\n"
-            + "\n".join(f"- {l}" for l in inv_lines)
+            + "\n".join(f"- {l}" for l in inv_lines[:50])  # Cap at 50 to avoid overwhelming context
         )
-    else:
+    elif not kb_sources and not web_sources and not doc_inventory:
+        system_prompt += (
+            "\n\nThe user has no documents uploaded yet. "
+            "Let them know they can upload files in the Knowledge Base section."
+        )
+    elif not kb_sources and not web_sources and is_inventory_q:
+        # Inventory query but no documents
         system_prompt += (
             "\n\nThe user has no documents uploaded yet. "
             "Let them know they can upload files in the Knowledge Base section."

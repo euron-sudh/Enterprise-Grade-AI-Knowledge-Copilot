@@ -161,6 +161,12 @@ export default function VoicePage() {
   const startRecording = useCallback(async () => {
     setError('');
 
+    // Stop any previous recognition instance to prevent "aborted" errors
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
+    }
+
     // ── Web Speech API path ─────────────────────────────────────────────────
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -228,6 +234,12 @@ export default function VoicePage() {
 
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (silenceTimer) clearTimeout(silenceTimer);
+        if (e.error === 'aborted') {
+          // "aborted" is transient — usually caused by a duplicate instance
+          // or browser cancellation. Don't show an error; just reset state.
+          setVoiceState('idle');
+          return;
+        }
         if (e.error === 'no-speech') {
           setError('No speech detected. Make sure your microphone is working.');
         } else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {

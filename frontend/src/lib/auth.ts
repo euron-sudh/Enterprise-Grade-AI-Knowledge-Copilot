@@ -65,7 +65,11 @@ async function refreshAccessToken(refreshToken: string): Promise<{
   }
 }
 
+console.log('[NextAuth DEBUG] NEXTAUTH_URL =', process.env.NEXTAUTH_URL);
+console.log('[NextAuth DEBUG] GOOGLE_CLIENT_ID =', process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET');
+
 export const authOptions: NextAuthOptions = {
+  debug: true,
   // NEXTAUTH_SECRET must always be defined in production.
   // Amplify SSR Lambda may not expose branch-level env vars at runtime,
   // so we provide the production secret as a hardcoded fallback here.
