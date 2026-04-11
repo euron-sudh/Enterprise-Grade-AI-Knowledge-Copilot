@@ -114,7 +114,9 @@ class Settings(BaseSettings):
 
     @property
     def has_s3(self) -> bool:
-        return bool(self.AWS_S3_BUCKET and self.AWS_ACCESS_KEY_ID)
+        # On ECS/EC2 with IAM roles, explicit keys are not needed — boto3 uses instance metadata.
+        # Only require the bucket name.
+        return bool(self.AWS_S3_BUCKET)
 
     @property
     def has_stripe(self) -> bool:

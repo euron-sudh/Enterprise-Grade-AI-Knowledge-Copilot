@@ -851,16 +851,21 @@ export default function KnowledgeBasePage() {
         (session as any)?.accessToken,
         getUser(),
       );
-      if (!res.ok) throw new Error('Failed to get OAuth URL');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: `Failed (${res.status})` }));
+        throw new Error(err.detail || 'Failed to get OAuth URL');
+      }
       const data = await res.json() as { url: string };
       window.location.href = data.url;
-    } catch (err) {
+    } catch (err: any) {
       console.error('OAuth start failed:', err);
+      const label = connectorType === 'google_drive' ? 'Google Drive' : 'Gmail';
+      alert(`${label} OAuth failed: ${err.message || 'Unknown error'}. Check that Google OAuth credentials are configured.`);
     }
   }, [session]);
 
   // Connector types that have a real backend sync implementation
-  const SYNCABLE_CONNECTORS = new Set(['google_drive', 'gmail', 'github', 'figma', 'web_crawler']);
+  const SYNCABLE_CONNECTORS = new Set(['google_drive', 'gmail', 'github', 'figma', 'web_crawler', 'slack', 'notion']);
 
   const handleConnect = useCallback((id: string, fields: Record<string, string>) => {
     const connector = connectors.find(c => c.id === id);
@@ -875,6 +880,18 @@ export default function KnowledgeBasePage() {
         repoUrl: fields.repo_url ?? fields.repoUrl ?? '',
         org_or_user: fields.org_or_user ?? '',
         repos: fields.repos ?? '',
+      };
+    } else if (connectorType === 'slack') {
+      // Backend reads `access_token`; the modal field is `bot_token`
+      connectorConfig = {
+        ...fields,
+        access_token: fields.bot_token ?? fields.access_token ?? '',
+      };
+    } else if (connectorType === 'notion') {
+      // Backend reads `access_token`; the modal field is `integration_token`
+      connectorConfig = {
+        ...fields,
+        access_token: fields.integration_token ?? fields.access_token ?? '',
       };
     }
 
@@ -926,7 +943,7 @@ export default function KnowledgeBasePage() {
     // Token-based connectors always open the modal on reconnect so credentials
     // can be confirmed/updated before re-syncing (avoids "token required" errors
     // if the stored config is stale or was created before config was persisted)
-    const TOKEN_BASED = new Set(['github', 'figma', 'web_crawler']);
+    const TOKEN_BASED = new Set(['github', 'figma', 'web_crawler', 'slack', 'notion']);
     if (TOKEN_BASED.has(connectorType)) {
       setSelectedConnector(connector);
       return;

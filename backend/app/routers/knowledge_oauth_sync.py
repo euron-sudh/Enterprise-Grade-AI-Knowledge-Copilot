@@ -4,11 +4,13 @@ Called by connectors_oauth.py after a successful OAuth token exchange.
 """
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.knowledge import DocumentStatus
+from app.models.knowledge import ConnectorStatus, DocumentChunk, Document, DocumentStatus
 
 if TYPE_CHECKING:
     from app.models.knowledge import Connector
@@ -40,10 +42,18 @@ async def sync_connector(
 
     try:
         count = await syncer(connector, access_token, user_id, db)
+        # Update connector metadata so the UI shows the correct document count
+        connector.document_count = count
+        connector.last_sync_at = datetime.now(timezone.utc)
+        connector.status = ConnectorStatus.connected
+        await db.flush()
         logger.info("sync_connector: %s synced %d items for connector %s", provider, count, connector.id)
         return count
     except Exception as exc:
         logger.error("sync_connector: %s failed for connector %s: %s", provider, connector.id, exc)
+        connector.status = ConnectorStatus.error
+        connector.last_sync_at = datetime.now(timezone.utc)
+        await db.flush()
         return 0
 
 
@@ -87,18 +97,36 @@ async def _sync_github(connector: "Connector", token: str, user_id: uuid.UUID, d
             if len(content) < 30:
                 continue
 
-            # Upsert as a Document
-            doc = Document(
-                user_id=user_id,
-                name=f"GitHub: {full_name}",
-                original_name=full_name,
-                file_type="connector",
-                file_path=f"github://{full_name}",
-                file_size=len(content.encode()),
-                status=DocumentStatus.indexed,
-                word_count=len(content.split()),
+            file_path_key = f"github://{full_name}"
+
+            # Upsert: reuse existing doc if same file_path already indexed
+            existing = await db.execute(
+                select(Document).where(
+                    Document.user_id == user_id,
+                    Document.file_path == file_path_key,
+                )
             )
-            db.add(doc)
+            doc = existing.scalar_one_or_none()
+            if doc:
+                # Delete old chunks before replacing
+                await db.execute(
+                    delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+                )
+                doc.file_size = len(content.encode())
+                doc.word_count = len(content.split())
+                doc.status = DocumentStatus.indexed
+            else:
+                doc = Document(
+                    user_id=user_id,
+                    name=f"GitHub: {full_name}",
+                    original_name=full_name,
+                    file_type="github",
+                    file_path=file_path_key,
+                    file_size=len(content.encode()),
+                    status=DocumentStatus.indexed,
+                    word_count=len(content.split()),
+                )
+                db.add(doc)
             await db.flush()
 
             db.add(DocumentChunk(
@@ -156,18 +184,34 @@ async def _sync_slack(connector: "Connector", token: str, user_id: uuid.UUID, db
             if len(content) < 50:
                 continue
 
-            doc = Document(
-                user_id=user_id,
-                name=f"Slack: #{ch_name}",
-                original_name=ch_name,
-                file_type="connector",
-                file_path=f"slack://{ch_id}",
-                file_size=len(content.encode()),
-                status=DocumentStatus.indexed,
-                word_count=len(content.split()),
-                connector_id=connector.id,
+            file_path_key = f"slack://{ch_id}"
+
+            existing = await db.execute(
+                select(Document).where(
+                    Document.user_id == user_id,
+                    Document.file_path == file_path_key,
+                )
             )
-            db.add(doc)
+            doc = existing.scalar_one_or_none()
+            if doc:
+                await db.execute(
+                    delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+                )
+                doc.file_size = len(content.encode())
+                doc.word_count = len(content.split())
+                doc.status = DocumentStatus.indexed
+            else:
+                doc = Document(
+                    user_id=user_id,
+                    name=f"Slack: #{ch_name}",
+                    original_name=ch_name,
+                    file_type="slack",
+                    file_path=file_path_key,
+                    file_size=len(content.encode()),
+                    status=DocumentStatus.indexed,
+                    word_count=len(content.split()),
+                )
+                db.add(doc)
             await db.flush()
 
             db.add(DocumentChunk(
@@ -245,18 +289,35 @@ async def _sync_notion(connector: "Connector", token: str, user_id: uuid.UUID, d
             if len(content) < 30:
                 continue
 
-            doc = Document(
-                user_id=user_id,
-                name=f"Notion: {title}",
-                original_name=title,
-                file_type="connector",
-                file_path=f"notion://{page_id}",
-                file_size=len(content.encode()),
-                status=DocumentStatus.indexed,
-                word_count=len(content.split()),
-                connector_id=connector.id,
+            file_path_key = f"notion://{page_id}"
+
+            existing = await db.execute(
+                select(Document).where(
+                    Document.user_id == user_id,
+                    Document.file_path == file_path_key,
+                )
             )
-            db.add(doc)
+            doc = existing.scalar_one_or_none()
+            if doc:
+                await db.execute(
+                    delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+                )
+                doc.name = f"Notion: {title}"
+                doc.file_size = len(content.encode())
+                doc.word_count = len(content.split())
+                doc.status = DocumentStatus.indexed
+            else:
+                doc = Document(
+                    user_id=user_id,
+                    name=f"Notion: {title}",
+                    original_name=title,
+                    file_type="notion",
+                    file_path=file_path_key,
+                    file_size=len(content.encode()),
+                    status=DocumentStatus.indexed,
+                    word_count=len(content.split()),
+                )
+                db.add(doc)
             await db.flush()
 
             db.add(DocumentChunk(

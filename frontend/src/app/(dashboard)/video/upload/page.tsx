@@ -40,6 +40,7 @@ export default function VideoUploadPage() {
         { method: 'POST', body: formData },
         session?.accessToken,
         getUser(),
+        { preferDirectBackend: true },
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

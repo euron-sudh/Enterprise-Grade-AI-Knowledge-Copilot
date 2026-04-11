@@ -33,6 +33,8 @@
         {"name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/redis-url-Ztkv6H"},
         {"name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/stripe-secret-key-z5CaOR"},
         {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/stripe-webhook-secret-fxyWOc"},
+        {"name": "GOOGLE_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/google-client-id-iotc3E"},
+        {"name": "GOOGLE_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/google-client-secret-8HwCOn"},
         {"name": "GITHUB_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/github-client-secret-2La4nT"},
         {"name": "SLACK_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/slack-client-secret-xrXkXP"},
         {"name": "NOTION_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/notion-client-secret-FoJDTA"}

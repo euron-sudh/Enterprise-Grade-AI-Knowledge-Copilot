@@ -72,7 +72,7 @@ GEMINI_VIDEO_PROMPT = (
 
 router = APIRouter()
 
-SYNC_STALE_MINUTES = 10
+SYNC_STALE_MINUTES = 30
 
 
 def _connector_rank(connector: Connector) -> tuple[int, int, datetime, datetime]:
@@ -154,9 +154,10 @@ async def get_presigned_upload_url(
             Params={"Bucket": settings.AWS_S3_BUCKET, "Key": key, "ContentType": content_type},
             ExpiresIn=600,
         )
+        logger.info(f"Presigned URL generated for user={current_user.id}, key={key}, bucket={settings.AWS_S3_BUCKET}")
         return {"uploadUrl": presigned, "s3Key": key, "bucket": settings.AWS_S3_BUCKET}
     except Exception as e:
-        logger.error(f"Presigned URL generation failed: {e}")
+        logger.error(f"Presigned URL generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
 
 
@@ -396,6 +397,7 @@ async def register_s3_document(
     db: AsyncSession = Depends(get_db),
 ):
     """After a direct S3 upload, register the document and trigger indexing."""
+    logger.info(f"register-s3: user={current_user.id}, key={s3_key}, filename={filename}, size={file_size}")
     if not settings.AWS_S3_BUCKET:
         raise HTTPException(status_code=501, detail="S3 not configured")
     try:
@@ -405,8 +407,9 @@ async def register_s3_document(
         s3 = boto3.client("s3", region_name=region, config=Config(signature_version="s3v4"))
         obj = s3.get_object(Bucket=settings.AWS_S3_BUCKET, Key=s3_key)
         content = obj["Body"].read()
+        logger.info(f"register-s3: fetched {len(content)} bytes from S3 for {filename}")
     except Exception as e:
-        logger.error(f"Failed to fetch S3 object: {e}")
+        logger.error(f"Failed to fetch S3 object key={s3_key}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve uploaded file from S3")
 
     # Use existing upload pipeline with the downloaded content
@@ -900,6 +903,18 @@ async def _run_connector_sync(connector_id: uuid.UUID, user_id: uuid.UUID) -> No
                 )
                 doc_count = doc_result.scalar() or 0
 
+            elif connector.type in ("slack", "notion"):
+                from app.routers.knowledge_oauth_sync import sync_connector as _oauth_sync
+                count = await _oauth_sync(connector.type, connector, user_id, db)
+                doc_result = await db.execute(
+                    select(func.count(Document.id)).where(
+                        Document.user_id == user_id,
+                        Document.file_type == connector.type,
+                        Document.status == DocumentStatus.indexed,
+                    )
+                )
+                doc_count = doc_result.scalar() or count
+
             else:
                 # Unimplemented connector type — mark as error so user knows it's not synced
                 connector.status = ConnectorStatus.error
@@ -912,6 +927,8 @@ async def _run_connector_sync(connector_id: uuid.UUID, user_id: uuid.UUID) -> No
             connector.last_sync_at = datetime.now(timezone.utc)
             cfg = dict(connector.config or {})
             cfg.pop("last_error", None)
+            cfg["last_sync_doc_count"] = doc_count
+            cfg["last_sync_completed_at"] = datetime.now(timezone.utc).isoformat()
             connector.config = cfg
             await db.commit()
             logger.info("Connector %s (%s) sync complete: %d docs", connector_id, connector.type, doc_count)
@@ -1031,7 +1048,7 @@ async def sync_connector(
     connector = await _get_user_connector(connector_id, current_user.id, db)
 
     # Only supported connector types can actually sync
-    SYNCABLE = {"github", "google_drive", "gmail", "figma", "web_crawler"}
+    SYNCABLE = {"github", "google_drive", "gmail", "figma", "web_crawler", "slack", "notion"}
     if connector.type not in SYNCABLE:
         raise HTTPException(
             status_code=400,
@@ -1172,6 +1189,7 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
     import re
 
     cfg: Dict[str, Any] = connector.config or {}
+    logger.info("_sync_github: starting sync for connector %s, config keys: %s", connector.id, list(cfg.keys()))
 
     # Accept both camelCase and snake_case keys so older/newer UI payloads work.
     token: str = (
@@ -1204,7 +1222,11 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
     repos_raw = cfg.get("repos")
 
     if not token:
+        logger.error("_sync_github: no token found in config keys %s", list(cfg.keys()))
         raise ValueError("GitHub Personal Access Token is required")
+
+    logger.info("_sync_github: token found (prefix=%s…, len=%d), repoUrl=%r, org_or_user=%r",
+                token[:6], len(token), repo_url[:60] if repo_url else "", org_or_user)
 
     headers = {
         "Authorization": f"token {token}",
@@ -1239,6 +1261,7 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
             if not parsed:
                 raise ValueError(f"Cannot extract owner/repo from URL: {repo_url}")
             repos_to_sync.append(parsed)
+            logger.info("_sync_github: using explicit repoUrl → %s/%s", parsed[0], parsed[1])
         elif org_or_user and repos_raw:
             if isinstance(repos_raw, str):
                 repo_names = [r.strip() for r in repos_raw.split(",") if r.strip()]
@@ -1249,7 +1272,9 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
 
             for repo_name in repo_names:
                 repos_to_sync.append((org_or_user, repo_name))
+            logger.info("_sync_github: org=%s with explicit repos: %s", org_or_user, repo_names)
         elif org_or_user:
+            logger.info("_sync_github: discovering repos for org/user=%s", org_or_user)
             # Sync repositories for the explicitly requested owner/user.
             # Try token-scoped /user/repos first to include private repos.
             page = 1
@@ -1331,6 +1356,7 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
                         break
         else:
             # No explicit repo URL: ingest all repositories the token can access.
+            logger.info("_sync_github: no repoUrl/org specified, discovering all token-accessible repos")
             page = 1
             while len(repos_to_sync) < GITHUB_MAX_REPOS:
                 repos_resp = await client.get(
@@ -1376,18 +1402,36 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
             seen_repo_keys.add(key)
             deduped_repos.append((owner, repo))
         repos_to_sync = deduped_repos
+        logger.info("_sync_github: %d repos to sync after dedup", len(repos_to_sync))
+
+        skipped_repos = 0
+        empty_tree_repos = 0
+        total_files_found = 0
+        total_content_errors = 0
+        total_docs_created = 0
 
         for owner, repo in repos_to_sync:
             repo_resp = await client.get(
                 f"https://api.github.com/repos/{owner}/{repo}",
                 headers=headers,
             )
-            if repo_resp.status_code in (403, 404):
-                # Skip inaccessible or deleted repos and continue.
+            if repo_resp.status_code == 403:
+                remaining = repo_resp.headers.get("x-ratelimit-remaining", "")
+                if remaining == "0":
+                    logger.warning("_sync_github: GitHub rate limit hit at repo %s/%s — stopping sync", owner, repo)
+                    break  # Stop processing further repos
+                logger.warning("_sync_github: repo %s/%s returned 403, skipping", owner, repo)
+                skipped_repos += 1
+                continue
+            if repo_resp.status_code == 404:
+                logger.warning("_sync_github: repo %s/%s returned 404, skipping", owner, repo)
+                skipped_repos += 1
                 continue
             if repo_resp.status_code == 401:
                 raise ValueError("Invalid GitHub token or insufficient permissions")
             if repo_resp.status_code != 200:
+                logger.warning("_sync_github: repo %s/%s returned %d, skipping", owner, repo, repo_resp.status_code)
+                skipped_repos += 1
                 continue
 
             repo_data = repo_resp.json()
@@ -1398,15 +1442,25 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
                 headers=headers,
             )
             if tree_resp.status_code != 200:
+                logger.warning("_sync_github: tree for %s/%s branch=%s returned %d", owner, repo, repo_branch, tree_resp.status_code)
+                skipped_repos += 1
                 continue
 
             tree_data = tree_resp.json()
+            tree_items = tree_data.get("tree", [])
             all_files = [
-                f for f in tree_data.get("tree", [])
+                f for f in tree_items
                 if f.get("type") == "blob"
                 and _is_text_file(f.get("path", ""), int(f.get("size", 0) or 0))
             ]
             selected_files = all_files[:GITHUB_MAX_FILES_PER_REPO]
+            total_files_found += len(selected_files)
+
+            if not selected_files:
+                logger.info("_sync_github: %s/%s — %d tree items, 0 text files matched", owner, repo, len(tree_items))
+                empty_tree_repos += 1
+            else:
+                logger.info("_sync_github: %s/%s — %d tree items, %d text files selected", owner, repo, len(tree_items), len(selected_files))
 
             # Delete all existing docs for this repo before re-indexing
             existing_repo_docs = await db.execute(
@@ -1425,6 +1479,7 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
             # Each file becomes its own Document with proper chunking
             FILE_CHUNK_CHARS = 6000  # ~1000 tokens per chunk
             repo_doc_count = 0
+            repo_content_errors = 0
 
             for file in selected_files:
                 file_path_str = file.get("path")
@@ -1436,13 +1491,23 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
                         headers=headers,
                         params={"ref": repo_branch},
                     )
+                    if content_resp.status_code == 403:
+                        remaining = content_resp.headers.get("x-ratelimit-remaining", "")
+                        if remaining == "0":
+                            logger.warning("_sync_github: GitHub rate limit hit at %s/%s/%s", owner, repo, file_path_str)
+                            break  # Stop processing this repo
+                        repo_content_errors += 1
+                        continue
                     if content_resp.status_code != 200:
+                        repo_content_errors += 1
                         continue
                     content_data = content_resp.json()
                     raw = base64.b64decode(content_data.get("content", "")).decode("utf-8", errors="replace").strip()
                     if not raw:
                         continue
-                except Exception:
+                except Exception as e:
+                    repo_content_errors += 1
+                    logger.debug("_sync_github: error fetching %s/%s/%s: %s", owner, repo, file_path_str, e)
                     continue
 
                 doc_name = f"[GitHub] {owner}/{repo}/{file_path_str}"
@@ -1494,10 +1559,23 @@ async def _sync_github(connector: "Connector", user_id: uuid.UUID, db: AsyncSess
                         await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
                     vector_batch = []
 
+            total_content_errors += repo_content_errors
+            total_docs_created += repo_doc_count
+            if repo_doc_count > 0 or repo_content_errors > 0:
+                logger.info("_sync_github: %s/%s — %d docs created, %d content errors",
+                            owner, repo, repo_doc_count, repo_content_errors)
+
     await db.flush()
     await db.commit()
     if vector_store.enabled and vector_batch:
         await vector_store.upsert_chunks(user_id=user_id, records=vector_batch)
+
+    logger.info(
+        "_sync_github: DONE connector=%s — repos=%d, skipped=%d, empty=%d, "
+        "files_found=%d, content_errors=%d, docs_created=%d, chunks=%d",
+        connector.id, len(repos_to_sync), skipped_repos, empty_tree_repos,
+        total_files_found, total_content_errors, total_docs_created, total_chunks,
+    )
     return total_chunks
 
 
@@ -2116,6 +2194,7 @@ async def google_oauth_start(
 async def google_oauth_callback(
     code: str,
     state: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange auth code → tokens → create connector → trigger sync → redirect to frontend."""
@@ -2174,9 +2253,8 @@ async def google_oauth_callback(
     await db.refresh(connector)
     await db.commit()
 
-    # Kick off sync in background so OAuth callback returns immediately.
-    import asyncio
-    asyncio.create_task(_run_connector_sync_job(connector.id, user_id, connector_type))
+    # Kick off sync in background with a fresh DB session (via BackgroundTasks)
+    background_tasks.add_task(_run_connector_sync_job, connector.id, user_id, connector_type)
 
     frontend_url = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
     return RedirectResponse(f"{frontend_url}/knowledge-base?connected={connector_type}")

@@ -11,7 +11,7 @@ import uuid
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -53,6 +53,30 @@ def _redirect_uri(provider: str) -> str:
     return f"{settings.CONNECTOR_OAUTH_REDIRECT_BASE}/api/backend/connectors/oauth/{provider}/callback"
 
 
+async def _run_oauth_sync_background(provider: str, connector_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Run connector sync in background with its own fresh DB session."""
+    from app.database import AsyncSessionLocal
+    from app.routers.knowledge_oauth_sync import sync_connector
+
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(
+                select(Connector).where(Connector.id == connector_id, Connector.user_id == user_id)
+            )
+            connector = result.scalar_one_or_none()
+            if not connector:
+                return
+            count = await sync_connector(provider, connector, user_id, db)
+            await db.commit()
+            logger.info("OAuth background sync: %s synced %d items for connector %s", provider, count, connector_id)
+        except Exception as exc:
+            logger.error("OAuth background sync failed %s/%s: %s", provider, connector_id, exc)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+
+
 @router.get("/{provider}/authorize")
 async def oauth_authorize(
     provider: str,
@@ -86,6 +110,7 @@ async def oauth_callback(
     provider: str,
     code: str = Query(...),
     state: str = Query(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange OAuth code for access token, save it, trigger initial sync."""
@@ -147,13 +172,8 @@ async def oauth_callback(
     await db.flush()
     await db.commit()
 
-    # Fire-and-forget initial sync
-    try:
-        import asyncio
-        from app.routers.knowledge_oauth_sync import sync_connector
-        asyncio.create_task(sync_connector(provider, connector, user_id, db))
-    except Exception as e:
-        logger.warning("Auto-sync skipped: %s", e)
+    # Trigger initial sync in background with a fresh DB session
+    background_tasks.add_task(_run_oauth_sync_background, provider, connector.id, user_id)
 
     return RedirectResponse(url=f"{settings.CONNECTOR_OAUTH_REDIRECT_BASE}/knowledge/connectors?connected={provider}")
 

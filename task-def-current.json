@@ -25,7 +25,7 @@
                     },
                     {
                         "name": "CONNECTOR_OAUTH_REDIRECT_BASE",
-                        "value": "https://app.yourdomain.com"
+                        "value": "https://dev.d2dg07mc33522q.amplifyapp.com"
                     },
                     {
                         "name": "APP_ENV",
@@ -41,7 +41,7 @@
                     },
                     {
                         "name": "FRONTEND_URL",
-                        "value": "https://app.yourdomain.com"
+                        "value": "https://dev.d2dg07mc33522q.amplifyapp.com"
                     }
                 ],
                 "mountPoints": [],
@@ -82,6 +82,14 @@
                     {
                         "name": "GITHUB_CLIENT_SECRET",
                         "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/github-client-secret-2La4nT"
+                    },
+                    {
+                        "name": "GOOGLE_CLIENT_ID",
+                        "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/google-client-id-iotc3E"
+                    },
+                    {
+                        "name": "GOOGLE_CLIENT_SECRET",
+                        "valueFrom": "arn:aws:secretsmanager:ap-south-1:971037436717:secret:knowledgeforge/prod/google-client-secret-8HwCOn"
                     },
                     {
                         "name": "SLACK_CLIENT_SECRET",

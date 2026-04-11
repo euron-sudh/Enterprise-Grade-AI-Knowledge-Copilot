@@ -15,6 +15,37 @@ const API_URL =
     ? '/api/backend'
     : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010');
 
+const BROWSER_BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
+
+function resolveFetchUrl(url: string, preferDirectBackend?: boolean): string {
+  if (
+    preferDirectBackend
+    && typeof window !== 'undefined'
+    && BROWSER_BACKEND_URL
+    && url.startsWith('/api/backend/')
+  ) {
+    return `${BROWSER_BACKEND_URL}${url.slice('/api/backend'.length)}`;
+  }
+  return url;
+}
+
+async function fetchWithFallback(
+  url: string,
+  options: RequestInit,
+  preferDirectBackend?: boolean,
+): Promise<Response> {
+  const primaryUrl = resolveFetchUrl(url, preferDirectBackend);
+  if (primaryUrl === url) {
+    return fetch(url, options);
+  }
+
+  try {
+    return await fetch(primaryUrl, options);
+  } catch {
+    return fetch(url, options);
+  }
+}
+
 /** Return the cached backend token (if any). */
 export function getCachedToken(): string | null {
   try {
@@ -89,6 +120,7 @@ export async function authFetch(
   options: RequestInit,
   sessionToken: string | null | undefined,
   user: { email?: string | null; name?: string | null; image?: string | null },
+  config?: { preferDirectBackend?: boolean },
 ): Promise<Response> {
   const token = getBestToken(sessionToken);
   const headers = {
@@ -96,7 +128,7 @@ export async function authFetch(
     Authorization: `Bearer ${token}`,
   };
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetchWithFallback(url, { ...options, headers }, config?.preferDirectBackend);
 
   if (res.status !== 401) return res;
 
@@ -109,5 +141,5 @@ export async function authFetch(
     ...(options.headers ?? {}),
     Authorization: `Bearer ${freshToken}`,
   };
-  return fetch(url, { ...options, headers: retryHeaders });
+  return fetchWithFallback(url, { ...options, headers: retryHeaders }, config?.preferDirectBackend);
 }

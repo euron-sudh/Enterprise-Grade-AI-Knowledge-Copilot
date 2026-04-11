@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.knowledge import Document, DocumentChunk, DocumentStatus
 from app.models.user import User
+from app.services.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,25 @@ SUPPORTED_TYPES = {
     ".json": "json",
     ".html": "html",
     ".htm": "html",
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".gif": "image",
+    ".webp": "image",
+    ".bmp": "image",
+    ".tiff": "image",
+    ".tif": "image",
+}
+
+IMAGE_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
 }
 
 CHUNK_SIZE_TOKENS = 500
@@ -333,8 +353,79 @@ def _extract_text_pptx(file_path: str) -> Tuple[str, int]:
         return "", 0
 
 
+async def _extract_text_image(file_path: str, file_ext: str) -> Tuple[str, int]:
+    """
+    Use Claude vision API to generate a description of an image.
+    Falls back to a placeholder if the API key is not configured.
+    """
+    import base64
+
+    try:
+        from app.config import settings
+        api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY not configured")
+
+        import anthropic
+        with open(file_path, "rb") as f:
+            image_bytes = f.read()
+
+        media_type = IMAGE_MIME_TYPES.get(file_ext, "image/png")
+        # Supported media types for Anthropic vision
+        if media_type not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
+            media_type = "image/png"
+
+        b64_data = base64.standard_b64encode(image_bytes).decode("utf-8")
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": b64_data,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Please describe the content of this image in detail. "
+                                "Include any text visible in the image, the main subject, "
+                                "charts or diagrams if present, and any other relevant information. "
+                                "Write your response as plain text suitable for a knowledge base."
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+        description = message.content[0].text if message.content else ""
+        if not description:
+            raise ValueError("Empty response from vision API")
+
+        file_name = Path(file_path).name
+        text = f"[Image: {file_name}]\n\n{description}"
+        return _sanitize_text(text), 1
+
+    except Exception as e:
+        logger.warning(f"Image vision extraction failed for {file_path}: {e}")
+        file_name = Path(file_path).name
+        placeholder = (
+            f"[Image file: {file_name}]\n\n"
+            f"This is an image file that could not be automatically analyzed. "
+            f"File size: {Path(file_path).stat().st_size} bytes."
+        )
+        return placeholder, 1
+
+
 def extract_text(file_path: str, file_ext: str) -> Tuple[str, int]:
-    """Dispatch extraction based on file extension."""
+    """Dispatch extraction based on file extension. For images, use async variant."""
     if file_ext == ".pdf":
         text, pages = _extract_text_pdf(file_path)
     elif file_ext in (".docx", ".doc"):
@@ -343,6 +434,9 @@ def extract_text(file_path: str, file_ext: str) -> Tuple[str, int]:
         text, pages = _extract_text_xlsx(file_path)
     elif file_ext == ".pptx":
         text, pages = _extract_text_pptx(file_path)
+    elif file_ext in IMAGE_MIME_TYPES:
+        # Image files — return empty so process_document uses the async path
+        return "", 1
     else:
         text, pages = _extract_text_plain(file_path)
     return _sanitize_text(text), pages
@@ -380,15 +474,18 @@ async def process_document(
 ) -> None:
     """
     Extract text from a document, create chunks, and mark it as indexed.
-    This runs synchronously within the request for simplicity.
     """
     try:
-        text, page_count = extract_text(file_path, file_ext)
+        if file_ext in IMAGE_MIME_TYPES:
+            text, page_count = await _extract_text_image(file_path, file_ext)
+        else:
+            text, page_count = extract_text(file_path, file_ext)
 
         word_count = len(text.split()) if text else 0
         chunks = _chunk_text(text) if text else []
 
         # Create chunk records
+        chunk_records = []
         for chunk_idx, chunk_content in chunks:
             token_count = _estimate_tokens(chunk_content)
             chunk_record = DocumentChunk(
@@ -398,6 +495,7 @@ async def process_document(
                 token_count=token_count,
             )
             db.add(chunk_record)
+            chunk_records.append((chunk_idx, chunk_content, chunk_record))
 
         # Update document metadata
         document.status = DocumentStatus.indexed
@@ -406,6 +504,35 @@ async def process_document(
         document.updated_at = datetime.now(timezone.utc)
 
         await db.flush()
+
+        # Upsert to Pinecone vector store for semantic search
+        vector_store = get_vector_store()
+        if vector_store.enabled and chunk_records:
+            try:
+                vector_batch = []
+                for chunk_idx, chunk_content, chunk_rec in chunk_records:
+                    vector_batch.append({
+                        "id": f"{document.id}:{chunk_idx}",
+                        "text": chunk_content,
+                        "metadata": {
+                            "user_id": str(document.user_id),
+                            "document_id": str(document.id),
+                            "document_name": document.original_name or document.name,
+                            "document_type": document.file_type or "upload",
+                            "chunk_text": chunk_content[:2000],
+                        },
+                    })
+                await vector_store.upsert_chunks(
+                    user_id=document.user_id, records=vector_batch
+                )
+                logger.info(
+                    f"Document {document.id} vectorized: {len(vector_batch)} chunks upserted to Pinecone"
+                )
+            except Exception as vec_err:
+                logger.warning(
+                    f"Pinecone upsert failed for document {document.id}: {vec_err}"
+                )
+
         logger.info(
             f"Document {document.id} indexed: {len(chunks)} chunks, "
             f"{word_count} words, {page_count} pages"
@@ -460,12 +587,48 @@ async def upload_documents(
             duplicate_key=duplicate_key,
         )
         if existing_document is not None:
-            logger.info(
-                "Skipping duplicate upload '%s' for user %s (document_id=%s)",
-                original_name,
-                user.id,
-                existing_document.id,
-            )
+            # For image files that were previously stored with binary/garbage content,
+            # re-process them so they get a proper AI-generated description.
+            if file_ext in IMAGE_MIME_TYPES and existing_document.file_type == "image":
+                result = await db.execute(
+                    select(DocumentChunk)
+                    .where(DocumentChunk.document_id == existing_document.id)
+                    .limit(1)
+                )
+                first_chunk = result.scalar_one_or_none()
+                is_binary_chunk = (
+                    first_chunk is not None
+                    and first_chunk.content
+                    and not first_chunk.content.startswith("[Image")
+                    and len([c for c in first_chunk.content[:100] if ord(c) > 127]) > 10
+                )
+                if is_binary_chunk:
+                    logger.info(
+                        "Re-processing image '%s' (document_id=%s) — previous content was binary",
+                        original_name,
+                        existing_document.id,
+                    )
+                    # Delete bad chunks
+                    from sqlalchemy import delete as sa_delete
+                    await db.execute(
+                        sa_delete(DocumentChunk).where(DocumentChunk.document_id == existing_document.id)
+                    )
+                    await db.flush()
+                    # Re-save the file and reprocess
+                    file_path, file_ext_saved, file_type = await save_uploaded_file(
+                        content, original_name, str(user.id)
+                    )
+                    existing_document.file_path = file_path
+                    existing_document.status = DocumentStatus.processing
+                    await db.flush()
+                    await process_document(existing_document, file_path, file_ext, db)
+            else:
+                logger.info(
+                    "Skipping duplicate upload '%s' for user %s (document_id=%s)",
+                    original_name,
+                    user.id,
+                    existing_document.id,
+                )
             documents.append(existing_document)
             continue
 

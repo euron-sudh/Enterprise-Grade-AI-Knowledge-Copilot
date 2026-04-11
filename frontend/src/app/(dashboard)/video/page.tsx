@@ -161,6 +161,7 @@ export default function VideoPage() {
         { method: 'POST', body: form },
         session?.accessToken,
         getUser(),
+        { preferDirectBackend: true },
       );
       clearInterval(progressInterval);
       setUploadProgress(100);

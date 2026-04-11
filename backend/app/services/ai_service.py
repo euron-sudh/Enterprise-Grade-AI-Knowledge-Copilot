@@ -216,19 +216,61 @@ async def _search_relevant_chunks(
     """Retrieve only the most relevant document chunks for RAG context.
 
     Strategy:
-    1. Prefer chunk and filename matches for the actual query terms.
-    2. Limit the number of chunks per document so answers stay focused.
+    1. Try Pinecone semantic vector search first (best quality).
+    2. Fall back to keyword ILIKE search on PostgreSQL.
     3. Fall back to a small set of recent documents only when no strong match exists.
     """
     from sqlalchemy import or_
+    from app.services.vector_store import get_vector_store
 
     try:
+        # ── Step 0: Attempt Pinecone semantic search ─────────────────────────
+        vector_sources: list = []
+        vector_store = get_vector_store()
+        if vector_store.enabled and user_id:
+            try:
+                normalized_source = _normalize_source_filter(source_filter)
+                type_filter = [normalized_source] if normalized_source else None
+                results = await vector_store.query(
+                    user_id=user_id,
+                    query_text=query,
+                    top_k=limit * 2,
+                    types=type_filter,
+                )
+                seen_docs: dict[str, int] = {}
+                for r in results:
+                    meta = r.get("metadata", {})
+                    doc_id = meta.get("document_id", "")
+                    if seen_docs.get(doc_id, 0) >= 2:
+                        continue
+                    seen_docs[doc_id] = seen_docs.get(doc_id, 0) + 1
+                    chunk_text = meta.get("chunk_text", "")
+                    if _is_extraction_placeholder(chunk_text):
+                        continue
+                    score = r.get("score", 0.5)
+                    vector_sources.append({
+                        "id": str(uuid.uuid4()),
+                        "documentId": doc_id,
+                        "documentName": meta.get("document_name", "Unknown"),
+                        "documentType": meta.get("document_type", "unknown"),
+                        "pageNumber": None,
+                        "chunkText": chunk_text[:1600],
+                        "relevanceScore": round(min(0.98, score), 3),
+                        "url": None,
+                        "connectorType": None,
+                        "sourceType": "knowledge_base",
+                    })
+                if vector_sources:
+                    logger.info(f"Pinecone returned {len(vector_sources)} chunks for RAG query")
+                    return vector_sources[:limit]
+            except Exception as vec_err:
+                logger.warning(f"Pinecone search failed, falling back to keyword: {vec_err}")
+
+        # ── Step 1: Keyword-matched chunks (boosted relevance) ──────────────
         words = [
             w.strip().lower() for w in query.split()
             if len(w.strip()) > 2 and w.strip().lower() not in _STOP_WORDS
         ]
-
-        # ── Step 1: Keyword-matched chunks (boosted relevance) ──────────────
         matched_sources: list = []
         covered_docs: set = set()
 
