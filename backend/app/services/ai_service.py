@@ -377,6 +377,28 @@ def _is_recent_document_query(query: str, source_filter: Optional[str] = None) -
     return any(term in query_lower for term in doc_terms)
 
 
+def _is_inventory_query(query: str, source_filter: Optional[str] = None) -> bool:
+    """Return True when the user wants to know what's in the knowledge base or a specific connector."""
+    query_lower = query.lower()
+    inventory_terms = [
+        "what is in my", "what's in my", "what is inside", "what's inside",
+        "list my", "list the", "show me my", "show me what",
+        "what documents", "what files", "what do i have", "what have i",
+        "in my knowledge base", "inside my knowledge", "knowledge base",
+        "what have i uploaded", "what is uploaded", "what was uploaded",
+        "all documents", "all files", "all sources",
+        "what sources", "what connectors", "list documents", "show documents",
+    ]
+    if any(t in query_lower for t in inventory_terms):
+        return True
+    # Connector-specific listing (e.g. "from github", "my github repos")
+    connector = _detect_requested_connector_type(query)
+    listing_verbs = ["what", "list", "show", "tell", "which", "give", "from", "all"]
+    if connector and any(v in query_lower for v in listing_verbs):
+        return True
+    return False
+
+
 async def _get_recent_document_sources(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -660,11 +682,31 @@ async def stream_chat_response(
     if user_id:
         doc_inventory = await _list_user_documents(user_id, db)
 
+    # If the query references a specific connector (e.g. "from github", "my slack"),
+    # treat that as an implicit source filter so we never return chunks from other
+    # document types that merely *mention* the connector name in their text.
+    effective_source_filter = source_filter
+    if not effective_source_filter:
+        detected_connector = _detect_requested_connector_type(user_message_content)
+        if detected_connector:
+            effective_source_filter = detected_connector
+
+    is_inventory = _is_inventory_query(user_message_content, effective_source_filter)
+    is_recency = _is_recent_document_query(user_message_content, effective_source_filter)
+
     # --- 1. Search knowledge base (scoped to this user) ---
-    if user_id and _is_recent_document_query(user_message_content, source_filter):
-        kb_sources = await _get_recent_document_sources(db, user_id, user_message_content, source_filter=source_filter)
+    if user_id and (is_inventory or is_recency):
+        kb_sources = await _get_recent_document_sources(
+            db, user_id, user_message_content,
+            source_filter=effective_source_filter,
+            limit=8,
+        )
     else:
-        kb_sources = await _search_relevant_chunks(user_message_content, db, user_id=user_id, source_filter=source_filter)
+        kb_sources = await _search_relevant_chunks(
+            user_message_content, db,
+            user_id=user_id,
+            source_filter=effective_source_filter,
+        )
 
     # --- 1b. Decide whether to also query the web ---
     web_sources: list = []
@@ -750,31 +792,56 @@ async def stream_chat_response(
         "Do not use emojis or filler phrases."
     )
 
-    # Include document inventory so the AI knows ALL files in the user's KB
-    if doc_inventory and _is_recent_document_query(user_message_content):
-        lines = []
-        for d in doc_inventory:
-            meta_parts = []
-            if d["wordCount"]:
-                meta_parts.append(f"{d['wordCount']} words")
-            if d["pageCount"]:
-                meta_parts.append(f"{d['pageCount']} pages")
-            if d["fileSize"]:
-                meta_parts.append(d["fileSize"])
-            if d["uploadedAt"]:
-                meta_parts.append(f"uploaded {d['uploadedAt']}")
-            if d["tags"]:
-                meta_parts.append(f"tags: {', '.join(d['tags'])}")
-            if d["type"] == "video" and d["wordCount"] < 5:
-                meta_parts.append("no transcript — visual analysis requires Google Gemini key")
-            meta = f" ({'; '.join(meta_parts)})" if meta_parts else ""
-            lines.append(f"- [{d['type'].upper()}] {d['name']}{meta}")
-        inventory_text = "\n".join(lines)
-        effective_system += (
-            f"\n\n## User's Knowledge Base ({len(doc_inventory)} document(s)):\n{inventory_text}\n\n"
-            "Use this inventory only for document-listing and recent-document questions. "
-            "If a video has no transcript, explain that audio/visual transcription requires an AI key."
-        )
+    # Include document inventory when the user is asking what's in their KB or a specific connector.
+    # Always include it for inventory/recency queries so the AI doesn't hallucinate sources.
+    should_show_inventory = doc_inventory and (
+        is_inventory or is_recency or bool(effective_source_filter)
+    )
+    if should_show_inventory:
+        # Filter to the requested connector type if one was detected
+        display_docs = doc_inventory
+        if effective_source_filter:
+            display_docs = [d for d in doc_inventory if d.get("type") == effective_source_filter]
+
+        if display_docs:
+            lines = []
+            for d in display_docs:
+                meta_parts = []
+                if d["wordCount"]:
+                    meta_parts.append(f"{d['wordCount']} words")
+                if d["pageCount"]:
+                    meta_parts.append(f"{d['pageCount']} pages")
+                if d["fileSize"]:
+                    meta_parts.append(d["fileSize"])
+                if d["uploadedAt"]:
+                    meta_parts.append(f"uploaded {d['uploadedAt']}")
+                if d["tags"]:
+                    meta_parts.append(f"tags: {', '.join(d['tags'])}")
+                if d["type"] == "video" and d["wordCount"] < 5:
+                    meta_parts.append("no transcript — visual analysis requires Google Gemini key")
+                meta = f" ({'; '.join(meta_parts)})" if meta_parts else ""
+                lines.append(f"- [{d['type'].upper()}] {d['name']}{meta}")
+            inventory_text = "\n".join(lines)
+            scope_label = f"{effective_source_filter.upper()} " if effective_source_filter else ""
+            effective_system += (
+                f"\n\n## User's {scope_label}Knowledge Base ({len(display_docs)} document(s)):\n"
+                f"{inventory_text}\n\n"
+                "IMPORTANT: Only documents listed above exist in this category. "
+                "Do NOT invent or guess other documents. "
+                "A document of type 'github' came from the GitHub connector. "
+                "A document of type 'pdf', 'docx' etc. is an uploaded file — even if it *mentions* GitHub, "
+                "it is NOT a GitHub connector document. "
+                "If a video has no transcript, explain that audio/visual transcription requires an AI key."
+            )
+        else:
+            # No documents found for this connector — tell the AI explicitly
+            connector_label = effective_source_filter or "this source"
+            effective_system += (
+                f"\n\n## IMPORTANT — No {connector_label.upper()} documents found:\n"
+                f"The user has no documents indexed from the {connector_label} connector. "
+                "Tell the user they have not connected or synced any documents from this source yet, "
+                "and suggest they go to Knowledge Base → Sources to add the connector."
+            )
 
     # Build numbered source list (KB first, then web) for inline citation
     all_cited_sources = sources[:6]
