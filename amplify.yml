@@ -11,7 +11,25 @@ applications:
         build:
           commands:
             - export NEXT_TELEMETRY_DISABLED=1
+            # ── Bake server-only env vars into .env.production ─────────────────
+            # Amplify Gen 1 SSR Lambda does not reliably forward non-NEXT_PUBLIC_
+            # environment variables at runtime. Writing them here ensures Next.js
+            # loads them from process.cwd()/.env.production on Lambda cold-start.
+            # Set each of these in: Amplify Console → App → Branch → Environment variables
+            - |
+              {
+                echo "NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-knowledgeforge-prod-nextauth-secret-2026}"
+                echo "NEXTAUTH_URL=${NEXTAUTH_URL:-https://dev.d2dg07mc33522q.amplifyapp.com}"
+                [ -n "$GOOGLE_CLIENT_ID" ]       && echo "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID"
+                [ -n "$GOOGLE_CLIENT_SECRET" ]   && echo "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET"
+                [ -n "$AZURE_AD_CLIENT_ID" ]     && echo "AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID"
+                [ -n "$AZURE_AD_CLIENT_SECRET" ] && echo "AZURE_AD_CLIENT_SECRET=$AZURE_AD_CLIENT_SECRET"
+                [ -n "$AZURE_AD_TENANT_ID" ]     && echo "AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID"
+              } >> .env.production
             - npm run build
+            # Copy .env.production INTO .next/ so it is included in the artifact
+            # and is at process.cwd()/.env.production inside the Lambda container.
+            - cp .env.production .next/.env.production
       artifacts:
         baseDirectory: .next
         files:
