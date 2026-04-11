@@ -28,10 +28,15 @@ import GoogleProvider from 'next-auth/providers/google';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010';
-// Backend exposes routes at /auth/login (no /api/v1 prefix)
 
-// NEXTAUTH_URL must be set as an Amplify environment variable.
-// It is not auto-injected into SSR Lambda — set it explicitly in the console.
+// Amplify SSR Lambda does not expose server-only env vars at runtime.
+// NEXTAUTH_URL must be set so NextAuth generates correct callback URLs and
+// validates CSRF tokens — without it, every login attempt returns a
+// localhost:3000 redirect. Not a secret, safe to hardcode as fallback.
+if (!process.env.NEXTAUTH_URL) {
+  process.env.NEXTAUTH_URL = 'https://dev.d2dg07mc33522q.amplifyapp.com';
+}
+
 // Refresh 2 minutes before expiry
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
 
