@@ -15,9 +15,21 @@ interface UseWebSocketOptions {
   auth?: Record<string, unknown>;
 }
 
+function getWsUrl(): string {
+  const envUrl = process.env['NEXT_PUBLIC_WS_URL'];
+  if (typeof window !== 'undefined') {
+    const isHttps = window.location.protocol === 'https:';
+    if (envUrl) {
+      return isHttps ? envUrl.replace(/^ws:\/\//, 'wss://') : envUrl;
+    }
+    return `${isHttps ? 'wss' : 'ws'}://localhost:8000`;
+  }
+  return envUrl ?? 'ws://localhost:8000';
+}
+
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const {
-    url = process.env['NEXT_PUBLIC_WS_URL'] ?? (typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss://localhost:8000' : 'ws://localhost:8000'),
+    url = getWsUrl(),
     namespace = '/',
     autoConnect = true,
     reconnectAttempts = 5,

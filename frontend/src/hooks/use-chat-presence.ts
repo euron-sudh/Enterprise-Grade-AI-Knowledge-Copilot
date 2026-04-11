@@ -9,14 +9,16 @@ export interface TypingEvent {
 }
 
 function getWsBase(): string {
-  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  const envUrl = process.env.NEXT_PUBLIC_WS_URL;
   if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${protocol}://${window.location.host}`;
+    const isHttps = window.location.protocol === 'https:';
+    if (envUrl) {
+      return isHttps ? envUrl.replace(/^ws:\/\//, 'wss://') : envUrl;
+    }
+    return `${isHttps ? 'wss' : 'ws'}://${window.location.host}`;
   }
-  return 'ws://localhost:8000';
+  return envUrl ?? 'ws://localhost:8000';
 }
-const WS_BASE = getWsBase();
 
 /**
  * Connect to a chat conversation's presence channel.
@@ -35,7 +37,7 @@ export function useChatPresence(conversationId: string | null) {
     const token = (session as any)?.accessToken;
     if (!token) return;
 
-    const url = `${WS_BASE}/ws/chat/${encodeURIComponent(conversationId)}?token=${encodeURIComponent(token)}`;
+    const url = `${getWsBase()}/ws/chat/${encodeURIComponent(conversationId)}?token=${encodeURIComponent(token)}`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
