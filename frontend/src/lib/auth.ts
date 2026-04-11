@@ -61,9 +61,11 @@ async function refreshAccessToken(refreshToken: string): Promise<{
 }
 
 export const authOptions: NextAuthOptions = {
-  // Fallback ensures the Lambda always has a secret even if env var is missing at SSR runtime.
-  // Override via NEXTAUTH_SECRET in production for key rotation.
-  secret: process.env.NEXTAUTH_SECRET,
+  // NEXTAUTH_SECRET must always be defined in production.
+  // Amplify SSR Lambda may not expose branch-level env vars at runtime,
+  // so we provide the production secret as a hardcoded fallback here.
+  // To rotate: update the fallback string AND set NEXTAUTH_SECRET env var.
+  secret: process.env.NEXTAUTH_SECRET ?? 'knowledgeforge-prod-nextauth-secret-2026',
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
