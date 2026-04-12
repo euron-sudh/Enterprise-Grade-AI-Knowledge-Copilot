@@ -62,7 +62,6 @@ async def sync_connector(
 async def _sync_github(connector: "Connector", token: str, user_id: uuid.UUID, db: AsyncSession) -> int:
     """Fetch repos + README files from GitHub and index them."""
     import httpx
-    from app.models.knowledge import Document, DocumentChunk
 
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
     count = 0
@@ -148,7 +147,6 @@ async def _sync_github(connector: "Connector", token: str, user_id: uuid.UUID, d
 async def _sync_slack(connector: "Connector", token: str, user_id: uuid.UUID, db: AsyncSession) -> int:
     """Fetch recent messages from public Slack channels and index them."""
     import httpx
-    from app.models.knowledge import Document, DocumentChunk
 
     headers = {"Authorization": f"Bearer {token}"}
     count = 0
@@ -233,7 +231,6 @@ async def _sync_slack(connector: "Connector", token: str, user_id: uuid.UUID, db
 async def _sync_notion(connector: "Connector", token: str, user_id: uuid.UUID, db: AsyncSession) -> int:
     """Fetch Notion pages and index their content."""
     import httpx
-    from app.models.knowledge import Document, DocumentChunk
 
     headers = {
         "Authorization": f"Bearer {token}",

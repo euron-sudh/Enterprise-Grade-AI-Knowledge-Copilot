@@ -8,8 +8,8 @@ import { ChatInterface } from '@/components/chat/ChatInterface';
 export default function ChatConversationPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const id = params.id as string;
-  const initialMessage = searchParams.get('q') ?? undefined;
+  const id = (params?.id ?? '') as string;
+  const initialMessage = searchParams?.get('q') ?? undefined;
 
   return (
     <div className="flex h-full">

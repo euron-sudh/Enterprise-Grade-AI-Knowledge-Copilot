@@ -42,7 +42,6 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
   const [voiceSupported, setVoiceSupported] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
   type SpeechRecognitionCtor = new () => {
@@ -60,7 +59,6 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
   const getSpeechRecognition = (): SpeechRecognitionCtor | null => {
     if (typeof window === 'undefined') return null;
     return (
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null
     );
   };
@@ -161,7 +159,7 @@ export function MessageInput({ onSend, disabled, placeholder, onAbort }: Message
 
   const handleSend = useCallback(() => {
     if (!canSend || isStreaming) return;
-    onSend(value.trim(), attachments.length > 0 ? attachments : undefined);
+    onSend(value.trim(), attachments);
     setValue('');
     setAttachments([]);
     if (fileInputRef.current) fileInputRef.current.value = '';

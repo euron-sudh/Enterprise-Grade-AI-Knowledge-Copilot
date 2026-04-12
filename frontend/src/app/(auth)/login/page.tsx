@@ -45,9 +45,9 @@ function MicrosoftIcon({ className }: { className?: string }) {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') ?? '/home';
-  const errorParam = searchParams.get('error');
-  const registeredParam = searchParams.get('registered');
+  const callbackUrl = searchParams?.get('callbackUrl') ?? '/home';
+  const errorParam = searchParams?.get('error');
+  const registeredParam = searchParams?.get('registered');
 
   const [showPassword, setShowPassword] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);

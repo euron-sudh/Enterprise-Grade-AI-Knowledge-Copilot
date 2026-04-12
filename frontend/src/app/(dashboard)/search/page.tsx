@@ -163,7 +163,7 @@ export default function SearchPage() {
   // Auto-search when navigated from command palette with ?q=...
   useEffect(() => {
     if (didAutoSearch.current) return;
-    const q = searchParams.get('q');
+    const q = searchParams?.get('q');
     if (q && q.trim() && status !== 'loading') {
       didAutoSearch.current = true;
       void handleSearch(q.trim());

@@ -88,7 +88,7 @@ export default function TeamsPage() {
           description: created.description,
           members: created.memberCount ?? 1,
           docs: 0,
-          color: GRADIENT_COLORS[prev.length % GRADIENT_COLORS.length],
+          color: GRADIENT_COLORS[prev.length % GRADIENT_COLORS.length] ?? 'from-gray-500 to-gray-600',
           role: 'owner',
         }, ...prev]);
         setNewName('');
@@ -132,7 +132,7 @@ export default function TeamsPage() {
           description: t.description ?? '',
           members: t.memberCount ?? t.members ?? 0,
           docs: t.documentCount ?? t.docs ?? 0,
-          color: GRADIENT_COLORS[i % GRADIENT_COLORS.length],
+          color: GRADIENT_COLORS[i % GRADIENT_COLORS.length] ?? 'from-gray-500 to-gray-600',
           role: t.userRole ?? t.role ?? 'member',
         })));
       }

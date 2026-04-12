@@ -49,8 +49,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
             'dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100 dark:placeholder-surface-500',
             'dark:focus:border-brand-400 dark:focus:ring-brand-400',
             error && 'border-red-500 focus:border-red-500 focus:ring-red-500',
-            leftIcon && 'pl-9',
-            rightIcon && 'pr-9',
+            Boolean(leftIcon) && 'pl-9',
+            Boolean(rightIcon) && 'pr-9',
             className
           )}
           id={inputId}

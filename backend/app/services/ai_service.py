@@ -503,14 +503,14 @@ async def _get_recent_document_sources(
     limit: int = 3,
 ) -> list:
     connector_type = _normalize_source_filter(source_filter) or _detect_requested_connector_type(query)
-    
+
     # If query mentions "knowledge base" or "indexed", prioritize user-uploaded documents (not connectors)
     query_lower = query.lower()
     if not connector_type and ("knowledge base" in query_lower or "indexed" in query_lower):
         connector_type = "upload"
     if not connector_type and _wants_uploaded_only(query_lower):
         connector_type = "upload"
-    
+
     words = [
         w.strip().lower() for w in query.split()
         if len(w.strip()) > 2 and w.strip().lower() not in _STOP_WORDS
@@ -980,7 +980,7 @@ async def stream_chat_response(
             deduped: list = []
             seen_ids: set[str] = set()
             for s in merged:
-                key = f"{s.get('documentId')}::{s.get('chunkText','')[:80]}"
+                key = f"{s.get('documentId')}::{s.get('chunkText', '')[:80]}"
                 if key in seen_ids:
                     continue
                 seen_ids.add(key)

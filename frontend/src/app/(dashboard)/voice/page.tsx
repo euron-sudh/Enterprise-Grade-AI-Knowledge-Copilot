@@ -17,6 +17,44 @@ import {
   BookOpen,
 } from 'lucide-react';
 
+// Web Speech API types (not in standard TS lib)
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
+}
+interface SpeechRecognitionResult {
+  readonly isFinal: boolean;
+  readonly length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEvent extends Event {
+  readonly error: string;
+  readonly message: string;
+}
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
 type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking';
 
 const LANGUAGES = ['English (US)', 'English (UK)', 'Spanish', 'French', 'German', 'Japanese', 'Portuguese'];
@@ -64,7 +102,7 @@ interface HistoryItem {
   time: string;
 }
 
-interface KBDoc { id: string; name: string; type: string; wordCount: number; pageCount: number; uploadedAt: string }
+interface KBDoc { id: string; name: string; original_name?: string; type: string; wordCount: number; pageCount: number; uploadedAt: string }
 
 export default function VoicePage() {
   const { data: session, status } = useSession();
@@ -257,13 +295,16 @@ export default function VoicePage() {
         let interimText = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const result = e.results[i];
+          if (!result) continue;
           // Pick the alternative with highest confidence
-          let bestText = result[0].transcript;
-          let bestConf = result[0].confidence ?? 0;
+          const first = result.item(0);
+          let bestText = first?.transcript ?? '';
+          let bestConf = first?.confidence ?? 0;
           for (let a = 1; a < result.length; a++) {
-            if ((result[a].confidence ?? 0) > bestConf) {
-              bestConf = result[a].confidence ?? 0;
-              bestText = result[a].transcript;
+            const alt = result.item(a);
+            if ((alt?.confidence ?? 0) > bestConf) {
+              bestConf = alt?.confidence ?? 0;
+              bestText = alt?.transcript ?? bestText;
             }
           }
 

@@ -613,6 +613,44 @@ curl -X POST http://localhost:8010/v1/chat \
 
 ## Testing
 
+### Local Pre-Push Hook (Recommended)
+
+A **git pre-push hook** runs all fast quality checks locally before your code reaches GitHub. Set it up once:
+
+```bash
+# Windows
+scripts\setup-hooks.bat
+
+# macOS / Linux
+bash scripts/setup-hooks.sh
+```
+
+Every `git push` will now automatically run:
+
+| Step | Tool | ~Time |
+|------|------|-------|
+| Backend lint | `flake8` | ~3s |
+| Backend tests | `pytest -x -q` | ~10s |
+| Frontend lint | `next lint` | ~5s |
+| Frontend typecheck | `tsc --noEmit` | ~8s |
+| Frontend unit tests | `vitest run` | ~5s |
+| **Total** | | **~30s** |
+
+If any step fails, the push is aborted with a clear error message. To bypass in emergencies:
+
+```bash
+git push --no-verify
+```
+
+### CI Pipelines (GitHub Actions)
+
+- Backend CI runs automatically on every push and pull request to `dev` and `main`.
+- Frontend CI runs automatically on every push and pull request to `dev` and `main`.
+- Backend tests are executed per feature module (`test_auth`, `test_agents`, `test_knowledge`, `test_video`, etc.) plus full-suite coverage.
+- Frontend CI enforces linting, type checks, unit coverage, and Playwright E2E smoke tests.
+- Frontend deployment to Amplify is gated on successful Frontend CI.
+- Backend deployment to ECS is gated on successful Backend CI.
+
 ### Backend
 
 ```bash
@@ -695,10 +733,12 @@ Data isolation is enforced at the application layer with per-organization filter
 ## Contributing
 
 1. Fork the repository and create a feature branch from `dev`
-2. Write tests for any new functionality
-3. Ensure all tests pass: `pytest tests/ -v` and `npm run test`
-4. Submit a pull request to `dev` (not `main`)
-5. PRs to `main` trigger the CD pipeline — all PRs must pass CI
+2. **Set up local hooks**: `scripts\setup-hooks.bat` (Windows) or `bash scripts/setup-hooks.sh` (macOS/Linux)
+3. Write tests for any new functionality
+4. Ensure all tests pass: `pytest tests/ -v` and `npm run test`
+5. Push — the pre-push hook will run all checks automatically
+6. Submit a pull request to `dev` (not `main`)
+7. PRs to `main` trigger the CD pipeline — all PRs must pass CI
 
 ---
 

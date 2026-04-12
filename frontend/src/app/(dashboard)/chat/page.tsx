@@ -283,7 +283,7 @@ export default function ChatPage() {
 
       let uploadedNames: string[] = [];
       let failedNames: string[] = [];
-      let attachmentIds: string[] = [];
+      const attachmentIds: string[] = [];
       let images: string[] = [];
 
       if (queuedFiles.length > 0) {

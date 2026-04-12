@@ -23,7 +23,7 @@ export default function MFAPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch('/api/backend/auth/mfa/setup', { method: 'POST' });
+      const res = await authFetch('/api/backend/auth/mfa/setup', { method: 'POST' }, undefined, {});
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Setup failed');
       setSetupData(data);
@@ -47,7 +47,7 @@ export default function MFAPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
-      });
+      }, undefined, {});
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Verification failed');
       setStep('done');

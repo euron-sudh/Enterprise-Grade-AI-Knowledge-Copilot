@@ -64,7 +64,7 @@ export function AdminShell({ role, children }: { role: string; children: React.R
           {ADMIN_NAV.map(item => {
             const isActive = item.href === '/admin'
               ? pathname === '/admin'
-              : pathname.startsWith(item.href);
+              : pathname?.startsWith(item.href) ?? false;
             return (
               <Link
                 key={item.href}

@@ -102,9 +102,9 @@ async def _generate_chapters(transcript: str) -> list:
 async def _process_video(doc_id: uuid.UUID, file_path: str, user_id: uuid.UUID):
     """Background: transcribe → chunk → generate chapters."""
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    from app.database import DATABASE_URL
+    from app.config import settings
 
-    engine = create_async_engine(DATABASE_URL)
+    engine = create_async_engine(settings.DATABASE_URL)
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     async with Session() as db:

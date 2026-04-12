@@ -77,7 +77,7 @@ const strengthLabel = (s: number) => {
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const plan = searchParams.get('plan') || 'free';
+  const plan = searchParams?.get('plan') || 'free';
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);

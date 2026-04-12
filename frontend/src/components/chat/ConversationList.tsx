@@ -25,7 +25,12 @@ import {
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
 
-export function ConversationList() {
+interface ConversationListProps {
+  onSelect?: (conversationId: string) => void;
+  onNew?: () => void;
+}
+
+export function ConversationList({ onSelect, onNew }: ConversationListProps = {}) {
   const pathname = usePathname();
   const { conversations, sidebarSearchQuery, setSidebarSearch } = useChatStore();
   const { isLoading } = useConversations();
@@ -44,6 +49,7 @@ export function ConversationList() {
   const regular = filtered.filter((c) => !c.isPinned);
 
   const handleNew = () => {
+    onNew?.();
     createConversation.mutate({});
   };
 
@@ -109,6 +115,7 @@ export function ConversationList() {
                     onMenuClose={() => setMenuOpenId(null)}
                     onMenuOpen={() => setMenuOpenId(c.id)}
                     onPin={() => pinConversation.mutate({ id: c.id, pinned: !c.isPinned })}
+                    onSelect={onSelect}
                   />
                 ))}
               </Section>
@@ -129,6 +136,7 @@ export function ConversationList() {
                     onMenuClose={() => setMenuOpenId(null)}
                     onMenuOpen={() => setMenuOpenId(c.id)}
                     onPin={() => pinConversation.mutate({ id: c.id, pinned: !c.isPinned })}
+                    onSelect={onSelect}
                   />
                 ))}
               </Section>
@@ -165,6 +173,7 @@ interface ConversationItemProps {
   onMenuClose: () => void;
   onDelete: () => void;
   onPin: () => void;
+  onSelect?: (id: string) => void;
 }
 
 function ConversationItem({
@@ -178,6 +187,7 @@ function ConversationItem({
   onMenuClose,
   onDelete,
   onPin,
+  onSelect,
 }: ConversationItemProps) {
   const isMenuOpen = menuOpenId === conversationId;
 
@@ -191,6 +201,7 @@ function ConversationItem({
             : 'hover:bg-surface-50 dark:hover:bg-surface-800'
         )}
         href={`/chat/${conversationId}`}
+        onClick={() => onSelect?.(conversationId)}
       >
         <span
           className={cn(

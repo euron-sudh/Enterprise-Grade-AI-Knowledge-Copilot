@@ -1257,7 +1257,8 @@ function KnowledgeBasePageInner() {
             };
             const isActive = activeSourceFilter === f;
             // Only show connector tabs if that connector is connected
-            const connectorName = { google_drive: 'Google Drive', gmail: 'Gmail', github: 'GitHub', confluence: 'Confluence', notion: 'Notion', slack: 'Slack', jira: 'Jira', salesforce: 'Salesforce' }[f];
+            const connectorNameMap: Record<string, string> = { google_drive: 'Google Drive', gmail: 'Gmail', github: 'GitHub', confluence: 'Confluence', notion: 'Notion', slack: 'Slack', jira: 'Jira', salesforce: 'Salesforce' };
+            const connectorName = connectorNameMap[f];
             const isConnected = !connectorName || connectors.some(c => c.name === connectorName && c.status !== 'disconnected');
             if (!isConnected) return null;
             return (
@@ -1303,7 +1304,7 @@ function KnowledgeBasePageInner() {
                 const knownTypes = Object.keys(FILE_ICONS);
                 const docType = (knownTypes.includes(doc.type) ? doc.type : 'other') as keyof typeof FILE_ICONS;
                 const docStatus = (doc.status in STATUS_CONFIG ? doc.status : 'indexed') as Document['status'];
-                const Icon = FILE_ICONS[docType];
+                const Icon = FILE_ICONS[docType] as React.ComponentType<{ className?: string }>;
                 const statusCfg = STATUS_CONFIG[docStatus];
                 const StatusIcon = statusCfg.icon;
                 const sourceColor = SOURCE_COLORS[doc.source] ?? 'text-surface-400 dark:text-gray-500 bg-surface-100 dark:bg-gray-800';

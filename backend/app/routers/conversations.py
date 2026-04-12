@@ -24,6 +24,7 @@ from app.schemas.chat import (
     SendMessageRequest,
     UpdateConversationRequest,
 )
+from app.config import settings
 from app.services import ai_service
 
 logger = logging.getLogger(__name__)

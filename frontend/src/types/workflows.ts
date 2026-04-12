@@ -4,8 +4,8 @@ export interface WorkflowStep {
   config: Record<string, string | number | boolean>;
 }
 
-export type WorkflowStatus = 'active' | 'paused' | 'draft';
-export type WorkflowTrigger = 'manual' | 'document_upload';
+export type WorkflowStatus = 'active' | 'inactive' | 'paused' | 'draft';
+export type WorkflowTrigger = 'manual' | 'document_upload' | 'schedule';
 
 export interface WorkflowRun {
   id: string;
@@ -40,5 +40,5 @@ export interface Workflow {
   lastRunAt?: string;
   createdAt: string;
   updatedAt: string;
-  recentRuns: WorkflowRun[];
+  recentRuns?: WorkflowRun[];
 }

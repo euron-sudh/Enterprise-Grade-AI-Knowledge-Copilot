@@ -100,7 +100,7 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   const isActive =
     item.href === '/home'
       ? pathname === '/home'
-      : pathname.startsWith(item.href);
+      : pathname?.startsWith(item.href) ?? false;
 
   return (
     <Link

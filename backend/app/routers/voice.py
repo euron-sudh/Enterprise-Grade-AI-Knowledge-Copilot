@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.voice import (
@@ -260,7 +261,7 @@ async def voice_ask(
             sources=[],
         )
     doc_inventory = await _list_user_documents(current_user.id, db)
-    
+
     system_prompt = (
         "You are KnowledgeForge Voice Assistant. Answer the user's question clearly "
         "using the provided knowledge base and web context. "

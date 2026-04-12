@@ -74,7 +74,7 @@ export default function MeetingsPage() {
   const [creating, setCreating] = useState(false);
   const [startingNow, setStartingNow] = useState(false);
 
-  const authHeader = session?.accessToken
+  const authHeader: Record<string, string> = session?.accessToken
     ? { Authorization: `Bearer ${session.accessToken}` }
     : {};
 

@@ -10,8 +10,14 @@ const buttonVariants = cva(
       variant: {
         default:
           'bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800 shadow-brand/20',
+        primary:
+          'bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800 shadow-brand/20',
         destructive:
           'bg-red-500 text-white shadow-sm hover:bg-red-600 active:bg-red-700',
+        danger:
+          'bg-red-500 text-white shadow-sm hover:bg-red-600 active:bg-red-700',
+        'danger-ghost':
+          'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-700 dark:hover:text-red-300',
         outline:
           'border border-surface-200 dark:border-surface-700 bg-transparent text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800 hover:text-surface-900 dark:hover:text-surface-100',
         secondary:
@@ -28,6 +34,7 @@ const buttonVariants = cva(
         lg: 'h-11 rounded-lg px-6 text-base',
         xl: 'h-12 rounded-xl px-8 text-base',
         icon: 'h-9 w-9',
+        'icon-xs': 'h-6 w-6 rounded-md',
         'icon-sm': 'h-7 w-7 rounded-md',
         'icon-lg': 'h-11 w-11',
       },

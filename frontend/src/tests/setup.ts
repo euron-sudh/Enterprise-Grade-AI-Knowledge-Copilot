@@ -1,6 +1,19 @@
 import { cleanup } from '@testing-library/react';
 import { afterEach, expect, vi } from 'vitest';
 
+// Extend Vitest's expect with custom DOM matchers
+interface CustomMatchers<R = unknown> {
+  toBeInTheDocument(): R;
+  toHaveClass(...classNames: string[]): R;
+  toBeDisabled(): R;
+  toHaveValue(value?: string | number | string[]): R;
+}
+
+declare module 'vitest' {
+  interface Assertion<T = any> extends CustomMatchers<T> {}
+  interface AsymmetricMatchersContaining extends CustomMatchers {}
+}
+
 expect.extend({
   toBeInTheDocument(received: unknown) {
     const pass = received instanceof Node && document.contains(received);
@@ -36,6 +49,18 @@ expect.extend({
       pass,
       message: () =>
         pass ? 'Expected element not to be disabled' : 'Expected element to be disabled',
+    };
+  },
+  toHaveValue(received: unknown, expected?: string | number | string[]) {
+    const element = received as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    const actual = element?.value;
+    const pass = expected === undefined ? actual !== undefined : actual === String(expected);
+    return {
+      pass,
+      message: () =>
+        pass
+          ? `Expected element not to have value "${String(expected)}"`
+          : `Expected element to have value "${String(expected)}", but received "${actual}"`,
     };
   },
 });

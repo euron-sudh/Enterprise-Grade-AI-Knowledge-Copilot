@@ -21,6 +21,7 @@ const statusConfig = {
   disconnected: { label: 'Disconnected', variant: 'default' as const, icon: XCircle },
   error: { label: 'Error', variant: 'danger' as const, icon: AlertCircle },
   pending: { label: 'Pending', variant: 'warning' as const, icon: Clock },
+  syncing: { label: 'Syncing', variant: 'default' as const, icon: Clock },
 };
 
 export function ConnectorCard({ connector }: ConnectorCardProps) {

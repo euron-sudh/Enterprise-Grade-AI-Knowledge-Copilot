@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, Plus, CheckCircle, Clock, AlertCircle, Settings, Trash2, RefreshCw } from 'lucide-react';
 
 import * as knowledgeApi from '@/lib/api/knowledge';
+import type { ConnectorType } from '@/types/knowledge';
 
 const VISIBLE_CONNECTOR_TYPES = new Set([
   'google_drive',
@@ -109,7 +110,7 @@ export default function IntegrationsPage() {
           { label: 'Connected', value: visibleIntegrations.filter(i => i.status === 'connected').length.toString(), color: 'text-green-400' },
           { label: 'Total Documents', value: totalDocuments.toLocaleString(), color: 'text-white' },
           { label: 'Errors', value: visibleIntegrations.filter(i => i.status === 'error').length.toString(), color: 'text-red-400' },
-          { label: 'Available', value: AVAILABLE.filter((integration) => !integration.type || !connectedTypes.has(integration.type)).length.toString(), color: 'text-surface-600 dark:text-gray-400' },
+          { label: 'Available', value: AVAILABLE.filter((integration) => !integration.type || !connectedTypes.has(integration.type as ConnectorType)).length.toString(), color: 'text-surface-600 dark:text-gray-400' },
         ].map(s => (
           <div key={s.label} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-4">
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
@@ -163,7 +164,7 @@ export default function IntegrationsPage() {
       <div>
         <h3 className="text-white font-semibold mb-3">Available to Connect</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {AVAILABLE.filter((avail) => !avail.type || !connectedTypes.has(avail.type)).map(avail => (
+          {AVAILABLE.filter((avail) => !avail.type || !connectedTypes.has(avail.type as ConnectorType)).map(avail => (
             <div key={avail.name} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 hover:border-white/15 rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-colors group">
               <div className="text-2xl">{avail.logo}</div>
               <div className="flex-1 min-w-0">

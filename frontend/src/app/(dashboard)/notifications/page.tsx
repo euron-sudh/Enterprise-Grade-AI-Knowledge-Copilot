@@ -22,8 +22,8 @@ const TYPE_META: Record<string, { icon: React.ElementType; color: string; bg: st
   system: { icon: Bell, color: 'text-amber-400', bg: 'bg-amber-500/10' },
 };
 
-function getTypeMeta(type: string) {
-  return TYPE_META[type] ?? TYPE_META.system;
+function getTypeMeta(type: string): { icon: React.ElementType; color: string; bg: string } {
+  return TYPE_META[type] ?? { icon: Bell, color: 'text-amber-400', bg: 'bg-amber-500/10' };
 }
 
 function timeAgo(dateStr: string): string {

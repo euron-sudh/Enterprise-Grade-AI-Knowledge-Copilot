@@ -75,7 +75,7 @@ async function uploadViaPresignedS3(
   regForm.append('content_type', file.type || 'application/octet-stream');
   if (options?.collectionId) regForm.append('collectionId', options.collectionId);
   const { data } = await apiClient.post<Document[]>('/knowledge/documents/register-s3', regForm);
-  onProgress?.([{ fileId: 'file-0', fileName: file.name, progress: 100, status: 'complete' }]);
+  onProgress?.([{ fileId: 'file-0', fileName: file.name, progress: 100, status: 'done' }]);
   return data;
 }
 

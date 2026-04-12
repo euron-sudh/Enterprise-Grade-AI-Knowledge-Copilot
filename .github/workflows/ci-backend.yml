@@ -7,16 +7,48 @@ on:
       - 'backend/**'
       - '.github/workflows/ci-backend.yml'
   pull_request:
+    branches: [main, dev]
     paths:
       - 'backend/**'
       - '.github/workflows/ci-backend.yml'
   workflow_dispatch:
 
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-test:
-    name: Test & Lint
+  lint:
+    name: Backend Lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+          pip install --quiet flake8
+
+      - name: Run flake8
+        run: |
+          cd backend
+          flake8 app tests --max-line-length=120 --extend-ignore=E501,W503,E302,E303,E305,E402,E127,E128,E221,E712,F401,F841,F541,E401,E741 --count
+
+  feature-tests:
+    name: Backend Feature Tests (${{ matrix.test_file }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
     services:
       postgres:
         image: postgres:16
@@ -27,7 +59,75 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U testuser" --health-interval=10s --health-timeout=5s --health-retries=5
+          --health-cmd="pg_isready -U testuser"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    strategy:
+      fail-fast: false
+      matrix:
+        test_file:
+          - tests/test_auth.py
+          - tests/test_admin.py
+          - tests/test_agents.py
+          - tests/test_analytics.py
+          - tests/test_conversations.py
+          - tests/test_knowledge.py
+          - tests/test_meetings.py
+          - tests/test_search.py
+          - tests/test_teams.py
+          - tests/test_video.py
+          - tests/test_voice.py
+          - tests/test_workflows.py
+    env:
+      DATABASE_URL: postgresql+asyncpg://testuser:testpass@localhost:5432/testdb
+      REDIS_URL: redis://localhost:6379/0
+      PYTHONUNBUFFERED: 1
+      APP_ENV: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Run feature test module
+        run: |
+          cd backend
+          pytest ${{ matrix.test_file }} -v --maxfail=1
+
+  coverage:
+    name: Backend Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: feature-tests
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U testuser"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
       redis:
         image: redis:7
         ports:
@@ -45,16 +145,23 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
+          cache: pip
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
         run: |
           cd backend
           pip install --no-cache-dir -r requirements.txt
+          pip install --quiet pytest-cov
 
-      - name: Lint (flake8)
+      - name: Run full suite with coverage
         run: |
           cd backend
-          pip install flake8 --quiet
-          flake8 app --max-line-length=120 --extend-ignore=E501,W503,E302,E303,E305,E402,E127,E128,E221,E712,F401,F841,F541,E401,E741 --count
+          pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-report
+          path: backend/coverage.xml
+          if-no-files-found: error

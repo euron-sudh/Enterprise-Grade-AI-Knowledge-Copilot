@@ -98,7 +98,7 @@ export interface Connector {
   name: string;
   description: string;
   logoUrl: string;
-  status: 'connected' | 'disconnected' | 'error' | 'pending';
+  status: 'connected' | 'disconnected' | 'error' | 'pending' | 'syncing';
   syncStatus: SyncStatus;
   lastSyncedAt?: string;
   nextSyncAt?: string;

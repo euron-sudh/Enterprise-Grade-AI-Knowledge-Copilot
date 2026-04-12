@@ -40,7 +40,7 @@ export async function uploadKnowledgeFiles({
       '/api/backend/knowledge/documents/upload',
       { method: 'POST', body: fallbackForm },
       accessToken ?? undefined,
-      user,
+      user ?? {},
     );
     if (!res.ok) {
       throw new Error(`Upload failed (${res.status})`);
@@ -55,7 +55,7 @@ export async function uploadKnowledgeFiles({
         `/api/backend/knowledge/documents/presigned-upload?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(contentType)}`,
         {},
         accessToken ?? undefined,
-        user,
+        user ?? {},
       );
 
       if (presignRes.ok) {
@@ -82,7 +82,7 @@ export async function uploadKnowledgeFiles({
           '/api/backend/knowledge/documents/register-s3',
           { method: 'POST', body: formData },
           accessToken ?? undefined,
-          user,
+          user ?? {},
         );
         if (!regRes.ok) {
           // If S3 registration fails, fall back to direct upload.

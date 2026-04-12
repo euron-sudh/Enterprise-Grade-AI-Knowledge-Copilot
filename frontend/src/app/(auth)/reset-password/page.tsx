@@ -9,7 +9,7 @@ import * as authApi from '@/lib/api/auth';
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get('token') ?? '';
+  const token = searchParams?.get('token') ?? '';
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -40,7 +40,7 @@ function ResetPasswordForm() {
     setError('');
     setLoading(true);
     try {
-      await authApi.confirmPasswordReset({ token, newPassword: password });
+      await authApi.confirmPasswordReset({ token, password, confirmPassword: password });
       setDone(true);
       setTimeout(() => router.push('/login'), 3000);
     } catch {

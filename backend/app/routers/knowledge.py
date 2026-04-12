@@ -1141,7 +1141,7 @@ async def create_connector(
     # For web_crawler, always create a new instance (user can have multiple crawlers)
     # For other types (OAuth connectors), upsert: if a connector of this type already exists for the user, reuse it
     MULTI_INSTANCE_TYPES = {"web_crawler"}  # Types that allow multiple instances
-    
+
     if body.type in MULTI_INSTANCE_TYPES:
         # Always create a new connector for multi-instance types
         connector = Connector(
