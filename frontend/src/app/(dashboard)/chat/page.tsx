@@ -278,38 +278,84 @@ export default function ChatPage() {
     async (content: string) => {
       const trimmedContent = content.trim();
       const queuedFiles = [...attachedFiles];
+      const hasNonImageFiles = queuedFiles.some((file) => !file.type.startsWith('image/'));
       if ((!trimmedContent && queuedFiles.length === 0) || isLoading) return;
 
       let uploadedNames: string[] = [];
       let failedNames: string[] = [];
+      let attachmentIds: string[] = [];
+      let images: string[] = [];
 
       if (queuedFiles.length > 0) {
-        setIsUploadingFiles(true);
-        const uploadResult = await uploadKnowledgeFiles({
-          files: queuedFiles,
-          accessToken: (session as any)?.accessToken,
-          user: getUser(),
-        });
-        uploadedNames = uploadResult.uploadedNames;
-        failedNames = uploadResult.failedNames;
-        setIsUploadingFiles(false);
-
-        if (uploadedNames.length > 0) {
-          toast.success(`${uploadedNames.length} file${uploadedNames.length > 1 ? 's' : ''} attached`);
+        const imageFiles = queuedFiles.filter((file) => file.type.startsWith('image/'));
+        if (imageFiles.length > 0) {
+          images = await Promise.all(
+            imageFiles.map(
+              (file) =>
+                new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(file);
+                })
+            )
+          );
         }
-        if (failedNames.length > 0) {
-          toast.error(`${failedNames.length} file${failedNames.length > 1 ? 's' : ''} failed to upload`);
+
+        if (hasNonImageFiles) {
+          setIsUploadingFiles(true);
+          const uploadResult = await uploadKnowledgeFiles({
+            files: queuedFiles,
+            accessToken: (session as any)?.accessToken,
+            user: getUser(),
+            onFileUploaded: (_fileName, body) => {
+              const docs = Array.isArray(body) ? body : [body];
+              for (const doc of docs) {
+                if (doc?.id) attachmentIds.push(String(doc.id));
+              }
+            },
+          });
+          uploadedNames = uploadResult.uploadedNames;
+          failedNames = uploadResult.failedNames;
+          setIsUploadingFiles(false);
+
+          if (uploadedNames.length > 0) {
+            toast.success(`${uploadedNames.length} file${uploadedNames.length > 1 ? 's' : ''} attached`);
+          }
+          if (failedNames.length > 0) {
+            toast.error(`${failedNames.length} file${failedNames.length > 1 ? 's' : ''} failed to upload`);
+          }
+        } else {
+          // Image-only attachments should not block response generation.
+          uploadedNames = queuedFiles.map((f) => f.name);
+          void uploadKnowledgeFiles({
+            files: queuedFiles,
+            accessToken: (session as any)?.accessToken,
+            user: getUser(),
+          });
         }
       }
 
-      const messageBody = trimmedContent || (uploadedNames.length
-        ? `Please analyze these attached files: ${uploadedNames.join(', ')}`
+      // For document attachments, do not continue unless at least one document
+      // was actually uploaded and returned an ID. This prevents inaccurate
+      // fallback summaries from unrelated KB docs.
+      if (hasNonImageFiles && attachmentIds.length === 0) {
+        toast.error('Attachment upload is not complete yet. Please retry in a few seconds.');
+        return;
+      }
+
+      const attachedNames = hasNonImageFiles
+        ? uploadedNames
+        : (uploadedNames.length > 0 ? uploadedNames : queuedFiles.map((f) => f.name));
+
+      const messageBody = trimmedContent || (attachedNames.length
+        ? `Please analyze these attached files: ${attachedNames.join(', ')}`
         : '');
 
       if (!messageBody) return;
 
-      const displayContent = uploadedNames.length > 0
-        ? `${trimmedContent ? `${trimmedContent}\n\n` : ''}Attached files: ${uploadedNames.join(', ')}`
+      const displayContent = attachedNames.length > 0
+        ? `${trimmedContent ? `${trimmedContent}\n\n` : ''}Attached files: ${attachedNames.join(', ')}`
         : messageBody;
 
       const userMessage: Message = {
@@ -359,10 +405,12 @@ export default function ChatPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            content: uploadedNames.length > 0
-              ? `${messageBody}\n\nUse the newly attached files first if relevant: ${uploadedNames.join(', ')}.`
+            content: attachedNames.length > 0
+              ? `${messageBody}\n\nUse the newly attached files first if relevant: ${attachedNames.join(', ')}.`
               : messageBody,
             model: 'claude-sonnet-4-6',
+            attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+            images: images.length > 0 ? images : undefined,
             sourceFilter: activeSource === 'All sources' || activeSource === 'Web' ? null : activeSource,
             useWebSearch: activeSource === 'Web',
           }),
@@ -404,7 +452,20 @@ export default function ChatPage() {
                       : m
                   )
                 );
-              } else if (event.type === 'done' || event.type === 'error') {
+              } else if (event.type === 'error') {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          content: event.error ? `Error: ${event.error}` : 'Error: Failed to generate response',
+                          isStreaming: false,
+                          citations: citations.length > 0 ? citations : undefined,
+                        }
+                      : m
+                  )
+                );
+              } else if (event.type === 'done') {
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantId

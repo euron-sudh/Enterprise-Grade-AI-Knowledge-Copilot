@@ -49,7 +49,7 @@ export default function KnowledgePage() {
                 Connectors
               </Button>
             </Link>
-            <Link href="/knowledge/documents">
+            <Link href="/knowledge-base">
               <Button leftIcon={<Plus className="h-4 w-4" />}>Add Documents</Button>
             </Link>
           </div>
@@ -139,7 +139,7 @@ export default function KnowledgePage() {
         <Card variant="bordered">
           <CardHeader>
             <CardTitle>Recent Documents</CardTitle>
-            <Link href="/knowledge/documents">
+            <Link href="/knowledge-base">
               <Button size="sm" variant="ghost">
                 View all
               </Button>
@@ -187,7 +187,7 @@ export default function KnowledgePage() {
                 {!docsData?.items.length && (
                   <div className="py-8 text-center">
                     <p className="text-sm text-surface-400">No documents yet</p>
-                    <Link href="/knowledge/documents">
+                    <Link href="/knowledge-base">
                       <Button className="mt-3" size="sm">
                         Upload documents
                       </Button>

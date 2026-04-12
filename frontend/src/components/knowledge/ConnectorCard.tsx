@@ -3,6 +3,7 @@
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, CheckCircle, Clock, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,8 @@ const statusConfig = {
 };
 
 export function ConnectorCard({ connector }: ConnectorCardProps) {
-  const { updateConnector } = useKnowledgeStore();
+  const { updateConnector, setConnectors } = useKnowledgeStore();
+  const queryClient = useQueryClient();
 
   const handleSync = async () => {
     try {
@@ -33,7 +35,27 @@ export function ConnectorCard({ connector }: ConnectorCardProps) {
         syncStatus: 'success',
         lastSyncedAt: new Date().toISOString(),
       });
-      toast.success(`${connector.name} sync started`);
+      toast.success(`${connector.name} sync started — refreshing in a moment...`);
+      // Poll until sync completes (status flips from syncing → connected/error)
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const connectors = await knowledgeApi.listConnectors();
+          const updated = connectors.find((c) => c.id === connector.id);
+          if (updated && updated.status !== 'syncing') {
+            clearInterval(poll);
+            setConnectors(connectors);
+            queryClient.invalidateQueries({ queryKey: ['connectors'] });
+            queryClient.invalidateQueries({ queryKey: ['knowledge-stats'] });
+            queryClient.invalidateQueries({ queryKey: ['documents'] });
+            toast.success(`${connector.name} synced: ${updated.documentCount} documents`);
+          }
+        } catch {
+          // ignore poll errors
+        }
+        if (attempts >= 30) clearInterval(poll); // stop after 5 minutes
+      }, 10_000); // check every 10 s
     } catch {
       updateConnector(connector.id, { syncStatus: 'error' });
       toast.error('Sync failed');

@@ -29,6 +29,25 @@ export async function uploadKnowledgeFiles({
   const uploadedNames: string[] = [];
   const failedNames: string[] = [];
 
+  const uploadViaProxy = async (file: File): Promise<any> => {
+    const fallbackForm = new FormData();
+    fallbackForm.append('files', file);
+    if (collectionId) {
+      fallbackForm.append('collectionId', collectionId);
+    }
+
+    const res = await authFetch(
+      '/api/backend/knowledge/documents/upload',
+      { method: 'POST', body: fallbackForm },
+      accessToken ?? undefined,
+      user,
+    );
+    if (!res.ok) {
+      throw new Error(`Upload failed (${res.status})`);
+    }
+    return res.json();
+  };
+
   for (const file of files) {
     try {
       const contentType = file.type || 'application/octet-stream';
@@ -66,7 +85,11 @@ export async function uploadKnowledgeFiles({
           user,
         );
         if (!regRes.ok) {
-          throw new Error(`Register failed (${regRes.status})`);
+          // If S3 registration fails, fall back to direct upload.
+          const fallbackBody = await uploadViaProxy(file);
+          uploadedNames.push(file.name);
+          onFileUploaded?.(file.name, fallbackBody);
+          continue;
         }
 
         const body = await regRes.json();
@@ -75,27 +98,18 @@ export async function uploadKnowledgeFiles({
         continue;
       }
 
-      const fallbackForm = new FormData();
-      fallbackForm.append('files', file);
-      if (collectionId) {
-        fallbackForm.append('collectionId', collectionId);
-      }
-
-      const res = await authFetch(
-        '/api/backend/knowledge/documents/upload',
-        { method: 'POST', body: fallbackForm },
-        accessToken ?? undefined,
-        user,
-      );
-      if (!res.ok) {
-        throw new Error(`Upload failed (${res.status})`);
-      }
-
-      const body = await res.json();
+      const body = await uploadViaProxy(file);
       uploadedNames.push(file.name);
       onFileUploaded?.(file.name, body);
     } catch {
-      failedNames.push(file.name);
+      // If presigned path fails (CORS/signature/network), retry once via proxy.
+      try {
+        const fallbackBody = await uploadViaProxy(file);
+        uploadedNames.push(file.name);
+        onFileUploaded?.(file.name, fallbackBody);
+      } catch {
+        failedNames.push(file.name);
+      }
     }
   }
 

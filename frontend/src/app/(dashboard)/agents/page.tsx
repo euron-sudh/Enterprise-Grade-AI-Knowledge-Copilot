@@ -94,9 +94,26 @@ interface AttachedFile {
 interface ResearchChunk {
   event: 'status' | 'sources' | 'web_sources' | 'delta' | 'done' | 'error';
   message?: string;
-  sources?: Array<{ documentName: string; chunkText: string }>;
+  sources?: Array<{
+    documentName?: string;
+    chunkText?: string;
+    title?: string;
+    url?: string;
+    provider?: string;
+  }>;
   text?: string;
   error?: string;
+}
+
+interface KnowledgeSource {
+  documentName: string;
+  chunkText: string;
+}
+
+interface WebSource {
+  title: string;
+  url: string;
+  provider?: string;
 }
 
 interface AgentSession {
@@ -104,7 +121,8 @@ interface AgentSession {
   query: string;
   attachments: string[];
   status: string;
-  sources: Array<{ documentName: string; chunkText: string }>;
+  sources: KnowledgeSource[];
+  webSources: WebSource[];
   report: string;
   done: boolean;
   error: string;
@@ -291,6 +309,7 @@ export default function AgentsPage() {
       attachments: fileNames,
       status: 'Starting...',
       sources: [],
+      webSources: [],
       report: '',
       done: false,
       error: '',
@@ -311,6 +330,7 @@ export default function AgentsPage() {
         },
         session?.accessToken,
         getUser(),
+        { preferDirectBackend: true },
       );
 
       if (!res.ok) throw new Error('Agent request failed');
@@ -334,8 +354,18 @@ export default function AgentsPage() {
             setAgentSession(prev => {
               if (!prev) return prev;
               if (chunk.event === 'status') return { ...prev, status: chunk.message || '' };
-              if (chunk.event === 'sources') return { ...prev, sources: chunk.sources || [], status: 'Generating report...' };
-              if (chunk.event === 'web_sources') return { ...prev, status: `Found web results. Generating report...` };
+              if (chunk.event === 'sources') {
+                const sources = (chunk.sources || [])
+                  .filter((source): source is KnowledgeSource => Boolean(source.documentName && source.chunkText))
+                  .map(source => ({ documentName: source.documentName!, chunkText: source.chunkText! }));
+                return { ...prev, sources, status: 'Generating report...' };
+              }
+              if (chunk.event === 'web_sources') {
+                const webSources = (chunk.sources || [])
+                  .filter((source): source is WebSource => Boolean(source.title && source.url))
+                  .map(source => ({ title: source.title!, url: source.url!, provider: source.provider }));
+                return { ...prev, webSources, status: 'Found web results. Generating report...' };
+              }
               if (chunk.event === 'delta') {
                 setTimeout(() => {
                   if (reportRef.current) reportRef.current.scrollTop = reportRef.current.scrollHeight;
@@ -501,6 +531,29 @@ export default function AgentsPage() {
                       <div className="flex items-center gap-2 text-sm text-indigo-400">
                         <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
                         {agentSession.status}
+                      </div>
+                    )}
+
+                    {/* Web Sources */}
+                    {agentSession.webSources.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-surface-500 dark:text-gray-400 mb-2 flex items-center gap-1">
+                          <Globe className="h-3 w-3" /> Web sources ({agentSession.webSources.length}):
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {agentSession.webSources.map((s, i) => (
+                            <a
+                              key={`${s.url}-${i}`}
+                              href={s.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full bg-blue-900/30 border border-blue-800 px-2 py-0.5 text-xs text-blue-300 truncate max-w-[240px] hover:bg-blue-900/40"
+                              title={s.url}
+                            >
+                              {s.title}
+                            </a>
+                          ))}
+                        </div>
                       </div>
                     )}
 

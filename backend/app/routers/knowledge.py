@@ -3,12 +3,14 @@ import math
 import os
 import re
 import uuid
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -73,6 +75,16 @@ GEMINI_VIDEO_PROMPT = (
 router = APIRouter()
 
 SYNC_STALE_MINUTES = 30
+VISIBLE_CONNECTOR_TYPES = {
+    "google_drive",
+    "confluence",
+    "slack",
+    "github",
+    "notion",
+    "jira",
+    "salesforce",
+    "gmail",
+}
 
 
 def _connector_rank(connector: Connector) -> tuple[int, int, datetime, datetime]:
@@ -104,6 +116,17 @@ def _is_stale_sync(connector: Connector) -> bool:
 
 def _pick_primary_connector(connectors: List[Connector]) -> Connector:
     return max(connectors, key=_connector_rank)
+
+
+def _dedupe_visible_connectors(connectors: List[Connector]) -> List[Connector]:
+    deduped: Dict[str, Connector] = {}
+    for connector in connectors:
+        if connector.type not in VISIBLE_CONNECTOR_TYPES:
+            continue
+        existing = deduped.get(connector.type)
+        if existing is None or _connector_rank(connector) > _connector_rank(existing):
+            deduped[connector.type] = connector
+    return list(deduped.values())
 
 
 async def _get_primary_connector_for_type(
@@ -172,7 +195,7 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Document).where(Document.user_id == current_user.id)
+    q = select(Document).options(selectinload(Document.collection)).where(Document.user_id == current_user.id)
 
     if search:
         q = q.where(or_(Document.name.ilike(f"%{search}%"), Document.original_name.ilike(f"%{search}%")))
@@ -393,6 +416,7 @@ async def register_s3_document(
     file_size: int = Form(...),
     content_type: str = Form("application/octet-stream"),
     collectionId: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -426,6 +450,7 @@ async def register_s3_document(
         files=[mock_file],
         user=current_user,
         collection_id=collectionId,
+        tags=tags,
         db=db,
     )
     return [DocumentOut.from_orm(d) for d in documents]
@@ -505,10 +530,10 @@ async def upload_video(
     db.add(doc)
     await db.flush()
 
+    from app.services.document_service import _chunk_text
+
     audio_tmp_path: Optional[Path] = None
     try:
-        from app.services.document_service import _chunk_text
-
         # ── NO AI KEY: store video with placeholder transcript ─────────────────
         if no_ai_key:
             transcript_text = f"[Video file '{original_name}' stored. No AI key configured for transcription.]"
@@ -611,13 +636,29 @@ async def upload_video(
         raise
     except Exception as exc:
         logger.error("Video processing failed for '%s': %s", original_name, exc)
-        doc.status = "failed"
+
+        # Keep the upload usable even if AI providers/transcription fail.
+        fallback_text = (
+            f"[Video file '{original_name}' was uploaded successfully, but automatic transcription failed. "
+            f"The file is stored and can still be downloaded/played. Failure: {type(exc).__name__}]"
+        )
+        raw_chunks = _chunk_text(fallback_text)
+        for idx, chunk_text in raw_chunks:
+            db.add(DocumentChunk(
+                document_id=doc.id,
+                content=f"[Video: {original_name}] {chunk_text}",
+                chunk_index=idx,
+                token_count=len(chunk_text.split()),
+            ))
+
+        doc.status = "indexed"
+        doc.word_count = len(fallback_text.split())
         await db.flush()
-        try:
-            os.remove(str(file_path))
-        except Exception:
-            pass
-        raise HTTPException(status_code=500, detail="Video processing failed. Please retry or reconnect AI providers.")
+
+        logger.info(
+            "Video '%s' indexed with fallback metadata after processing failure",
+            original_name,
+        )
     finally:
         if audio_tmp_path and audio_tmp_path.exists():
             try:
@@ -626,6 +667,86 @@ async def upload_video(
                 pass
 
     return DocumentOut.from_orm(doc)
+
+
+@router.post("/videos/upload-url", response_model=DocumentOut)
+async def upload_video_url(
+    payload: Dict[str, str] = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a video/audio file from a direct URL and process it like a normal upload."""
+    import io
+    import httpx
+    from starlette.datastructures import UploadFile as StarletteUploadFile
+
+    url = (payload.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Only http/https URLs are supported")
+
+    host = (parsed.hostname or "").lower()
+    if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local"):
+        raise HTTPException(status_code=400, detail="Local URLs are not allowed")
+
+    try:
+        async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=400, detail=f"Failed to fetch URL (HTTP {resp.status_code})")
+
+            content = resp.content
+            if not content:
+                raise HTTPException(status_code=400, detail="URL returned empty content")
+            if len(content) > MAX_VIDEO_UPLOAD:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"File too large ({len(content) // 1024 // 1024} MB). "
+                        "Maximum upload size is 100 MB."
+                    ),
+                )
+
+            content_type = (resp.headers.get("content-type") or "application/octet-stream").split(";")[0].strip().lower()
+            filename = Path(parsed.path).name or "video_upload"
+            suffix = Path(filename).suffix.lower()
+            if not suffix:
+                mime_to_ext = {
+                    "video/mp4": ".mp4",
+                    "video/quicktime": ".mov",
+                    "video/x-msvideo": ".avi",
+                    "video/x-matroska": ".mkv",
+                    "video/webm": ".webm",
+                    "audio/mpeg": ".mp3",
+                    "audio/wav": ".wav",
+                    "audio/mp4": ".m4a",
+                    "audio/ogg": ".ogg",
+                    "audio/flac": ".flac",
+                }
+                suffix = mime_to_ext.get(content_type, ".mp4")
+                filename = f"{filename}{suffix}"
+
+            if suffix not in VIDEO_EXTENSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unsupported format. Supported: mp4, mov, avi, mkv, webm, mp3, wav, m4a, ogg",
+                )
+
+            mock_file = StarletteUploadFile(
+                filename=filename,
+                file=io.BytesIO(content),
+                headers={"content-type": content_type},
+            )
+            return await upload_video(file=mock_file, current_user=current_user, db=db)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Video URL import failed for %s: %s", url, exc)
+        raise HTTPException(status_code=500, detail="Video URL import failed")
 
 
 async def _gemini_video_analyze(file_path: Path, suffix: str, original_name: str) -> str:
@@ -989,13 +1110,24 @@ async def list_connectors(
         await db.flush()
         await db.commit()
 
+    # Allow multiple crawler instances to be listed; keep singleton behavior for other connector types.
+    multi_instance_types = {"web_crawler"}
     deduped: Dict[str, Connector] = {}
+    multi_instance_connectors: List[Connector] = []
     for connector in connectors:
+        if connector.type in multi_instance_types:
+            multi_instance_connectors.append(connector)
+            continue
+
         existing = deduped.get(connector.type)
         if existing is None or _connector_rank(connector) > _connector_rank(existing):
             deduped[connector.type] = connector
 
-    ordered = sorted(deduped.values(), key=lambda connector: connector.created_at, reverse=True)
+    ordered = sorted(
+        [*deduped.values(), *multi_instance_connectors],
+        key=lambda connector: connector.created_at,
+        reverse=True,
+    )
     return [ConnectorOut.from_orm(c) for c in ordered]
 
 
@@ -2168,6 +2300,7 @@ _GOOGLE_SCOPES = {
 @router.get("/connectors/oauth/google/start")
 async def google_oauth_start(
     connector_type: str,
+    base_origin: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2185,13 +2318,26 @@ async def google_oauth_start(
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
 
+    # Prefer base_origin sent by the frontend (window.location.origin) so the
+    # redirect URI always matches the actual port the user is running on.
+    # Fall back to the configured CONNECTOR_OAUTH_REDIRECT_BASE.
+    # For localhost, always use 127.0.0.1 (not "localhost") to avoid Chrome's
+    # automatic HTTPS upgrade which causes ERR_SSL_PROTOCOL_ERROR.
+    raw_base = (base_origin or settings.CONNECTOR_OAUTH_REDIRECT_BASE).rstrip("/")
+    parsed_config = urllib.parse.urlparse(raw_base)
+    if parsed_config.hostname in {"localhost", "127.0.0.1", "::1"}:
+        port = parsed_config.port or 3001
+        frontend_base = f"http://127.0.0.1:{port}"
+    else:
+        frontend_base = raw_base
+
     state = base64.urlsafe_b64encode(
-        _json.dumps({"uid": str(current_user.id), "type": connector_type}).encode()
+        _json.dumps({"uid": str(current_user.id), "type": connector_type, "origin": frontend_base}).encode()
     ).decode()
 
-    # The callback goes through the Next.js proxy (/api/backend/*) which
-    # forwards to FastAPI — this is the URL registered in Google Cloud Console
-    frontend_base = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    # The callback is handled by a dedicated Next.js API route at
+    # /api/backend/knowledge/connectors/oauth/google/callback which proxies to FastAPI
+    # server-side. This must exactly match the URI registered in Google Cloud Console.
     redirect_uri = f"{frontend_base}/api/backend/knowledge/connectors/oauth/google/callback"
 
     params = urllib.parse.urlencode({
@@ -2214,17 +2360,28 @@ async def google_oauth_callback(
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange auth code → tokens → create connector → trigger sync → redirect to frontend."""
-    import base64, json as _json, httpx
+    import base64, json as _json, httpx, urllib.parse
     from fastapi.responses import RedirectResponse
 
     try:
         payload = _json.loads(base64.urlsafe_b64decode(state + "=="))
         user_id = uuid.UUID(payload["uid"])
         connector_type = payload["type"]
+        # Use the origin stored in state so the redirect_uri matches what was
+        # registered with Google (same host/port as in the start request).
+        origin_from_state = payload.get("origin", "").rstrip("/")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
-    frontend_base = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    # Reconstruct redirect_uri from state origin (most reliable) or config fallback.
+    # Always use 127.0.0.1 for localhost so Chrome's HTTPS auto-upgrade doesn't break the flow.
+    raw_base = origin_from_state or settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
+    parsed = urllib.parse.urlparse(raw_base)
+    if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+        port = parsed.port or 3001
+        frontend_base = f"http://127.0.0.1:{port}"
+    else:
+        frontend_base = raw_base
     redirect_uri = f"{frontend_base}/api/backend/knowledge/connectors/oauth/google/callback"
 
     async with httpx.AsyncClient(timeout=15) as client:
@@ -2272,8 +2429,7 @@ async def google_oauth_callback(
     # Kick off sync in background with a fresh DB session (via BackgroundTasks)
     background_tasks.add_task(_run_connector_sync_job, connector.id, user_id, connector_type)
 
-    frontend_url = settings.CONNECTOR_OAUTH_REDIRECT_BASE.rstrip("/")
-    return RedirectResponse(f"{frontend_url}/knowledge-base?connected={connector_type}")
+    return RedirectResponse(f"{frontend_base}/knowledge-base?connected={connector_type}")
 
 
 async def _run_connector_sync_job(
@@ -2567,11 +2723,19 @@ async def knowledge_stats(
     ).scalar() or 0
 
     # Connectors
-    connector_count = (
+    connectors = (
         await db.execute(
-            select(func.count(Connector.id)).where(Connector.user_id == current_user.id)
+            select(Connector).where(
+                Connector.user_id == current_user.id,
+                Connector.type.in_(VISIBLE_CONNECTOR_TYPES),
+            )
         )
-    ).scalar() or 0
+    ).scalars().all()
+    connector_count = sum(
+        1
+        for connector in _dedupe_visible_connectors(list(connectors))
+        if connector.status != ConnectorStatus.disconnected
+    )
 
     # Last indexed
     last_indexed = (

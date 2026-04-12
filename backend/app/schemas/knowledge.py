@@ -67,9 +67,11 @@ class DocumentOut(BaseModel):
     type: str
     size: int
     status: str
+    processingStatus: str  # alias of status for frontend compatibility
     source: str  # "Upload" or connector display name
     connectorType: Optional[str] = None
     collectionId: Optional[UUID] = None
+    collectionName: Optional[str] = None
     tags: List[str] = []
     pageCount: Optional[int] = None
     wordCount: Optional[int] = None
@@ -83,15 +85,18 @@ class DocumentOut(BaseModel):
     def from_orm(cls, doc) -> "DocumentOut":
         ft = doc.file_type or ""
         is_connector = ft in _CONNECTOR_TYPES
+        status_val = doc.status.value if hasattr(doc.status, "value") else doc.status
         return cls(
             id=doc.id,
             name=doc.name,
             type=ft,
             size=doc.file_size,
-            status=doc.status.value if hasattr(doc.status, "value") else doc.status,
+            status=status_val,
+            processingStatus=status_val,
             source=_CONNECTOR_DISPLAY_NAMES.get(ft, "Upload") if is_connector else "Upload",
             connectorType=ft if is_connector else None,
             collectionId=doc.collection_id,
+            collectionName=doc.collection.name if doc.collection else None,
             tags=doc.tags or [],
             pageCount=doc.page_count,
             wordCount=doc.word_count,

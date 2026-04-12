@@ -3,6 +3,7 @@
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
+import { useUIStore } from '@/stores/uiStore';
 import { cn, getInitials } from '@/lib/utils';
 import {
   Search,
@@ -45,6 +46,7 @@ function useTheme() {
 export function Topbar() {
   const { data: session } = useSession();
   const { theme, toggle } = useTheme();
+  const { setCommandPaletteOpen } = useUIStore();
   const role = (session?.user as any)?.role ?? '';
   const isAdmin = ['super_admin', 'admin', 'org_admin'].includes(role);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -71,15 +73,7 @@ export function Topbar() {
       {/* Search trigger */}
       <button
         className="flex flex-1 max-w-sm items-center gap-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 px-3 py-1.5 text-sm text-surface-400 dark:text-surface-500 hover:border-brand-400 dark:hover:border-brand-600 transition-colors"
-        onClick={() => {
-          // Open command palette
-          if (typeof window !== 'undefined') {
-            // Dynamically import to avoid SSR issues
-            import('@/hooks/useCommandPalette').then(({ useCommandPalette }) => {
-              useCommandPalette().open();
-            });
-          }
-        }}
+        onClick={() => setCommandPaletteOpen(true)}
       >
         <Search className="h-3.5 w-3.5 flex-shrink-0" />
         <span className="flex-1 text-left">Search knowledge base...</span>

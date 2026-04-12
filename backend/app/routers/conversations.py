@@ -218,6 +218,7 @@ async def stream_messages(
                 user_message_content=body.content,
                 system_prompt=body.systemPrompt,
                 images=body.images,
+                attachment_ids=body.attachmentIds,
                 user_id=current_user.id,
                 use_web_search=force_web_search,
                 source_filter=body.sourceFilter,

@@ -1,6 +1,9 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { CreditCard, TrendingUp, Users, Zap, Download, ChevronRight, CheckCircle, AlertCircle } from 'lucide-react';
+
+import * as knowledgeApi from '@/lib/api/knowledge';
 
 const INVOICES = [
   { id: 'INV-2026-03', date: 'Mar 1, 2026', amount: '$1,247.00', status: 'Paid', period: 'Mar 2026' },
@@ -10,14 +13,19 @@ const INVOICES = [
   { id: 'INV-2025-11', date: 'Nov 1, 2025', amount: '$875.00', status: 'Paid', period: 'Nov 2025' },
 ];
 
-const USAGE = [
-  { label: 'AI Queries', used: 38_420, limit: 50_000, unit: '' },
-  { label: 'Storage', used: 67, limit: 100, unit: 'GB' },
-  { label: 'Team Members', used: 47, limit: 100, unit: '' },
-  { label: 'Connectors', used: 8, limit: 'Unlimited', unit: '' },
-];
-
 export default function BillingPage() {
+  const { data: stats } = useQuery({
+    queryKey: ['billing-knowledge-stats'],
+    queryFn: knowledgeApi.getKnowledgeStats,
+  });
+  const storageUsedGb = Math.round((stats?.storageUsedBytes ?? 0) / (1024 * 1024 * 1024));
+  const usage = [
+    { label: 'AI Queries', used: 38_420, limit: 50_000, unit: '' },
+    { label: 'Storage', used: storageUsedGb, limit: 100, unit: 'GB' },
+    { label: 'Team Members', used: 47, limit: 100, unit: '' },
+    { label: 'Connectors', used: stats?.totalConnectors ?? 0, limit: 'Unlimited', unit: '' },
+  ];
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
@@ -45,7 +53,7 @@ export default function BillingPage() {
 
       {/* Usage meters */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {USAGE.map(u => {
+        {usage.map(u => {
           const pct = typeof u.limit === 'number' ? Math.round((u.used / u.limit) * 100) : 0;
           const isHigh = pct > 80;
           return (

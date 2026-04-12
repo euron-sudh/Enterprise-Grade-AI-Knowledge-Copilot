@@ -12,7 +12,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.conversation import Conversation, Message, MessageRole, FeedbackRating
-from app.models.knowledge import Document, DocumentStatus, Connector, ConnectorStatus
+from app.models.knowledge import Document, DocumentChunk, DocumentStatus, Connector, ConnectorStatus
 from app.schemas.analytics import (
     AIPerformanceMetrics,
     AnalyticsDashboard,
@@ -29,16 +29,53 @@ from app.schemas.analytics import (
 router = APIRouter()
 
 
+VISIBLE_CONNECTOR_TYPES = {
+    "google_drive",
+    "confluence",
+    "slack",
+    "github",
+    "notion",
+    "jira",
+    "salesforce",
+    "gmail",
+}
+
+
+def _connector_status_rank(connector: Connector) -> tuple[int, int, datetime, datetime]:
+    status_rank = {
+        ConnectorStatus.connected: 3,
+        ConnectorStatus.syncing: 2,
+        ConnectorStatus.error: 1,
+        ConnectorStatus.disconnected: 0,
+    }.get(connector.status, 0)
+    last_sync = connector.last_sync_at or datetime.min.replace(tzinfo=timezone.utc)
+    created = connector.created_at or datetime.min.replace(tzinfo=timezone.utc)
+    return (status_rank, connector.document_count or 0, last_sync, created)
+
+
+def _dedupe_visible_connectors(connectors: list[Connector]) -> list[Connector]:
+    deduped: dict[str, Connector] = {}
+    for connector in connectors:
+        if connector.type not in VISIBLE_CONNECTOR_TYPES:
+            continue
+        existing = deduped.get(connector.type)
+        if existing is None or _connector_status_rank(connector) > _connector_status_rank(existing):
+            deduped[connector.type] = connector
+    return list(deduped.values())
+
+
 async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> AnalyticsDashboard:
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=days)
     prev_start = start - timedelta(days=days)
+    user_conv_ids = select(Conversation.id).where(Conversation.user_id == user_id)
 
     # ── Run queries sequentially (AsyncSession does not support concurrent execute) ──
     total_q_res = await db.execute(
         select(func.count(Message.id)).where(
             Message.role == MessageRole.user,
             Message.created_at >= start,
+            Message.conversation_id.in_(user_conv_ids),
         )
     )
     prev_q_res = await db.execute(
@@ -46,15 +83,18 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
             Message.role == MessageRole.user,
             Message.created_at >= prev_start,
             Message.created_at < start,
+            Message.conversation_id.in_(user_conv_ids),
         )
     )
     active_u_res = await db.execute(
         select(func.count(func.distinct(Conversation.user_id))).where(
+            Conversation.user_id == user_id,
             Conversation.created_at >= start,
         )
     )
     prev_active_u_res = await db.execute(
         select(func.count(func.distinct(Conversation.user_id))).where(
+            Conversation.user_id == user_id,
             Conversation.created_at >= prev_start,
             Conversation.created_at < start,
         )
@@ -64,7 +104,11 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
             cast(Message.created_at, Date).label("day"),
             func.count(Message.id).label("cnt"),
         )
-        .where(Message.role == MessageRole.user, Message.created_at >= start)
+        .where(
+            Message.role == MessageRole.user,
+            Message.created_at >= start,
+            Message.conversation_id.in_(user_conv_ids),
+        )
         .group_by(cast(Message.created_at, Date))
         .order_by(cast(Message.created_at, Date))
     )
@@ -73,37 +117,117 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
             func.extract("hour", Message.created_at).label("hr"),
             func.count(Message.id).label("cnt"),
         )
-        .where(Message.role == MessageRole.user, Message.created_at >= start)
+        .where(
+            Message.role == MessageRole.user,
+            Message.created_at >= start,
+            Message.conversation_id.in_(user_conv_ids),
+        )
         .group_by(func.extract("hour", Message.created_at))
         .order_by(func.extract("hour", Message.created_at))
     )
-    docs_res = await db.execute(select(func.count(Document.id)))
+    docs_res = await db.execute(select(func.count(Document.id)).where(Document.user_id == user_id))
+    chunks_res = await db.execute(
+        select(func.count(DocumentChunk.id))
+        .select_from(DocumentChunk)
+        .join(Document, DocumentChunk.document_id == Document.id)
+        .where(Document.user_id == user_id)
+    )
     indexed_res = await db.execute(
-        select(func.count(Document.id)).where(Document.status == DocumentStatus.indexed)
+        select(func.count(Document.id)).where(
+            Document.user_id == user_id,
+            Document.status == DocumentStatus.indexed,
+        )
     )
     pending_res = await db.execute(
-        select(func.count(Document.id)).where(Document.status == DocumentStatus.processing)
+        select(func.count(Document.id)).where(
+            Document.user_id == user_id,
+            Document.status == DocumentStatus.processing,
+        )
     )
     failed_res = await db.execute(
-        select(func.count(Document.id)).where(Document.status == DocumentStatus.failed)
+        select(func.count(Document.id)).where(
+            Document.user_id == user_id,
+            Document.status == DocumentStatus.failed,
+        )
     )
-    storage_res = await db.execute(select(func.coalesce(func.sum(Document.file_size), 0)))
-    connectors_res = await db.execute(select(Connector).order_by(Connector.created_at.desc()).limit(10))
+    storage_res = await db.execute(
+        select(func.coalesce(func.sum(Document.file_size), 0)).where(Document.user_id == user_id)
+    )
+    connectors_res = await db.execute(
+        select(Connector).where(
+            Connector.user_id == user_id,
+            Connector.type.in_(VISIBLE_CONNECTOR_TYPES),
+        )
+    )
     recent_docs_res = await db.execute(
         select(Document.id, Document.original_name, Document.created_at)
+        .where(Document.user_id == user_id)
         .order_by(Document.created_at.desc())
         .limit(5)
     )
     model_res = await db.execute(
-        select(Conversation.model, func.count(Conversation.id).label("cnt"))
-        .group_by(Conversation.model)
-        .order_by(func.count(Conversation.id).desc())
+        select(
+            Message.model,
+            func.count(Message.id).label("cnt"),
+            func.coalesce(func.sum(Message.token_count), 0).label("tokens"),
+        )
+        .where(
+            Message.role == MessageRole.assistant,
+            Message.created_at >= start,
+            Message.conversation_id.in_(user_conv_ids),
+        )
+        .group_by(Message.model)
+        .order_by(func.count(Message.id).desc())
+    )
+    avg_latency_res = await db.execute(
+        select(func.avg(Message.processing_time_ms)).where(
+            Message.role == MessageRole.assistant,
+            Message.created_at >= start,
+            Message.processing_time_ms.is_not(None),
+            Message.conversation_id.in_(user_conv_ids),
+        )
+    )
+    max_latency_res = await db.execute(
+        select(func.max(Message.processing_time_ms)).where(
+            Message.role == MessageRole.assistant,
+            Message.created_at >= start,
+            Message.processing_time_ms.is_not(None),
+            Message.conversation_id.in_(user_conv_ids),
+        )
+    )
+    total_tokens_res = await db.execute(
+        select(func.coalesce(func.sum(Message.token_count), 0)).where(
+            Message.role == MessageRole.assistant,
+            Message.created_at >= start,
+            Message.conversation_id.in_(user_conv_ids),
+        )
+    )
+    assistant_with_sources_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.assistant,
+            Message.created_at >= start,
+            Message.sources != [],
+            Message.conversation_id.in_(user_conv_ids),
+        )
+    )
+    assistant_total_res = await db.execute(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.assistant,
+            Message.created_at >= start,
+            Message.conversation_id.in_(user_conv_ids),
+        )
     )
     feedback_up_res = await db.execute(
-        select(func.count(Message.id)).where(Message.feedback_rating == FeedbackRating.up)
+        select(func.count(Message.id)).where(
+            Message.feedback_rating == FeedbackRating.up,
+            Message.conversation_id.in_(user_conv_ids),
+        )
     )
     feedback_down_res = await db.execute(
-        select(func.count(Message.id)).where(Message.feedback_rating == FeedbackRating.down)
+        select(func.count(Message.id)).where(
+            Message.feedback_rating == FeedbackRating.down,
+            Message.conversation_id.in_(user_conv_ids),
+        )
     )
 
     # ── Unpack ─────────────────────────────────────────────────────────────
@@ -112,6 +236,7 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
     active_users: int = active_u_res.scalar_one() or 0
     prev_active_users: int = prev_active_u_res.scalar_one() or 0
     total_docs: int = docs_res.scalar_one() or 0
+    total_chunks: int = chunks_res.scalar_one() or 0
     indexed_docs: int = indexed_res.scalar_one() or 0
     pending_docs: int = pending_res.scalar_one() or 0
     failed_docs: int = failed_res.scalar_one() or 0
@@ -124,6 +249,15 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
     feedback_positive_rate = round(feedback_up / total_feedback, 3) if total_feedback else 0.0
     feedback_negative_rate = round(feedback_down / total_feedback, 3) if total_feedback else 0.0
     quality_score = feedback_positive_rate  # 0.0 when no feedback yet
+    assistant_with_sources = assistant_with_sources_res.scalar_one() or 0
+    assistant_total = assistant_total_res.scalar_one() or 0
+    citation_accuracy = round(assistant_with_sources / max(assistant_total, 1), 3)
+
+    avg_latency_ms = int((avg_latency_res.scalar_one() or 0) or 0)
+    max_latency_ms = int((max_latency_res.scalar_one() or 0) or 0)
+    total_tokens_used = int((total_tokens_res.scalar_one() or 0) or 0)
+    # Conservative blended estimate for mixed model usage.
+    estimated_token_cost_usd = round((total_tokens_used / 1000.0) * 0.002, 4)
 
     queries_change = round((total_queries - prev_queries) / max(prev_queries, 1) * 100, 1)
     users_change = round((active_users - prev_active_users) / max(prev_active_users, 1) * 100, 1)
@@ -143,15 +277,19 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
     peak_hours = [HourlyUsage(hour=h, count=peak_map.get(h, 0)) for h in range(0, 24, 2)]
 
     # ── Connectors ─────────────────────────────────────────────────────────
-    connectors = connectors_res.scalars().all()
+    connectors = [
+        connector
+        for connector in _dedupe_visible_connectors(list(connectors_res.scalars().all()))
+        if connector.status != ConnectorStatus.disconnected
+    ]
     connector_health = [
         ConnectorHealthSummary(
             connectorId=str(c.id),
             connectorName=c.name,
-            connectorType=c.connector_type if hasattr(c, "connector_type") else "unknown",
+            connectorType=c.type,
             status="healthy" if c.status == ConnectorStatus.connected else "warning",
             syncSuccessRate=1.0 if c.status == ConnectorStatus.connected else 0.5,
-            lastSyncAt=c.created_at.isoformat() if c.created_at else now.isoformat(),
+            lastSyncAt=(c.last_sync_at or c.created_at or now).isoformat(),
         )
         for c in connectors
     ]
@@ -174,6 +312,8 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
         ModelUsage(
             model=r.model or "unknown",
             queryCount=r.cnt,
+            tokenCount=int(r.tokens or 0),
+            costUsd=round((int(r.tokens or 0) / 1000.0) * 0.002, 4),
             percentage=round(r.cnt / total_convs * 100, 1),
         )
         for r in model_rows
@@ -198,7 +338,7 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
         activeUsersChange=users_change,
         documentsIndexed=indexed_docs,
         documentsChange=0.0,
-        avgResponseTimeMs=1200,
+        avgResponseTimeMs=avg_latency_ms,
         responseTimeChange=0.0,
         timeSeries=time_series,
         queryVolume=query_volume,
@@ -210,18 +350,21 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
 
     ai_perf = AIPerformanceMetrics(
         avgQualityScore=quality_score,
-        citationAccuracy=quality_score,
+        citationAccuracy=citation_accuracy,
         hallucenationRate=0.0,
-        tokenCostUsd=0.0,
+        tokenCostUsd=estimated_token_cost_usd,
         successRate=quality_score,
         feedbackPositiveRate=feedback_positive_rate,
         feedbackNegativeRate=feedback_negative_rate,
-        avgSourcesPerAnswer=0.0,
-        avgLatencyMs=1200,
-        latencyP95Ms=1800,
-        latencyP99Ms=2400,
+        avgSourcesPerAnswer=round(assistant_with_sources / max(assistant_total, 1), 2),
+        avgLatencyMs=avg_latency_ms,
+        latencyP95Ms=max(avg_latency_ms, int(max_latency_ms * 0.95) if max_latency_ms else 0),
+        latencyP99Ms=max(avg_latency_ms, int(max_latency_ms * 0.99) if max_latency_ms else 0),
         errorRate=0.0,
-        modelBreakdown=[],
+        modelBreakdown=[
+            {"model": m.model, "queryCount": m.queryCount, "tokenCount": m.tokenCount, "costUsd": m.costUsd, "percentage": m.percentage}
+            for m in top_models
+        ],
         latencyTrend=latency_trend,
         feedbackTrend=feedback_trend,
         errorBreakdown=[],
@@ -229,6 +372,8 @@ async def _build_dashboard(db: AsyncSession, user_id, days: int = 30) -> Analyti
 
     knowledge = KnowledgeMetrics(
         totalDocuments=total_docs,
+        totalChunks=total_chunks,
+        totalConnectors=len(connector_health),
         indexedDocuments=indexed_docs,
         pendingDocuments=pending_docs,
         failedDocuments=failed_docs,
@@ -373,9 +518,9 @@ async def get_home_stats(
         select(func.count(Document.id)).where(Document.user_id == uid)
     )
     connectors_res = await db.execute(
-        select(func.count(Connector.id)).where(
+        select(Connector).where(
             Connector.user_id == uid,
-            Connector.status == ConnectorStatus.connected,
+            Connector.type.in_(VISIBLE_CONNECTOR_TYPES),
         )
     )
     convs_res = await db.execute(
@@ -410,7 +555,8 @@ async def get_home_stats(
     queries_today: int = queries_today_res.scalar_one() or 0
     queries_yesterday: int = queries_yesterday_res.scalar_one() or 0
     total_docs: int = docs_res.scalar_one() or 0
-    active_connectors: int = connectors_res.scalar_one() or 0
+    visible_connectors = _dedupe_visible_connectors(list(connectors_res.scalars().all()))
+    active_connectors = sum(1 for connector in visible_connectors if connector.status != ConnectorStatus.disconnected)
     total_conversations: int = convs_res.scalar_one() or 0
 
     daily_map = {str(row.day): row.cnt for row in daily_res.all()}

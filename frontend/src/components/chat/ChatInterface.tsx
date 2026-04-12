@@ -65,10 +65,10 @@ export function ChatInterface({ conversationId, initialMessage }: ChatInterfaceP
   const handleSend = useCallback(
     async (content: string, attachments?: File[]) => {
       let images: string[] | undefined;
+      let attachmentIds: string[] | undefined;
 
       if (attachments && attachments.length > 0) {
         const imageFiles = attachments.filter((f) => f.type.startsWith('image/'));
-        const docFiles   = attachments.filter((f) => !f.type.startsWith('image/'));
 
         // Convert images to base64 data URIs so the AI can see them (vision)
         if (imageFiles.length > 0) {
@@ -85,12 +85,14 @@ export function ChatInterface({ conversationId, initialMessage }: ChatInterfaceP
           );
         }
 
-        // Non-image files still go to the knowledge base
-        if (docFiles.length > 0) {
-          const uploadToast = toast.loading(`Uploading ${docFiles.length} file(s)...`);
+        // Persist all attachments to the knowledge base so they show up in the
+        // document library and can be referenced by later RAG queries.
+        if (attachments.length > 0) {
+          const uploadToast = toast.loading(`Uploading ${attachments.length} file(s)...`);
           try {
-            await knowledgeApi.uploadDocuments(docFiles, {});
-            toast.success(`${docFiles.length} file(s) added to Knowledge base`, { id: uploadToast });
+            const uploadedDocs = await knowledgeApi.uploadDocuments(attachments, {});
+            attachmentIds = uploadedDocs.map((d) => d.id);
+            toast.success(`${attachments.length} file(s) added to Knowledge base`, { id: uploadToast });
           } catch {
             toast.error('File upload failed. Sending message without attachments.', { id: uploadToast });
           }
@@ -102,6 +104,7 @@ export function ChatInterface({ conversationId, initialMessage }: ChatInterfaceP
         content,
         model: selectedModel,
         images,
+        attachmentIds,
       });
     },
     [conversationId, selectedModel, sendMessage]

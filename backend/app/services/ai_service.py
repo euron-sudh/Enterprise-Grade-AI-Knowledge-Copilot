@@ -84,6 +84,7 @@ _WEB_SEARCH_KEYWORDS = {
     "latest", "current", "today", "now", "recent", "news", "trending",
     "live", "breaking", "update", "yesterday", "this week", "this month",
     "2025", "2026", "real-time", "just announced", "new release",
+    "development", "developments", "state of the art", "arxiv",
 }
 
 
@@ -101,9 +102,32 @@ def _needs_web_search(query: str, kb_sources: list) -> bool:
         return True
     if not kb_sources:
         return True
-    # Fill-only chunks all have score 0.4; keyword-matched chunks score > 0.4
-    has_relevant_match = any(s.get("relevanceScore", 0) > 0.4 for s in kb_sources)
-    return not has_relevant_match
+    # If top KB relevance is weak, prefer adding web context.
+    top_score = max((float(s.get("relevanceScore", 0) or 0) for s in kb_sources), default=0.0)
+    if top_score < 0.65:
+        return True
+
+    # Also check lexical overlap between query terms and retrieved chunks.
+    query_terms = {
+        term.strip().lower()
+        for term in query.replace("\n", " ").split()
+        if len(term.strip()) > 3 and term.strip().lower() not in _STOP_WORDS
+    }
+    if not query_terms:
+        return False
+
+    best_overlap = 0.0
+    for source in kb_sources:
+        text = f"{source.get('documentName', '')} {source.get('chunkText', '')}".lower()
+        if not text:
+            continue
+        overlap_count = sum(1 for term in query_terms if term in text)
+        overlap = overlap_count / max(len(query_terms), 1)
+        if overlap > best_overlap:
+            best_overlap = overlap
+
+    # If KB chunks barely overlap the user's intent, add web search.
+    return best_overlap < 0.18
 
 
 async def _tavily_web_search(query: str, max_results: int = 5) -> list:
@@ -194,6 +218,13 @@ _STOP_WORDS = {
     "tell", "give", "show", "find", "get", "make", "just", "like", "some",
     "there", "also", "well", "then", "say", "ask", "want", "need", "use",
     "please", "help", "know", "does", "she", "they", "them", "him", "her",
+}
+
+
+_CONNECTOR_FILE_TYPES = {
+    "google_drive", "gmail", "github", "gitlab", "confluence", "notion",
+    "slack", "jira", "salesforce", "hubspot", "zendesk", "intercom",
+    "sharepoint", "onedrive", "dropbox", "web", "web_crawler", "figma",
 }
 
 
@@ -419,6 +450,29 @@ def _is_recent_document_query(query: str, source_filter: Optional[str] = None) -
     return any(term in query_lower for term in doc_terms)
 
 
+def _wants_single_document(query: str) -> bool:
+    query_lower = query.lower()
+    singular_markers = [
+        "the recent document", "the latest document", "one document", "single document",
+        "that document", "this document", "recent document i uploaded", "latest file i uploaded",
+    ]
+    if any(marker in query_lower for marker in singular_markers):
+        return True
+
+    # Singular noun usage without explicit plural language.
+    has_singular = (" document " in f" {query_lower} " or " file " in f" {query_lower} ")
+    has_plural = any(p in query_lower for p in ["documents", "files", "all", "list", "show me my"])
+    return has_singular and not has_plural
+
+
+def _wants_uploaded_only(query: str) -> bool:
+    q = query.lower()
+    return any(
+        marker in q
+        for marker in ["i uploaded", "my uploaded", "uploaded", "my upload", "upload"]
+    )
+
+
 def _is_inventory_query(query: str, source_filter: Optional[str] = None) -> bool:
     """Return True when the user wants to know what's in the knowledge base or a specific connector."""
     query_lower = query.lower()
@@ -454,6 +508,8 @@ async def _get_recent_document_sources(
     query_lower = query.lower()
     if not connector_type and ("knowledge base" in query_lower or "indexed" in query_lower):
         connector_type = "upload"
+    if not connector_type and _wants_uploaded_only(query_lower):
+        connector_type = "upload"
     
     words = [
         w.strip().lower() for w in query.split()
@@ -461,7 +517,9 @@ async def _get_recent_document_sources(
     ]
 
     q = select(Document).where(Document.user_id == user_id, Document.status == "indexed")
-    if connector_type:
+    if connector_type == "upload":
+        q = q.where(Document.file_type.notin_(_CONNECTOR_FILE_TYPES))
+    elif connector_type:
         q = q.where(Document.file_type == connector_type)
 
     # If the query hints a specific filename/topic (e.g. "resume"), prefer those docs first.
@@ -480,7 +538,9 @@ async def _get_recent_document_sources(
     # If strict filename filtering produced no rows, fall back to plain recency.
     if not docs and words:
         q2 = select(Document).where(Document.user_id == user_id, Document.status == "indexed")
-        if connector_type:
+        if connector_type == "upload":
+            q2 = q2.where(Document.file_type.notin_(_CONNECTOR_FILE_TYPES))
+        elif connector_type:
             q2 = q2.where(Document.file_type == connector_type)
         q2 = q2.order_by(Document.created_at.desc()).limit(limit)
         result2 = await db.execute(q2)
@@ -590,6 +650,68 @@ async def _list_user_documents(user_id: uuid.UUID, db: AsyncSession) -> list:
         return []
 
 
+def _is_attachment_focused_query(query: str) -> bool:
+    q = query.lower()
+    markers = [
+        "attached file", "attached document", "this file", "this document",
+        "inside the file", "inside this", "what is inside", "analyze attached",
+        "analyse attached", "attachment", "uploaded this file",
+    ]
+    return any(marker in q for marker in markers)
+
+
+async def _get_attachment_sources(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    attachment_ids: list[uuid.UUID],
+    limit: int = 8,
+) -> list:
+    if not attachment_ids:
+        return []
+
+    docs_res = await db.execute(
+        select(Document)
+        .where(
+            Document.user_id == user_id,
+            Document.id.in_(attachment_ids),
+            Document.status == "indexed",
+        )
+        .order_by(Document.created_at.desc())
+    )
+    docs = list(docs_res.scalars().all())
+    if not docs:
+        return []
+
+    sources: list = []
+    for doc in docs:
+        chunks_res = await db.execute(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == doc.id)
+            .order_by(DocumentChunk.chunk_index.asc())
+            .limit(3)
+        )
+        chunks = list(chunks_res.scalars().all())
+        if not chunks:
+            continue
+        for ch in chunks:
+            if _is_extraction_placeholder(ch.content):
+                continue
+            sources.append({
+                "id": str(uuid.uuid4()),
+                "documentId": str(doc.id),
+                "documentName": doc.original_name or doc.name,
+                "documentType": doc.file_type,
+                "pageNumber": None,
+                "chunkText": (ch.content or "")[:1600],
+                "relevanceScore": 0.99,
+                "url": None,
+                "connectorType": doc.file_type,
+                "sourceType": "knowledge_base",
+            })
+
+    return sources[:limit]
+
+
 async def _mock_stream(user_message: str) -> AsyncGenerator[str, None]:
     """Stream a mock response word by word with a small delay."""
     topic = _detect_topic(user_message)
@@ -624,12 +746,52 @@ async def _claude_stream(
     """Stream from Anthropic Claude API."""
     import anthropic
 
+    def _to_anthropic_content(content: object) -> object:
+        if not isinstance(content, list):
+            return content
+
+        converted: list = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            ptype = part.get("type")
+            if ptype == "text":
+                converted.append({"type": "text", "text": part.get("text", "")})
+                continue
+
+            if ptype == "image_url":
+                url = ((part.get("image_url") or {}).get("url") or "")
+                if isinstance(url, str) and url.startswith("data:") and ";base64," in url:
+                    header, b64_data = url.split(",", 1)
+                    media_type = header[5:].split(";", 1)[0] or "image/png"
+                    converted.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": b64_data,
+                            },
+                        }
+                    )
+
+        return converted if converted else ""
+
+    anthropic_messages = []
+    for m in messages_payload:
+        anthropic_messages.append(
+            {
+                "role": m.get("role"),
+                "content": _to_anthropic_content(m.get("content")),
+            }
+        )
+
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     kwargs = {
         "model": model,
         "max_tokens": 2048,
-        "messages": messages_payload,
+        "messages": anthropic_messages,
     }
     if system_prompt:
         kwargs["system"] = system_prompt
@@ -711,6 +873,7 @@ async def stream_chat_response(
     user_message_content: str,
     system_prompt: Optional[str] = None,
     images: Optional[List[str]] = None,
+    attachment_ids: Optional[List[uuid.UUID]] = None,
     user_id: Optional[uuid.UUID] = None,
     use_web_search: bool = False,
     source_filter: Optional[str] = None,
@@ -738,16 +901,73 @@ async def stream_chat_response(
         detected_connector = _detect_requested_connector_type(user_message_content)
         if detected_connector:
             effective_source_filter = detected_connector
+        elif _wants_uploaded_only(user_message_content):
+            effective_source_filter = "upload"
 
     is_inventory = _is_inventory_query(user_message_content, effective_source_filter)
     is_recency = _is_recent_document_query(user_message_content, effective_source_filter)
+    single_doc_intent = is_recency and _wants_single_document(user_message_content)
+
+    attachment_sources: list = []
+    attachment_status_sources: list = []
+    attachment_not_ready_message: Optional[str] = None
+    if user_id and attachment_ids:
+        attachment_sources = await _get_attachment_sources(db, user_id, attachment_ids)
+
+        if not attachment_sources:
+            docs_res = await db.execute(
+                select(Document)
+                .where(Document.user_id == user_id, Document.id.in_(attachment_ids))
+                .order_by(Document.created_at.desc())
+            )
+            attached_docs = list(docs_res.scalars().all())
+
+            if attached_docs:
+                names = [d.original_name or d.name for d in attached_docs[:3]]
+                display_names = ", ".join(names)
+                statuses = [d.status.value if hasattr(d.status, "value") else str(d.status) for d in attached_docs]
+
+                for d in attached_docs[:4]:
+                    status_value = d.status.value if hasattr(d.status, "value") else str(d.status)
+                    attachment_status_sources.append({
+                        "id": str(uuid.uuid4()),
+                        "documentId": str(d.id),
+                        "documentName": d.original_name or d.name,
+                        "documentType": d.file_type,
+                        "pageNumber": None,
+                        "chunkText": f"Attachment status: {status_value}.",
+                        "relevanceScore": 0.99,
+                        "url": None,
+                        "connectorType": d.file_type,
+                        "sourceType": "knowledge_base",
+                    })
+
+                if any(s == "processing" for s in statuses):
+                    attachment_not_ready_message = (
+                        f"I found your attached file(s) ({display_names}), but they are still indexing. "
+                        "Please retry in a few seconds so I can summarize the exact content."
+                    )
+                elif all(s == "failed" for s in statuses):
+                    attachment_not_ready_message = (
+                        f"I found your attached file(s) ({display_names}), but indexing failed. "
+                        "Please re-upload the file and try again."
+                    )
+                else:
+                    attachment_not_ready_message = (
+                        f"I found your attached file(s) ({display_names}), but I don't have readable chunks yet. "
+                        "Please retry shortly."
+                    )
+
+    attachment_focused = bool(attachment_sources) and _is_attachment_focused_query(user_message_content)
 
     # --- 1. Search knowledge base (scoped to this user) ---
-    if user_id and (is_inventory or is_recency):
+    if attachment_focused:
+        kb_sources = attachment_sources
+    elif user_id and (is_inventory or is_recency):
         kb_sources = await _get_recent_document_sources(
             db, user_id, user_message_content,
             source_filter=effective_source_filter,
-            limit=8,
+            limit=1 if single_doc_intent else 8,
         )
     else:
         kb_sources = await _search_relevant_chunks(
@@ -755,10 +975,26 @@ async def stream_chat_response(
             user_id=user_id,
             source_filter=effective_source_filter,
         )
+        if attachment_sources:
+            merged = attachment_sources + kb_sources
+            deduped: list = []
+            seen_ids: set[str] = set()
+            for s in merged:
+                key = f"{s.get('documentId')}::{s.get('chunkText','')[:80]}"
+                if key in seen_ids:
+                    continue
+                seen_ids.add(key)
+                deduped.append(s)
+            kb_sources = deduped[:8]
 
     # --- 1b. Decide whether to also query the web ---
     web_sources: list = []
-    should_search_web = use_web_search or _needs_web_search(user_message_content, kb_sources)
+    # For inventory/recency questions about the user's own docs, prefer KB-only
+    # unless the user explicitly selects Web.
+    if (is_inventory or is_recency or attachment_focused) and not use_web_search:
+        should_search_web = False
+    else:
+        should_search_web = use_web_search or _needs_web_search(user_message_content, kb_sources)
 
     if should_search_web:
         logger.info("Web search triggered (forced=%s) for query: %s", use_web_search, user_message_content[:80])
@@ -786,16 +1022,21 @@ async def stream_chat_response(
             logger.info("Web search requested but neither TAVILY_API_KEY nor GOOGLE_API_KEY+GOOGLE_CSE_ID are configured")
 
     prefer_web_only = use_web_search and bool(web_sources)
-    sources = _select_final_sources(
-        kb_sources,
-        web_sources,
-        max_kb=0 if prefer_web_only else 4,
-        max_web=4 if prefer_web_only else 2,
-    )
+    if attachment_not_ready_message:
+        sources = attachment_status_sources[:4]
+    else:
+        sources = _select_final_sources(
+            kb_sources,
+            web_sources,
+            max_kb=0 if prefer_web_only else (1 if single_doc_intent else 4),
+            max_web=4 if prefer_web_only else 2,
+        )
     yield {"type": "sources", "sources": sources}
 
     selected_kb_sources = [s for s in sources if s.get("sourceType") == "knowledge_base"]
-    selected_web_sources = [s for s in sources if s.get("sourceType") == "web_search"]
+    selected_web_sources = [s for s in sources if s.get("sourceType") == "web"]
+
+    deterministic_single_upload = single_doc_intent and effective_source_filter == "upload"
 
     # --- 2. Build context for the AI ---
     messages_payload = []
@@ -839,6 +1080,17 @@ async def stream_chat_response(
         "If one source is enough, use one citation. If several are needed, use at most 2-3 citations in the whole answer. "
         "Do not use emojis or filler phrases."
     )
+
+    if single_doc_intent:
+        effective_system += (
+            "\n\nThe user is asking about a single recent document. "
+            "Answer for one best-matching most recent document only; do not list multiple files unless asked."
+        )
+    if attachment_focused:
+        effective_system += (
+            "\n\nThe user is asking about attached file(s). "
+            "Prioritize the attached-file excerpts above, and answer directly from them."
+        )
 
     # Include document inventory when the user is asking what's in their KB or a specific connector.
     # Always include it for inventory/recency queries so the AI doesn't hallucinate sources.
@@ -933,25 +1185,49 @@ async def stream_chat_response(
     full_content = ""
     token_count = 0
 
-    try:
-        if settings.has_anthropic_key:
-            # Normalize to a valid Claude model if the user picked an OpenAI model
-            claude_model = model if model.startswith("claude") else "claude-sonnet-4-6"
-            ai_gen = _claude_stream(messages_payload, claude_model, effective_system)
-        elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
-            ai_gen = _openai_stream(messages_payload, model, effective_system)
+    if attachment_not_ready_message:
+        full_content = attachment_not_ready_message
+        token_count = len(full_content.split())
+        yield {"type": "delta", "delta": full_content}
+    elif deterministic_single_upload:
+        top = selected_kb_sources[0] if selected_kb_sources else (sources[0] if sources else None)
+        if top:
+            snippet = (top.get("chunkText") or "").strip()
+            if len(snippet) > 360:
+                snippet = snippet[:360].rstrip() + "..."
+            full_content = (
+                f"Your most recent uploaded document is {top.get('documentName', 'the latest file')}. "
+                f"Quick summary: {snippet or 'I could not extract a readable preview yet.'}"
+            )
         else:
-            ai_gen = _mock_stream(user_message_content)
+            full_content = (
+                "I could not find any uploaded documents yet. "
+                "Please upload a file in Knowledge Base and try again."
+            )
 
-        async for text_chunk in ai_gen:
-            full_content += text_chunk
-            token_count += len(text_chunk.split())
-            yield {"type": "delta", "delta": text_chunk}
+        token_count = len(full_content.split())
+        yield {"type": "delta", "delta": full_content}
+    else:
 
-    except Exception as e:
-        logger.error(f"Streaming error: {e}")
-        yield {"type": "error", "error": str(e)}
-        return
+        try:
+            if settings.has_anthropic_key:
+                # Normalize to a valid Claude model if the user picked an OpenAI model
+                claude_model = model if model.startswith("claude") else "claude-sonnet-4-6"
+                ai_gen = _claude_stream(messages_payload, claude_model, effective_system)
+            elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
+                ai_gen = _openai_stream(messages_payload, model, effective_system)
+            else:
+                ai_gen = _mock_stream(user_message_content)
+
+            async for text_chunk in ai_gen:
+                full_content += text_chunk
+                token_count += len(text_chunk.split())
+                yield {"type": "delta", "delta": text_chunk}
+
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            yield {"type": "error", "error": str(e)}
+            return
 
     # --- 4. Save assistant message to DB ---
     processing_time_ms = int((time.time() - start_time) * 1000)

@@ -1,26 +1,47 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Search, Plus, CheckCircle, Clock, AlertCircle, Settings, Trash2, RefreshCw } from 'lucide-react';
 
-const INTEGRATIONS = [
-  { id: '1', name: 'Google Drive', category: 'Storage', status: 'connected', docs: 1240, lastSync: '5 min ago', logo: '🟡' },
-  { id: '2', name: 'Slack', category: 'Communication', status: 'connected', docs: 8420, lastSync: '10 min ago', logo: '🟣' },
-  { id: '3', name: 'Confluence', category: 'Wiki', status: 'connected', docs: 3100, lastSync: '1 hour ago', logo: '🔵' },
-  { id: '4', name: 'GitHub', category: 'Development', status: 'connected', docs: 520, lastSync: '30 min ago', logo: '⚫' },
-  { id: '5', name: 'Notion', category: 'Wiki', status: 'error', docs: 890, lastSync: '3 hours ago', logo: '⚪' },
-  { id: '6', name: 'Jira', category: 'Project Mgmt', status: 'connected', docs: 2340, lastSync: '45 min ago', logo: '🔵' },
-  { id: '7', name: 'Microsoft Teams', category: 'Communication', status: 'pending', docs: 0, lastSync: 'Never', logo: '🟣' },
-  { id: '8', name: 'Salesforce', category: 'CRM', status: 'pending', docs: 0, lastSync: 'Never', logo: '🔵' },
-];
+import * as knowledgeApi from '@/lib/api/knowledge';
+
+const VISIBLE_CONNECTOR_TYPES = new Set([
+  'google_drive',
+  'confluence',
+  'slack',
+  'github',
+  'notion',
+  'jira',
+  'salesforce',
+  'gmail',
+]);
+
+const CONNECTOR_META: Record<string, { category: string; logo: string }> = {
+  google_drive: { category: 'Storage', logo: '🟡' },
+  slack: { category: 'Communication', logo: '🟣' },
+  confluence: { category: 'Wiki', logo: '🔵' },
+  github: { category: 'Development', logo: '⚫' },
+  notion: { category: 'Wiki', logo: '⚪' },
+  jira: { category: 'Project Mgmt', logo: '🔵' },
+  salesforce: { category: 'CRM', logo: '🔵' },
+  gmail: { category: 'Email', logo: '🔴' },
+};
 
 const AVAILABLE = [
+  { type: 'google_drive', name: 'Google Drive', category: 'Storage', logo: '🟡' },
   { name: 'OneDrive', category: 'Storage', logo: '🔵' },
   { name: 'Dropbox', category: 'Storage', logo: '🔷' },
-  { name: 'Gmail', category: 'Email', logo: '🔴' },
+  { type: 'gmail', name: 'Gmail', category: 'Email', logo: '🔴' },
   { name: 'Outlook', category: 'Email', logo: '🔵' },
   { name: 'HubSpot', category: 'CRM', logo: '🟠' },
   { name: 'Zendesk', category: 'Support', logo: '🟢' },
+  { type: 'confluence', name: 'Confluence', category: 'Wiki', logo: '🔵' },
+  { type: 'notion', name: 'Notion', category: 'Wiki', logo: '⚪' },
+  { type: 'slack', name: 'Slack', category: 'Communication', logo: '🟣' },
+  { type: 'github', name: 'GitHub', category: 'Development', logo: '⚫' },
+  { type: 'jira', name: 'Jira', category: 'Project Mgmt', logo: '🔵' },
+  { type: 'salesforce', name: 'Salesforce', category: 'CRM', logo: '🔵' },
   { name: 'Asana', category: 'Project Mgmt', logo: '🔴' },
   { name: 'Linear', category: 'Project Mgmt', logo: '🟣' },
 ];
@@ -28,11 +49,47 @@ const AVAILABLE = [
 const statusConfig = {
   connected: { icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-500/20', label: 'Connected' },
   error: { icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/20', label: 'Error' },
-  pending: { icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/20', label: 'Pending' },
+  syncing: { icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/20', label: 'Syncing' },
 };
+
+function formatLastSync(lastSyncAt?: string) {
+  if (!lastSyncAt) return 'Never';
+  const diffMs = Date.now() - new Date(lastSyncAt).getTime();
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+  if (diffMinutes < 1) return 'just now';
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+}
 
 export default function IntegrationsPage() {
   const [search, setSearch] = useState('');
+  const { data: connectors = [] } = useQuery({
+    queryKey: ['admin-integrations-connectors'],
+    queryFn: knowledgeApi.listConnectors,
+  });
+  const { data: stats } = useQuery({
+    queryKey: ['admin-integrations-stats'],
+    queryFn: knowledgeApi.getKnowledgeStats,
+  });
+
+  const visibleIntegrations = connectors
+    .filter((connector) => VISIBLE_CONNECTOR_TYPES.has(connector.type))
+    .filter((connector) => connector.status !== 'disconnected')
+    .map((connector) => ({
+      id: connector.id,
+      name: connector.name,
+      type: connector.type,
+      category: CONNECTOR_META[connector.type]?.category ?? 'Integration',
+      status: connector.status === 'pending' ? 'syncing' : connector.status,
+      docs: connector.documentCount,
+      lastSync: formatLastSync(connector.lastSyncedAt),
+      logo: CONNECTOR_META[connector.type]?.logo ?? '🔌',
+    }));
+  const connectedTypes = new Set(visibleIntegrations.map((integration) => integration.type));
+  const totalDocuments = stats?.totalDocuments ?? 0;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -49,10 +106,10 @@ export default function IntegrationsPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Connected', value: INTEGRATIONS.filter(i => i.status === 'connected').length.toString(), color: 'text-green-400' },
-          { label: 'Total Documents', value: '16.5K', color: 'text-white' },
-          { label: 'Errors', value: INTEGRATIONS.filter(i => i.status === 'error').length.toString(), color: 'text-red-400' },
-          { label: 'Available', value: AVAILABLE.length.toString(), color: 'text-surface-600 dark:text-gray-400' },
+          { label: 'Connected', value: visibleIntegrations.filter(i => i.status === 'connected').length.toString(), color: 'text-green-400' },
+          { label: 'Total Documents', value: totalDocuments.toLocaleString(), color: 'text-white' },
+          { label: 'Errors', value: visibleIntegrations.filter(i => i.status === 'error').length.toString(), color: 'text-red-400' },
+          { label: 'Available', value: AVAILABLE.filter((integration) => !integration.type || !connectedTypes.has(integration.type)).length.toString(), color: 'text-surface-600 dark:text-gray-400' },
         ].map(s => (
           <div key={s.label} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 rounded-xl p-4">
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
@@ -71,7 +128,7 @@ export default function IntegrationsPage() {
           </div>
         </div>
         <div className="divide-y divide-white/5">
-          {INTEGRATIONS.filter(i => search === '' || i.name.toLowerCase().includes(search.toLowerCase())).map(integration => {
+          {visibleIntegrations.filter(i => search === '' || i.name.toLowerCase().includes(search.toLowerCase())).map(integration => {
             const cfg = statusConfig[integration.status as keyof typeof statusConfig];
             const Icon = cfg.icon;
             return (
@@ -83,7 +140,7 @@ export default function IntegrationsPage() {
                     <span className="text-xs bg-surface-100 dark:bg-gray-800 text-surface-600 dark:text-gray-400 px-2 py-0.5 rounded-full">{integration.category}</span>
                   </div>
                   <div className="text-surface-500 dark:text-gray-500 text-xs mt-0.5">
-                    {integration.status === 'connected' ? `${integration.docs.toLocaleString()} documents · Last sync: ${integration.lastSync}` : integration.status === 'pending' ? 'Setup required' : 'Sync failed — check credentials'}
+                    {integration.status === 'connected' ? `${integration.docs.toLocaleString()} documents · Last sync: ${integration.lastSync}` : integration.status === 'syncing' ? 'Sync in progress' : 'Sync failed — check credentials'}
                   </div>
                 </div>
                 <span className={`flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.color} flex-shrink-0`}>
@@ -106,7 +163,7 @@ export default function IntegrationsPage() {
       <div>
         <h3 className="text-white font-semibold mb-3">Available to Connect</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {AVAILABLE.map(avail => (
+          {AVAILABLE.filter((avail) => !avail.type || !connectedTypes.has(avail.type)).map(avail => (
             <div key={avail.name} className="bg-white dark:bg-gray-900 border border-surface-100 dark:border-white/5 hover:border-white/15 rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-colors group">
               <div className="text-2xl">{avail.logo}</div>
               <div className="flex-1 min-w-0">

@@ -111,12 +111,10 @@ export interface Connector {
 export interface KnowledgeStats {
   totalDocuments: number;
   totalChunks: number;
-  totalTokens: number;
   storageUsedBytes: number;
-  storageQuotaBytes: number;
-  connectorCount: number;
-  activeConnectors: number;
-  lastUpdatedAt: string;
+  totalCollections: number;
+  totalConnectors: number;
+  lastIndexedAt?: string;
 }
 
 export interface UploadProgress {

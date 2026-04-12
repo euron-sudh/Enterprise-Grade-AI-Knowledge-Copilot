@@ -111,8 +111,63 @@ export default function AnalyticsPage() {
       ]);
       if (!dashRes.ok) throw new Error(`HTTP ${dashRes.status}`);
       const dash = await dashRes.json();
-      const knowledge = gapsRes.ok ? await gapsRes.json() : null;
-      setData({ ...dash, knowledge: knowledge || dash.knowledge });
+      const gapsPayload = gapsRes.ok ? await gapsRes.json() : null;
+
+      const usage = dash?.usage ?? {};
+      const aiPerformance = dash?.aiPerformance ?? {};
+      const knowledge = dash?.knowledge ?? {};
+      const modelBreakdown = Array.isArray(aiPerformance.modelBreakdown) ? aiPerformance.modelBreakdown : [];
+      const totalTokensUsed = modelBreakdown.reduce(
+        (sum: number, item: any) => sum + Number(item?.tokenCount || 0),
+        0,
+      );
+      const topQueries = Array.isArray(usage.queryVolume)
+        ? [...usage.queryVolume]
+            .sort((a: any, b: any) => Number(b?.value || 0) - Number(a?.value || 0))
+            .slice(0, 8)
+            .map((point: any) => ({ query: String(point?.date || 'Unknown'), count: Number(point?.value || 0) }))
+        : [];
+      const connectorHealth = Array.isArray(knowledge.connectorHealth)
+        ? knowledge.connectorHealth.map((c: any) => ({
+            name: String(c?.connectorName || c?.name || 'Connector'),
+            status: c?.status === 'healthy' ? 'healthy' : 'warning',
+            lastSync: String(c?.lastSyncAt || c?.lastSync || ''),
+          }))
+        : [];
+      const knowledgeGaps = Array.isArray(gapsPayload?.gaps)
+        ? gapsPayload.gaps.map((g: any) => ({
+            topic: String(g?.topic || 'Unknown topic'),
+            queryCount: Number(g?.queryCount || g?.count || 0),
+            coverage: Number(g?.coverage || 0),
+          }))
+        : [];
+
+      setData({
+        usage: {
+          totalQueries: Number(usage.totalQueries || 0),
+          activeUsers: Number(usage.activeUsers || 0),
+          avgResponseTime: Number(usage.avgResponseTimeMs || 0) / 1000,
+          documentsIndexed: Number(usage.documentsIndexed || 0),
+          queriesGrowth: Number(usage.queriesChange || 0),
+          usersGrowth: Number(usage.activeUsersChange || 0),
+        },
+        aiPerformance: {
+          avgQualityScore: Number(aiPerformance.avgQualityScore || 0),
+          citationAccuracy: Number(aiPerformance.citationAccuracy || 0),
+          avgLatencyMs: Number(aiPerformance.avgLatencyMs || 0),
+          totalTokensUsed,
+          estimatedCost: Number(aiPerformance.tokenCostUsd || 0),
+        },
+        knowledge: {
+          totalDocuments: Number(knowledge.totalDocuments || 0),
+          totalChunks: Number(knowledge.totalChunks || 0),
+          totalConnectors: Number(knowledge.totalConnectors || connectorHealth.length || 0),
+          connectorHealth,
+        },
+        topQueries,
+        timeSeries: Array.isArray(usage.timeSeries) ? usage.timeSeries : [],
+        knowledgeGaps,
+      });
     } catch (e: any) {
       setError(`Failed to load analytics data: ${e?.message || 'Unknown error'}`);
     } finally {
@@ -167,7 +222,7 @@ export default function AnalyticsPage() {
             <StatCard label="Active Users" value={fmt(data.usage.activeUsers)}
               change={data.usage.usersGrowth ? `${data.usage.usersGrowth > 0 ? '+' : ''}${data.usage.usersGrowth}%` : undefined}
               icon={Users} color="text-emerald-400" bg="bg-emerald-900/30" />
-            <StatCard label="Avg Response Time" value={`${data.usage.avgResponseTime?.toFixed ? data.usage.avgResponseTime.toFixed(1) : data.usage.avgResponseTime}s`}
+            <StatCard label="Avg Response Time" value={`${Number.isFinite(data.usage.avgResponseTime) ? data.usage.avgResponseTime.toFixed(1) : '0.0'}s`}
               icon={Clock} color="text-amber-400" bg="bg-amber-900/30" />
             <StatCard label="Documents Indexed" value={fmt(data.usage.documentsIndexed)}
               icon={BookOpen} color="text-violet-400" bg="bg-violet-900/30" />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { authFetch } from '@/lib/api/token';
@@ -142,7 +142,7 @@ const CONNECTOR_CONFIGS: Record<string, ConnectorConfig> = {
       {
         title: 'Add Authorized Redirect URI',
         description: 'In the OAuth client settings, add the following redirect URI:',
-        code: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010'}/auth/oauth/google-drive/callback`,
+        code: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001'}/api/backend/knowledge/connectors/oauth/google/callback`,
       },
       {
         title: 'Copy credentials and connect',
@@ -372,7 +372,7 @@ const CONNECTOR_CONFIGS: Record<string, ConnectorConfig> = {
       {
         title: 'Add Authorized Redirect URI',
         description: 'Add the following redirect URI to your OAuth client:',
-        code: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8010'}/auth/oauth/gmail/callback`,
+        code: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001'}/api/backend/knowledge/connectors/oauth/google/callback`,
       },
       {
         title: 'Enter credentials and connect',
@@ -728,7 +728,7 @@ const SOURCE_COLORS: Record<string, string> = {
 };
 
 /* ─── Main Page ──────────────────────────────────────────── */
-export default function KnowledgeBasePage() {
+function KnowledgeBasePageInner() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const [isDragging, setIsDragging] = useState(false);
@@ -736,6 +736,7 @@ export default function KnowledgeBasePage() {
   const [, setUploadStatus] = useState<Record<string, 'uploading' | 'done' | 'error'>>({});
   const [realDocs, setRealDocs] = useState<Document[]>([]);
   const [totalDocsCount, setTotalDocsCount] = useState(0);
+  const [filteredDocsCount, setFilteredDocsCount] = useState(0);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [activeSourceFilter, setActiveSourceFilter] = useState<string>('all');
   const [connectors, setConnectors] = useState<Connector[]>(CONNECTORS);
@@ -746,32 +747,45 @@ export default function KnowledgeBasePage() {
   const [showConnectorsPanel, setShowConnectorsPanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // After Google OAuth callback, force connectors to refresh
+  // After Google OAuth callback, force connectors to refresh or show error
   useEffect(() => {
     const connected = searchParams?.get('connected');
+    const oauthError = searchParams?.get('oauth_error');
     if (connected) {
       setConnectorsRefreshKey(k => k + 1);
-      // Remove the query param from URL without reload
+    }
+    if (oauthError) {
+      console.error('[Google OAuth] callback error:', oauthError);
+    }
+    if (connected || oauthError) {
+      // Remove OAuth query params from URL without reload
       const url = new URL(window.location.href);
       url.searchParams.delete('connected');
+      url.searchParams.delete('oauth_error');
       window.history.replaceState({}, '', url.toString());
     }
   }, [searchParams]);
 
   const activeConnectors = connectors.filter(c => c.status !== 'disconnected').length;
-  const totalDocs = connectors.reduce((a, c) => a + c.docs, 0) + totalDocsCount;
+  // Keep this aligned with backend totals (count of Document rows for this user).
+  const totalDocs = totalDocsCount;
   const getUser = () => ({ email: session?.user?.email, name: session?.user?.name, image: session?.user?.image });
 
   const fetchDocs = useCallback((sourceFilter = activeSourceFilter) => {
     if (status !== 'authenticated') return;
     setLoadingDocs(true);
-    const params = new URLSearchParams({ pageSize: '200' });
+    // Backend enforces pageSize <= 100; using 200 returns 422 and empty UI.
+    const params = new URLSearchParams({ pageSize: '100' });
     if (sourceFilter !== 'all') params.set('source', sourceFilter);
     authFetch(`/api/backend/knowledge/documents?${params}`, {}, (session as any)?.accessToken, getUser())
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.items) {
-          setTotalDocsCount(data.total ?? data.items.length);
+          const total = data.total ?? data.items.length;
+          setFilteredDocsCount(total);
+          if (sourceFilter === 'all') {
+            setTotalDocsCount(total);
+          }
           setRealDocs(data.items.map((d: any) => ({
             id: d.id,
             name: d.originalName || d.name,
@@ -791,6 +805,20 @@ export default function KnowledgeBasePage() {
   useEffect(() => {
     fetchDocs();
   }, [status, session?.user?.email, activeSourceFilter]);
+
+  // Auto-refresh while documents are still processing so status flips to indexed
+  // without requiring a manual refresh.
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    const hasProcessingDocs = realDocs.some(d => d.status === 'processing');
+    if (!hasProcessingDocs) return;
+
+    const interval = setInterval(() => {
+      fetchDocs(activeSourceFilter);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [status, realDocs, activeSourceFilter, fetchDocs]);
 
   // Load persisted connector statuses from backend
   useEffect(() => {
@@ -845,8 +873,12 @@ export default function KnowledgeBasePage() {
 
   const startGoogleOAuth = useCallback(async (connectorType: string) => {
     try {
+      // Replace localhost with 127.0.0.1 so Chrome doesn't upgrade to HTTPS
+      const rawOrigin = window.location.origin;
+      const normalizedOrigin = rawOrigin.replace(/^https?:\/\/localhost(:\d+)?/, (_, port) => `http://127.0.0.1${port ?? ''}`);
+      const baseOrigin = encodeURIComponent(normalizedOrigin);
       const res = await authFetch(
-        `/api/backend/knowledge/connectors/oauth/google/start?connector_type=${connectorType}`,
+        `/api/backend/knowledge/connectors/oauth/google/start?connector_type=${connectorType}&base_origin=${baseOrigin}`,
         {},
         (session as any)?.accessToken,
         getUser(),
@@ -1022,6 +1054,12 @@ export default function KnowledgeBasePage() {
       statusMap[fileName] = 'done';
     });
     setUploadStatus({ ...statusMap });
+    if (failedNames.length > 0) {
+      alert(`Failed to upload: ${failedNames.join(', ')}`);
+    }
+    // Re-sync list from backend after uploads complete to replace optimistic
+    // processing rows with real indexing status.
+    fetchDocs(activeSourceFilter);
     setTimeout(() => { setUploadingFiles([]); setUploadStatus({}); }, 3000);
   };
 
@@ -1199,7 +1237,7 @@ export default function KnowledgeBasePage() {
           <h2 className="text-base font-semibold text-surface-900 dark:text-white flex items-center gap-2">
             <Layers className="h-4.5 w-4.5 text-surface-500 dark:text-gray-400" />
             Synced Documents
-            <span className="text-xs font-normal text-surface-400 dark:text-gray-500">({totalDocsCount.toLocaleString()})</span>
+            <span className="text-xs font-normal text-surface-400 dark:text-gray-500">({filteredDocsCount.toLocaleString()})</span>
           </h2>
           <button
             onClick={() => fetchDocs(activeSourceFilter)}
@@ -1326,5 +1364,13 @@ export default function KnowledgeBasePage() {
         />
       )}
     </div>
+  );
+}
+
+export default function KnowledgeBasePage() {
+  return (
+    <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" /></div>}>
+      <KnowledgeBasePageInner />
+    </Suspense>
   );
 }

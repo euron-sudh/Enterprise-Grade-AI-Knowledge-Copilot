@@ -75,7 +75,7 @@ export function CommandPalette() {
         label: 'Go to Knowledge Base',
         icon: <BookOpen className="h-4 w-4" />,
         category: 'Navigation',
-        action: () => navigate('/knowledge'),
+        action: () => navigate('/knowledge-base'),
         keywords: ['knowledge', 'documents', 'files'],
       },
       {

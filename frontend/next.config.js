@@ -59,6 +59,15 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: '/knowledge/documents',
+        destination: '/knowledge-base',
+        permanent: false,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

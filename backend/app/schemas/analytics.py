@@ -101,6 +101,8 @@ class ConnectorHealthSummary(BaseModel):
 
 class KnowledgeMetrics(BaseModel):
     totalDocuments: int = 0
+    totalChunks: int = 0
+    totalConnectors: int = 0
     indexedDocuments: int = 0
     pendingDocuments: int = 0
     failedDocuments: int = 0

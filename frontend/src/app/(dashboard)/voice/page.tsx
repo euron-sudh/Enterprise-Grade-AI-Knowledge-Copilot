@@ -118,6 +118,67 @@ export default function VoicePage() {
     setVoiceState('processing');
     setError('');
     try {
+      const normalized = question.toLowerCase();
+      const isRecentUploadedDocQuery =
+        /(recent|latest|last)/.test(normalized) &&
+        /(upload|uploaded)/.test(normalized) &&
+        /(document|file)/.test(normalized);
+
+      // Deterministic local path for "recent uploaded document" questions to
+      // avoid generic or inaccurate model responses.
+      if (isRecentUploadedDocQuery) {
+        const docsRes = await authFetch(
+          '/api/backend/knowledge/documents?pageSize=1&source=upload',
+          {},
+          getToken(),
+          getUser(),
+        );
+
+        if (docsRes.ok) {
+          const docsData = await docsRes.json();
+          const latest = docsData?.items?.[0];
+          if (latest) {
+            let summary = '';
+            const chunksRes = await authFetch(
+              `/api/backend/knowledge/documents/${latest.id}/chunks?pageSize=1`,
+              {},
+              getToken(),
+              getUser(),
+            );
+            if (chunksRes.ok) {
+              const chunksData = await chunksRes.json();
+              const firstChunk = chunksData?.items?.[0]?.content || '';
+              if (firstChunk) {
+                summary = firstChunk.slice(0, 320).trim();
+                if (firstChunk.length > 320) summary += '...';
+              }
+            }
+
+            const answer = summary
+              ? `Your most recent uploaded document is ${latest.originalName || latest.name}. Here is a quick summary: ${summary}`
+              : `Your most recent uploaded document is ${latest.originalName || latest.name}. I could not extract a preview snippet yet.`;
+
+            const sources: Source[] = [{
+              documentName: latest.originalName || latest.name,
+              documentType: latest.type || 'unknown',
+              chunkText: summary || 'No preview available',
+            }];
+
+            setAiResponse(answer);
+            setLastSources(sources);
+            setHistory(prev => [{
+              id: Date.now().toString(),
+              question,
+              answer,
+              sources,
+              time: new Date().toLocaleTimeString(),
+            }, ...prev.slice(0, 9)]);
+            speak(answer);
+            return;
+          }
+        }
+      }
+
       const res = await authFetch(
         '/api/backend/voice/ask',
         {

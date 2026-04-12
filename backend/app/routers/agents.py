@@ -3,6 +3,9 @@ Agents router — Research Agent with real-time web search + knowledge base RAG.
 """
 import json
 import logging
+import asyncio
+from datetime import datetime, timezone
+import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends
@@ -21,7 +24,7 @@ router = APIRouter()
 class ResearchRequest(BaseModel):
     query: str
     model: str = "gpt-4o-mini"
-    max_sources: int = 8
+    max_sources: int = 6
     web_search: bool = True
 
 
@@ -31,13 +34,13 @@ async def _tavily_search(query: str, api_key: str, max_results: int = 6) -> list
     """Search the web using Tavily API (best quality for AI research)."""
     import httpx
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 "https://api.tavily.com/search",
                 json={
                     "api_key": api_key,
                     "query": query,
-                    "search_depth": "advanced",
+                    "search_depth": "basic",
                     "max_results": max_results,
                     "include_answer": False,
                     "include_raw_content": False,
@@ -93,6 +96,25 @@ async def _web_search(query: str, tavily_key: str = "", max_results: int = 6) ->
     )
 
 
+_RECENCY_KEYWORDS = {
+    "recent", "latest", "current", "today", "now", "new", "breaking", "update", "updated",
+    "this year", "this month", "this week", "state of", "as of",
+}
+
+
+def _is_recency_query(query: str) -> bool:
+    q = query.lower()
+    return any(keyword in q for keyword in _RECENCY_KEYWORDS)
+
+
+def _build_web_query(query: str) -> str:
+    """Bias web search toward current information for recency-style prompts."""
+    if not _is_recency_query(query):
+        return query
+    now = datetime.now(timezone.utc)
+    return f"{query} latest updates as of {now.date().isoformat()} {now.year}"
+
+
 # ── Main research generator ───────────────────────────────────────────────────
 
 async def _run_research(
@@ -101,6 +123,7 @@ async def _run_research(
     model: str = "gpt-4o-mini",
     max_sources: int = 8,
     web_search: bool = True,
+    user_id: uuid.UUID | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Streaming research agent:
@@ -114,21 +137,34 @@ async def _run_research(
     def _sse(event: str, data: dict) -> str:
         return f"data: {json.dumps({'event': event, **data})}\n\n"
 
-    # ── Step 1: Knowledge base search ────────────────────────────────────────
-    yield _sse("status", {"message": "Searching knowledge base..."})
-    kb_sources = await _search_relevant_chunks(query, db, limit=max_sources)
+    # ── Step 1 & 2: Run KB and web search in parallel ───────────────────────
+    yield _sse("status", {"message": "Searching knowledge base and web in parallel..."})
+
+    kb_task = asyncio.create_task(
+        _search_relevant_chunks(query, db, limit=max_sources, user_id=user_id)
+    )
+
+    web_query = _build_web_query(query) if web_search else query
+    web_task = (
+        asyncio.create_task(
+            _web_search(
+                web_query,
+                tavily_key=settings.TAVILY_API_KEY,
+                max_results=5,
+            )
+        )
+        if web_search else None
+    )
+
+    kb_sources = await kb_task
     yield _sse("sources", {"sources": kb_sources, "sourceType": "knowledge_base"})
 
-    # ── Step 2: Real-time web search ─────────────────────────────────────────
+    # ── Step 2: Real-time web search results ────────────────────────────────
     web_results = []
-    if web_search:
+    if web_task is not None:
         yield _sse("status", {"message": "Searching the web in real-time..."})
         try:
-            web_results = await _web_search(
-                query,
-                tavily_key=settings.TAVILY_API_KEY,
-                max_results=6,
-            )
+            web_results = await web_task
             yield _sse("web_sources", {"sources": web_results})
             provider = web_results[0]["provider"] if web_results else "web"
             yield _sse("status", {
@@ -141,10 +177,20 @@ async def _run_research(
     # ── Step 3: Build combined prompt ─────────────────────────────────────────
     yield _sse("status", {"message": "Generating research report..."})
 
+    now = datetime.now(timezone.utc)
+    current_date = now.date().isoformat()
+    current_year = now.year
+
     system_prompt = (
         "You are an expert Research Agent. You have access to two types of sources:\n"
         "1. **Internal Knowledge Base** — documents from the organization\n"
         "2. **Live Web Results** — real-time information from the internet\n\n"
+        f"Current date (UTC): {current_date}. Current year: {current_year}.\n\n"
+        "CRITICAL FRESHNESS RULES:\n"
+        "- If the user asks for recent/current/latest developments, prioritize WEB sources over internal sources.\n"
+        "- Do NOT claim a specific year, forecast, statistic, or event unless it is supported by provided web snippets.\n"
+        "- If freshness cannot be verified from provided snippets, explicitly say that the date could not be confirmed.\n"
+        "- Never present future projections as facts unless clearly attributed to a source and marked as projection.\n\n"
         "Produce a comprehensive, well-structured research report in Markdown format.\n\n"
         "Structure your report as:\n"
         "# [Report Title]\n\n"
@@ -285,7 +331,7 @@ async def run_research_agent(
 ):
     """Stream a research report combining knowledge base RAG + real-time web search."""
     return StreamingResponse(
-        _run_research(body.query, db, body.model, body.max_sources, body.web_search),
+        _run_research(body.query, db, body.model, body.max_sources, body.web_search, current_user.id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

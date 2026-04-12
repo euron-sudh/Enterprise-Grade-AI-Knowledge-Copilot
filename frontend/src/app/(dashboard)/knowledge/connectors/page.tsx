@@ -14,6 +14,17 @@ import { GoogleDriveConnectModal } from '@/components/knowledge/GoogleDriveConne
 import * as knowledgeApi from '@/lib/api/knowledge';
 import { useKnowledgeStore } from '@/stores/knowledgeStore';
 
+const VISIBLE_CONNECTOR_TYPES = new Set([
+  'google_drive',
+  'confluence',
+  'slack',
+  'github',
+  'notion',
+  'jira',
+  'salesforce',
+  'gmail',
+]);
+
 const AVAILABLE_CONNECTORS = [
   { type: 'google_drive', name: 'Google Drive', description: 'Files and folders from Google Drive', logo: '📁' },
   { type: 'sharepoint', name: 'SharePoint', description: 'Microsoft SharePoint sites', logo: '📋' },
@@ -52,7 +63,9 @@ export default function ConnectorsPage() {
     },
   });
 
-  const connectedTypes = new Set(connectors.map((c) => c.type));
+  const visibleConnectors = connectors.filter((connector) => VISIBLE_CONNECTOR_TYPES.has(connector.type));
+  const activeConnectors = visibleConnectors.filter((connector) => connector.status !== 'disconnected');
+  const connectedTypes = new Set(activeConnectors.map((c) => c.type));
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -69,7 +82,7 @@ export default function ConnectorsPage() {
           </div>
           <div className="flex items-center gap-2 text-sm text-surface-500">
             <span className="font-semibold text-surface-700 dark:text-surface-300">
-              {connectors.length}
+              {activeConnectors.length}
             </span>
             connected
           </div>
@@ -82,11 +95,11 @@ export default function ConnectorsPage() {
           <div className="flex justify-center py-8">
             <Spinner />
           </div>
-        ) : connectors.length > 0 ? (
+        ) : activeConnectors.length > 0 ? (
           <div>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-surface-700 dark:text-surface-300">
-                Connected ({connectors.length})
+                Connected ({activeConnectors.length})
               </h2>
               <Button
                 leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
@@ -97,7 +110,7 @@ export default function ConnectorsPage() {
               </Button>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {connectors.map((connector) => (
+              {activeConnectors.map((connector) => (
                 <ConnectorCard key={connector.id} connector={connector} />
               ))}
             </div>

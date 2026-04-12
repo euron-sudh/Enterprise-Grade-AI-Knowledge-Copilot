@@ -90,7 +90,7 @@ export default function HomePage() {
       color: 'text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950',
     },
     {
-      label: 'Documents Indexed',
+      label: 'Total Documents',
       value: loading ? '—' : (stats?.totalDocuments ?? 0).toLocaleString(),
       change: 'Total in knowledge base',
       trend: 'neutral',

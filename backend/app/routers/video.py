@@ -11,7 +11,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
@@ -309,25 +309,100 @@ async def ask_video(
     if doc.status != "indexed":
         raise HTTPException(status_code=400, detail=f"Video not ready yet (status: {doc.status}).")
 
-    # Get relevant chunks
-    chunks_result = await db.execute(
-        select(DocumentChunk).where(DocumentChunk.document_id == video_id)
-        .order_by(DocumentChunk.chunk_index).limit(6)
+    from app.services.ai_service import (
+        _google_web_search,
+        _needs_web_search,
+        _select_final_sources,
+        _tavily_web_search,
+        get_simple_response,
     )
-    chunks = chunks_result.scalars().all()
-    context = "\n\n".join(c.content for c in chunks)[:3000]
+
+    words = [
+        word.strip().lower()
+        for word in payload.question.split()
+        if len(word.strip()) > 2
+    ]
+
+    chunks_query = select(DocumentChunk).where(DocumentChunk.document_id == video_id)
+    matched_chunks = []
+    if words:
+        chunk_filters = [DocumentChunk.content.ilike(f"%{word}%") for word in words[:8]]
+        chunks_result = await db.execute(
+            chunks_query.where(or_(*chunk_filters)).order_by(DocumentChunk.chunk_index).limit(6)
+        )
+        matched_chunks = chunks_result.scalars().all()
+
+    if matched_chunks:
+        chunks = matched_chunks
+    else:
+        chunks_result = await db.execute(chunks_query.order_by(DocumentChunk.chunk_index).limit(6))
+        chunks = chunks_result.scalars().all()
+
+    kb_sources = []
+    for chunk in chunks:
+        chunk_lower = (chunk.content or "").lower()
+        matched_terms = [word for word in words if word in chunk_lower]
+        relevance = 0.3 if not words else min(0.95, 0.35 + (len(matched_terms) / max(len(words), 1)) * 0.6)
+        kb_sources.append({
+            "id": str(uuid.uuid4()),
+            "documentId": str(video_id),
+            "documentName": doc.original_name or doc.name,
+            "documentType": "video",
+            "pageNumber": None,
+            "chunkText": (chunk.content or "")[:600],
+            "relevanceScore": round(relevance, 3),
+            "url": None,
+            "connectorType": "video",
+            "sourceType": "knowledge_base",
+        })
+
+    web_sources: list[dict] = []
+    if _needs_web_search(payload.question, kb_sources):
+        if settings.has_tavily_key:
+            try:
+                web_sources.extend(await _tavily_web_search(payload.question, max_results=5))
+            except Exception as e:
+                logger.warning("Tavily video web search failed: %s", e)
+        if settings.has_google_search:
+            try:
+                web_sources.extend(await _google_web_search(payload.question, max_results=5))
+            except Exception as e:
+                logger.warning("Google video web search failed: %s", e)
+
+        deduped_web_sources: list[dict] = []
+        seen_keys: set[str] = set()
+        for source in web_sources:
+            key = (source.get("url") or source.get("documentName") or source.get("id") or "").strip().lower()
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped_web_sources.append(source)
+        web_sources = deduped_web_sources
+
+    sources = _select_final_sources(kb_sources, web_sources, max_kb=3, max_web=2)
+    transcript_context = "\n\n".join(
+        f"[{idx}] {source['chunkText']}"
+        for idx, source in enumerate(kb_sources[:4], start=1)
+    )
+    web_context = "\n\n".join(
+        f"[{idx}] {source['documentName']} — {source.get('url') or 'no url'}\n{source['chunkText']}"
+        for idx, source in enumerate(web_sources[:3], start=1)
+    )
 
     prompt = (
-        f"Answer based on this video transcript only. Do not use emojis.\n\n"
-        f"Transcript:\n{context}\n\n"
+        "Answer the user's question using the video transcript excerpts below. "
+        "If web search results are provided, use them only when the question needs current or external context, "
+        "and distinguish transcript evidence from web evidence naturally. Do not use emojis.\n\n"
+        f"Video title: {doc.original_name or doc.name}\n\n"
+        f"Transcript excerpts:\n{transcript_context or 'No transcript excerpts available.'}\n\n"
+        f"Web search results:\n{web_context or 'No web results used.'}\n\n"
         f"Question: {payload.question}"
     )
 
-    from app.services.ai_service import get_simple_response
     answer = await get_simple_response(prompt)
     return {
         "answer": answer,
-        "sources": [{"chunkText": c.content[:200]} for c in chunks[:3]],
+        "sources": sources,
     }
 
 

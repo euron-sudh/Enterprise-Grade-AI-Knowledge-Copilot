@@ -171,17 +171,35 @@ async def voice_ask(
         _tavily_web_search,
         _google_web_search,
         _select_final_sources,
+        _is_inventory_query,
+        _wants_single_document,
+        _wants_uploaded_only,
     )
 
+    is_recent_q = _is_recent_document_query(body.question)
+    is_inventory_q = _is_inventory_query(body.question)
+    single_doc_intent = is_recent_q and _wants_single_document(body.question)
+
     # 1. Search relevant document chunks (scoped to this user) + inventory
-    if _is_recent_document_query(body.question):
-        kb_sources = await _get_recent_document_sources(db, current_user.id, body.question)
+    forced_source_filter = "upload" if _wants_uploaded_only(body.question) else None
+
+    if is_recent_q:
+        kb_sources = await _get_recent_document_sources(
+            db,
+            current_user.id,
+            body.question,
+            source_filter=forced_source_filter,
+            limit=1 if single_doc_intent else 8,
+        )
     else:
         kb_sources = await _search_relevant_chunks(body.question, db, user_id=current_user.id)
 
     # 1b. Add web search for recent/current queries or when KB has no strong matches.
     web_sources: list[dict] = []
-    if _needs_web_search(body.question, kb_sources):
+    # For file inventory/recency prompts, keep answers grounded in user KB and
+    # avoid mixing unrelated web results unless explicitly requested elsewhere.
+    should_search_web = False if (is_recent_q or is_inventory_q) else _needs_web_search(body.question, kb_sources)
+    if should_search_web:
         if settings.has_google_search:
             try:
                 web_sources.extend(await _google_web_search(body.question, max_results=5))
@@ -204,11 +222,44 @@ async def voice_ask(
             deduped.append(s)
         web_sources = deduped
 
-    sources = _select_final_sources(kb_sources, web_sources, max_kb=3, max_web=3)
-    doc_inventory = await _list_user_documents(current_user.id, db)
+    sources = _select_final_sources(
+        kb_sources,
+        web_sources,
+        max_kb=1 if single_doc_intent else 3,
+        max_web=0 if (is_recent_q or is_inventory_q) else 3,
+    )
 
-    # Import helpers to check if this is an inventory query
-    from app.services.ai_service import _is_inventory_query
+    # Deterministic path for "last/recent uploaded document" so voice answers
+    # with one concrete file instead of broad or speculative summaries.
+    if single_doc_intent and forced_source_filter == "upload":
+        if sources:
+            top = sources[0]
+            snippet = (top.get("chunkText") or "").strip()
+            if len(snippet) > 340:
+                snippet = snippet[:340].rstrip() + "..."
+            answer = (
+                f"Your most recent uploaded document is {top.get('documentName', 'the latest file')}. "
+                f"Here is a quick summary: {snippet or 'I could not extract a readable preview yet.'}"
+            )
+            return AskResponse(
+                answer=answer,
+                sources=[
+                    AskSource(
+                        documentName=top.get("documentName", "Document"),
+                        documentType=top.get("documentType", "unknown"),
+                        chunkText=top.get("chunkText", ""),
+                    )
+                ],
+            )
+
+        return AskResponse(
+            answer=(
+                "I could not find any uploaded documents yet. "
+                "Please upload a file in Knowledge Base and try again."
+            ),
+            sources=[],
+        )
+    doc_inventory = await _list_user_documents(current_user.id, db)
     
     system_prompt = (
         "You are KnowledgeForge Voice Assistant. Answer the user's question clearly "
@@ -222,7 +273,6 @@ async def voice_ask(
 
     # Only include full document inventory if user explicitly asks for it (inventory query)
     # Otherwise, keep prompt focused on the question at hand
-    is_inventory_q = _is_inventory_query(body.question)
     if is_inventory_q and doc_inventory:
         inv_lines = []
         for d in doc_inventory:
@@ -275,6 +325,12 @@ async def voice_ask(
             "\n\nRelevant web search results:\n"
             f"{web_context}\n\n"
             "For current or live questions, prioritize these web results."
+        )
+
+    if single_doc_intent:
+        system_prompt += (
+            "\n\nThe user asked about one recent document. "
+            "Answer about one best-matching most recent document only, not a list."
         )
 
     messages = [{"role": "user", "content": body.question}]

@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { SessionSync } from '@/components/layout/session-sync';
 import { NotificationProvider } from '@/components/layout/notification-provider';
+import { CommandPalette } from '@/components/layout/CommandPalette';
 
 export default async function DashboardLayout({
   children,
@@ -22,6 +23,8 @@ export default async function DashboardLayout({
       <SessionSync />
       {/* Real-time WebSocket notification stream */}
       <NotificationProvider />
+      {/* Command palette — rendered here so it's available on every dashboard page */}
+      <CommandPalette />
 
       {/* Sidebar */}
       <Sidebar />
